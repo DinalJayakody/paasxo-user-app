@@ -1,0 +1,690 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  Animated,
+  Easing,
+  useWindowDimensions,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import {
+  ArrowLeft,
+  LogIn,
+  UserPlus,
+  Trophy,
+  Users,
+  Dumbbell,
+  Activity,
+} from 'lucide-react-native';
+import { Colors } from '../styles/colors';
+import { Button } from '../components/Button';
+import { InputField } from '../components/InputField';
+import { useContext, useRef, useEffect } from 'react';
+import { AuthContext } from '../context/AuthContext';
+import { RegisterPayload } from '../types/api';
+
+// --- Validation helpers ---
+const isValidEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+const isValidPhone = (v: string) => /^\+?[\d\s\-()]{7,}$/.test(v);
+
+const SPORTS = [
+  { id: 'FUTSAL', label: 'Futsal', icon: Users },
+  { id: 'CRICKET', label: 'Cricket', icon: Trophy },
+  { id: 'PICKLEBALL', label: 'Pickleball', icon: Dumbbell },
+  { id: 'PADDLEBALL', label: 'Paddleball', icon: Activity },
+  { id: 'TRAINER_GYM', label: 'Trainer (Gym)', icon: Dumbbell },
+];
+
+export default function SignUpScreen() {
+  const router = useRouter();
+
+  // Auth context (used for signUp/google/apple placeholders)
+  const auth = useContext(AuthContext);
+
+  const [email, setEmail] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  useWindowDimensions(); // keeps layout reactive on dimension changes
+
+  // subtle pulse animation for avatar
+  const pulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.04, duration: 1000, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 1000, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ])
+    ).start();
+  }, [pulse]);
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [selectedSports, setSelectedSports] = useState<string[]>(['FUTSAL']);
+  const [referralCode, setReferralCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const toggleSport = (id: string) => {
+    setSelectedSports((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+    );
+  };
+
+  const validate = () => {
+    const errs: Record<string, string> = {};
+    if (!fullName.trim()) errs.fullName = 'Full name is required';
+    if (!email.trim()) errs.email = 'Email is required';
+    else if (!isValidEmail(email)) errs.email = 'Enter a valid email';
+    if (!phone.trim()) errs.phone = 'Phone number is required';
+    else if (!isValidPhone(phone)) errs.phone = 'Enter a valid phone number';
+    if (!password) errs.password = 'Password is required';
+    else if (password.length < 8) errs.password = 'Password must be at least 8 characters';
+    if (!confirmPassword) errs.confirmPassword = 'Please confirm your password';
+    else if (password !== confirmPassword) errs.confirmPassword = 'Passwords do not match';
+    if (selectedSports.length === 0) errs.sports = 'Select at least one sport';
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  /**
+   * handleRegister — called when user presses "Finish Setup"
+   * 
+   * Flow:
+   * 1) Validate form data
+   * 2) Call auth.signUp with complete registration payload
+   * 3) On success: tokens are persisted and user is set in AuthContext
+   * 4) Navigate to main app
+   */
+  const handleRegister = async () => {
+    if (!validate()) return;
+    setLoading(true);
+
+const payload: RegisterPayload = {
+  email,
+  password,
+  displayName: fullName,
+  phoneNumber: phone,
+  sports: selectedSports,
+  referralCode: referralCode || undefined,
+  profileImage: avatarUri
+    ? {
+        uri: avatarUri,
+        name: "profile.jpg",
+        type: "image/jpeg",
+      }
+    : undefined,
+};
+
+
+    try {
+      // Call signUp via AuthContext which uses authApi.register
+await auth.signUp(payload);
+      
+      // After successful registration and login, navigate to main app
+      router.push('/post-verification'); // optional welcome screen after registration
+    } catch (err: any) {
+      setErrors({ general: err.message ?? 'Registration failed. Try again.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Google / Apple sign-up routes through the sign-in screen where the
+  // OAuth hook lives. The backend creates a new account automatically
+  // for first-time social sign-ins.
+  const handleGoogleLogin = () => router.push('/sign-in');
+
+  /* Avatar picker guide (Expo)
+     - Install: `expo install expo-image-picker`
+     - Request permission then call `launchImageLibraryAsync`.
+     - After selecting, upload via `userApi.uploadAvatar` using FormData.
+  */
+  const pickAvatar = async () => {
+  const ImagePicker = require('expo-image-picker');
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    allowsEditing: true,
+    aspect: [1, 1],
+    quality: 0.8,
+  });
+
+  console.log("Picker result:", result);
+
+  if (!result.canceled && result.assets?.length > 0) {
+    const uri = result.assets[0].uri;
+    console.log("Setting avatar URI:", uri);
+    setAvatarUri(uri);
+  }
+};
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      {/* Bottom tab bar */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={styles.tab}
+          onPress={() => router.push('/sign-in')}
+          activeOpacity={0.7}
+        >
+          <LogIn color={Colors.neutral400} size={20} strokeWidth={2} />
+          <Text style={styles.tabLabel}>LOGIN</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, styles.tabActive]}
+          onPress={() => {}}
+          activeOpacity={0.9}
+        >
+          <UserPlus color={Colors.primary} size={20} strokeWidth={2} />
+          <Text style={styles.tabLabelActive}>REGISTER</Text>
+        </TouchableOpacity>
+      </View>
+
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
+              <ArrowLeft color={Colors.primary} size={22} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Image source={require('../../assets/logo.jpeg')} style={{width:40, height:40}} resizeMode="contain" />
+            <View style={{ width: 40 }} />
+          </View>
+
+          {/* Hero text */}
+          <Text style={styles.title}>Join the{'\n'}Movement.</Text>
+          <Text style={styles.subtitle}>
+            Create your profile and start your athletic{'\n'}journey.
+          </Text>
+
+          {/* Social login buttons + Avatar + Full name */}
+          <View style={[styles.card, { alignItems: 'center' }]}> 
+            <Text style={styles.sectionLabel}>SIGN UP</Text>
+
+            <View style={styles.socialColumn}>
+              <Button
+                title="Continue with Google"
+                onPress={handleGoogleLogin}
+                variant="secondary"
+                style={styles.socialButton}
+                icon={<Image source={{ uri: 'https://img.icons8.com/color/48/000000/google-logo.png' }} style={styles.socialIcon} />}
+              />
+
+              <Button
+                title="Continue with Apple"
+                onPress={async () => {
+                  // Apple Sign-In (iOS)
+                  // Use `expo-apple-authentication` (Expo) or native Apple Auth in bare RN.
+                  await auth.completeSocialSignIn('apple', '');
+                }}
+                variant="secondary"
+                style={styles.socialButtonSecond}
+                icon={<Image source={{ uri: 'https://img.icons8.com/ios-filled/50/000000/mac-os.png' }} style={styles.socialIcon} />}
+              />
+            </View>
+
+          </View>
+
+          {/* Credentials card */}
+          <View style={styles.card}>
+            <Text style={styles.sectionLabel}>CREDENTIALS</Text>
+
+            <View style={{ alignItems: 'center', marginBottom: 8 }}>
+              <TouchableOpacity onPress={pickAvatar} activeOpacity={0.9}>
+                <Animated.View style={[styles.avatarOuter, { transform: [{ scale: pulse }] }]}>
+                  <View style={styles.avatarRing}>
+                    {avatarUri ? (
+                      <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+                    ) : (
+                      <View style={styles.avatarPlaceholder}>
+                        <UserPlus color={Colors.neutral400} size={34} />
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.plusBadge}>
+                    <Text style={{ color: Colors.white, fontWeight: '800' }}>+</Text>
+                  </View>
+                </Animated.View>
+              </TouchableOpacity>
+            </View>
+
+            <InputField
+              placeholder="Full Name"
+              value={fullName}
+              onChangeText={(t) => { setFullName(t); setErrors((e) => ({ ...e, fullName: '' })); }}
+              error={errors.fullName}
+              containerStyle={styles.inputContainer}
+            />
+            <InputField
+              placeholder="Email Address"
+              value={email}
+              onChangeText={(t) => { setEmail(t); setErrors((e) => ({ ...e, email: '' })); }}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              error={errors.email}
+              containerStyle={styles.inputContainer}
+            />
+            <InputField
+              placeholder="Phone Number"
+              value={phone}
+              onChangeText={(t) => { setPhone(t); setErrors((e) => ({ ...e, phone: '' })); }}
+              keyboardType="phone-pad"
+              error={errors.phone}
+              containerStyle={styles.inputContainer}
+            />
+            <InputField
+              placeholder="Password"
+              value={password}
+              onChangeText={(t) => { setPassword(t); setErrors((e) => ({ ...e, password: '' })); }}
+              secureTextEntry
+              autoCapitalize="none"
+              error={errors.password}
+              containerStyle={styles.inputContainer}
+            />
+            <InputField
+              placeholder="Confirm Password"
+              value={confirmPassword}
+              onChangeText={(t) => { setConfirmPassword(t); setErrors((e) => ({ ...e, confirmPassword: '' })); }}
+              secureTextEntry
+              autoCapitalize="none"
+              error={errors.confirmPassword}
+              containerStyle={styles.inputContainer}
+            />
+          </View>
+
+          {/* Activity card */}
+          <View style={styles.card}>
+            <Text style={styles.sectionLabel}>SELECT YOUR ACTIVITY</Text>
+            {errors.sports ? (
+              <Text style={styles.fieldError}>{errors.sports}</Text>
+            ) : null}
+            <View style={styles.sportsGrid}>
+              {SPORTS.map((sport) => {
+                const Icon = sport.icon;
+                const active = selectedSports.includes(sport.id);
+                return (
+                  <TouchableOpacity
+                    key={sport.id}
+                    style={[styles.sportTag, active && styles.sportTagActive]}
+                    onPress={() => toggleSport(sport.id)}
+                    activeOpacity={0.8}
+                  >
+                    <Icon
+                      color={active ? Colors.primary : Colors.textSecondary}
+                      size={14}
+                      strokeWidth={2}
+                    />
+                    <Text
+                      style={[styles.sportTagText, active && styles.sportTagTextActive]}
+                    >
+                      {sport.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Referral card */}
+          <View style={styles.card}>
+            <Text style={styles.sectionLabel}>REFERRAL CODE (OPTIONAL)</Text>
+            <InputField
+              placeholder="EX: PAASXO_2024"
+              value={referralCode}
+              onChangeText={setReferralCode}
+              autoCapitalize="characters"
+              containerStyle={styles.inputContainer}
+            />
+          </View>
+
+          {/* Hero image */}
+          <View style={styles.heroImageContainer}>
+            <Image
+              source={{
+                uri: 'https://images.pexels.com/photos/1552249/pexels-photo-1552249.jpeg?auto=compress&cs=tinysrgb&w=600',
+              }}
+              style={styles.heroImage}
+              resizeMode="cover"
+            />
+            <View style={styles.heroOverlay}>
+              <Text style={styles.heroOverlayText}>Unleash Your Potential</Text>
+            </View>
+          </View>
+
+          {/* General error */}
+          {errors.general ? (
+            <Text style={styles.generalError}>{errors.general}</Text>
+          ) : null}
+
+          {/* CTA */}
+          <Button
+            title="Finish Setup"
+            onPress={handleRegister}
+            loading={loading}
+            style={styles.finishButton}
+          />
+
+          {/* Sign in link */}
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Already have an account? </Text>
+            <TouchableOpacity onPress={() => router.push('/sign-in')} activeOpacity={0.7}>
+              <Text style={styles.footerLink}>Sign In</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: Colors.divider,
+    backgroundColor: Colors.white,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 8,
+  },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 10,
+    paddingBottom: 4,
+    gap: 4,
+  },
+  tabActive: {
+    backgroundColor: Colors.primaryLight,
+  },
+  tabLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: Colors.neutral400,
+  },
+  tabLabelActive: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: Colors.primary,
+  },
+  scroll: {
+    paddingHorizontal: 20,
+    paddingBottom: 110,
+    paddingTop: 8,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandName: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: Colors.primaryDark,
+    letterSpacing: 2,
+  },
+  title: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: Colors.text,
+    lineHeight: 44,
+    letterSpacing: -0.8,
+    marginBottom: 10,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 22,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  card: {
+    backgroundColor: Colors.white,
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  socialColumn: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  socialButton: {
+    width: '100%',
+  },
+  socialButtonSecond: {
+    width: '100%',
+    marginTop: 8,
+  },
+  socialIcon: {
+    width: 20,
+    height: 20,
+    marginRight: 8,
+  },
+  avatarOuter: {
+    width: 104,
+    height: 104,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  avatarRing: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.white,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    shadowColor: Colors.neutral900,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  avatarImage: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+  },
+  avatarPlaceholder: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: Colors.neutral100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  plusBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.white,
+  },
+  sectionLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    color: Colors.neutral500,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  inputContainer: {
+    marginBottom: 8,
+  },
+  sportsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  sportTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: Colors.neutral200,
+    backgroundColor: Colors.tagBg,
+  },
+  sportTagActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.tagBgSelected,
+  },
+  sportTagText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  sportTagTextActive: {
+    color: Colors.primary,
+  },
+  skillRow: {
+    flexDirection: 'row',
+    backgroundColor: Colors.neutral100,
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 10,
+  },
+  skillTab: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  skillTabActive: {
+    backgroundColor: Colors.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  skillTabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.neutral400,
+  },
+  skillTabTextActive: {
+    color: Colors.primary,
+    fontWeight: '700',
+  },
+  skillDesc: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  locationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  locationLeft: {
+    gap: 2,
+  },
+  locationTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  heroImageContainer: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    height: 160,
+    marginBottom: 20,
+    marginTop: 8,
+  },
+  heroImage: {
+    width: '100%',
+    height: '100%',
+  },
+  heroOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  heroOverlayText: {
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  fieldError: {
+    color: Colors.error,
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  generalError: {
+    color: Colors.error,
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  finishButton: {
+    marginBottom: 16,
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  footerText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+  footerLink: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+});

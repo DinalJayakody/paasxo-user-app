@@ -1,0 +1,263 @@
+export interface AuthResponse {
+  idToken: string;
+  refreshToken?: string;
+  user?: UserProfile;
+}
+
+export interface LoginPayload {
+  email: string;
+  password: string;
+}
+
+export interface RegisterPayload {
+  email: string;
+  password: string;
+  displayName: string;
+  phoneNumber: string;
+  sports: string[];
+  referralCode?: string;
+  profileImage?: {
+    uri: string;
+    name: string;
+    type: string;
+  };
+}
+
+export interface UserProfile {
+  id: string;
+  firebaseUid: string;
+  email: string;
+  password: string;
+  displayName: string;
+  phoneNumber: string;
+  sport: string | string[];
+  skillLevel: string;
+  locationAccess: boolean;
+  referralCode?: string;
+  bio?: string;
+  profileImageUrl?: string | { uri: string; name: string; type: string };
+  // extend with domain-specific fields
+}
+
+export type CreatePostPayload = {
+  caption: string;
+  media: any;
+  sport: string;
+  taggedUsers?: string[];
+  latitude?: number;
+  longitude?: number;
+  locationName?: string;
+  visibility?: 'public' | 'private';
+};
+
+export interface MatchOrganizer {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  rating?: number;
+  matchesPlayed?: number;
+}
+
+export interface MatchParticipant {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+}
+
+export interface MatchVenue {
+  id?: string;
+  name: string;
+  address?: string;
+  postcode?: string;
+  city?: string;
+  country?: string;
+  latitude?: number;
+  longitude?: number;
+  amenities?: string[];
+}
+
+// Shape actually returned by the Spring Boot backend's BookingResponse DTO
+// (com.pasxo.dto.booking.BookingResponse). This is a single futsal-slot
+// booking owned by the authenticated user - there is no multi-player
+// "match" concept (organizer/participants/payment) on the backend yet.
+// PENDING_VENDOR — created, awaiting venue acceptance (only organizer can see)
+// ACTIVE_MATCH   — venue accepted, visible to everyone in nearby/search
+// PENDING        — legacy alias for PENDING_VENDOR used by older backend versions
+// CONFIRMED      — legacy alias for ACTIVE_MATCH used by older backend versions
+export type BackendBookingStatus =
+  | 'PENDING_VENDOR'
+  | 'ACTIVE_MATCH'
+  | 'PENDING'
+  | 'CONFIRMED'
+  | 'CANCELLED';
+
+export interface BookingRecord {
+  id: number;
+  userId: string;
+  futsalId: number;
+  futsalName: string;
+  slotId: number;
+  slotDate: string; // e.g. "2026-06-16"
+  startTime: string; // e.g. "18:00:00"
+  endTime: string; // e.g. "19:00:00"
+  status: BackendBookingStatus;
+  bookedAt: string;
+  title?: string;
+  maxPlayers?: number;
+  minPlayers?: number;
+  joinedPlayersCount?: number;
+  players?: string[];
+  vendorStatus?: 'PENDING_VENDOR' | 'ACTIVE_MATCH';
+}
+
+// UI-facing model used by MatchDetailsScreen/CheckoutScreen/BookingStatusScreen.
+// Built from BookingRecord by parseMatchDetails(). Fields the backend doesn't
+// expose yet (organizer, participants, pricing, amenities, rules, images...)
+// are left undefined or given a generic placeholder, and are wired up for
+// real once the backend adds the corresponding attribute.
+export interface MatchDetails {
+  id: string;
+  futsalId?: number;
+  slotId?: number;
+  slotIds?: number[];
+  matchCode?: string;
+  title: string;
+  sportType: string;
+  format?: string;
+  level?: string;
+  images?: string[];
+  startDate?: string;
+  endDate?: string;
+  venue: MatchVenue;
+  organizer?: MatchOrganizer;
+  participants?: MatchParticipant[];
+  maxSpots?: number;
+  minPlayers?: number;
+  spotsLeft?: number;
+  joinedPlayers?: number;
+  pricePerSlot?: number;
+  slotCount?: number;
+  pricePerPlayer?: number;
+  serviceFeePercent?: number;
+  totalPrice?: number;
+  currencySymbol?: string;
+  rules?: string[];
+  description?: string;
+  bookingConfirmed?: boolean;
+  pitchLabel?: string;
+  creatorId?: string;
+  status?: BackendBookingStatus;
+  vendorStatus?: 'PENDING_VENDOR' | 'ACTIVE_MATCH';
+  bookedAt?: string;
+}
+
+export interface CreateBookingPayload {
+  futsalId: number;
+  slotId: number;
+  slotIds: number[];
+  title?: string;
+  maxPlayers?: number;
+  minPlayers?: number;
+  players?: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Tournaments
+// ---------------------------------------------------------------------------
+// Shapes below mirror com.pasxo.dto.booking.Tournament*Response exactly.
+// The backend supports: create/list/get tournament, create/list teams,
+// add/list team players, create/list matches. There is NO endpoint to
+// update a match score or to transition tournament/match status - those
+// fields exist on the backend entities (teamAScore/teamBScore, status) but
+// nothing writes to them yet. The frontend manages scoring + a richer
+// lifecycle locally (see src/utils/tournamentStorage.ts) until the backend
+// adds real persistence, while still trying the real REST call first so it
+// upgrades automatically the day that endpoint exists.
+
+export interface TournamentRecord {
+  id: number;
+  futsalId: number;
+  name: string;
+  description?: string;
+  date: string; // LocalDate, e.g. "2026-06-20"
+  createdBy: string; // firebaseUid of the creator
+  status: string; // backend always sends "ACTIVE" today
+  slotIds: number[];
+}
+
+export interface TournamentTeamRecord {
+  id: number;
+  name: string;
+  playerCount: number;
+}
+
+export interface TournamentPlayerRecord {
+  id: number;
+  playerFirebaseUid: string;
+  playerDisplayName?: string;
+  playerEmail?: string;
+}
+
+export type TournamentMatchStatus = 'SCHEDULED' | 'LIVE' | 'COMPLETED';
+
+export interface TournamentMatchRecord {
+  id: number;
+  teamAId: number;
+  teamBId: number;
+  slotId?: number;
+  slotDate?: string;
+  startTime?: string;
+  endTime?: string;
+  status: string; // backend always sends "SCHEDULED" today
+  teamAScore?: number;
+  teamBScore?: number;
+}
+
+// Request payloads - match com.pasxo.dto.booking.Tournament*Request exactly.
+export interface CreateTournamentPayload {
+  name: string;
+  description?: string;
+  date: string; // ISO date "2026-06-20"
+  slotIds?: number[];
+}
+
+export interface CreateTournamentTeamPayload {
+  name: string;
+}
+
+export interface AddTournamentPlayerPayload {
+  playerFirebaseUid: string;
+}
+
+export interface CreateTournamentMatchPayload {
+  teamAId: number;
+  teamBId: number;
+  slotId?: number;
+}
+
+// UI-facing, enriched models used by the tournament screens. team/player
+// flair (color, emoji) is generated client-side purely for presentation.
+export interface TournamentTeamUI extends TournamentTeamRecord {
+  players: TournamentPlayerRecord[];
+  color: string;
+  emoji: string;
+}
+
+export interface TournamentMatchUI extends TournamentMatchRecord {
+  teamA?: TournamentTeamUI;
+  teamB?: TournamentTeamUI;
+  // Derived client-side from the local score/status cache, not the backend.
+  derivedStatus: TournamentMatchStatus;
+}
+
+export type TournamentLifecycle = 'UPCOMING' | 'LIVE' | 'COMPLETED';
+
+export interface TournamentUI extends TournamentRecord {
+  venueName?: string;
+  teams: TournamentTeamUI[];
+  matches: TournamentMatchUI[];
+  isOwner: boolean;
+  // Derived client-side from match completion / date, not the backend's
+  // static "ACTIVE" status.
+  lifecycle: TournamentLifecycle;
+}

@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "Paasxo",
+    "slug": "paasxo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/logo.jpeg",
+    "scheme": "paasxo",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow access to camera",
+        "NSPhotoLibraryUsageDescription": "Allow access to photos"
+      },
+      "supportsTablet": true,
+      "bundleIdentifier": "com.paasxo.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/logo.jpeg"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you share them with your friends."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "The app accesses your camera to let you share your photos with your friends."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "The app accesses your location to let you share your location with your friends."
+        }
+      ],
+      "expo-router",
+      "expo-font",
+      "expo-web-browser",
+      "expo-video"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "android": {
+      "package": "com.paasxo.app"
+    }
+  }
+}
