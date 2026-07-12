@@ -245,7 +245,7 @@ const FeedScreen = () => {
     () => [
       { id: 'team', value: '32', label: 'Total Teams' },
       { id: 'matches', value: '128', label: 'Matches' },
-      { id: 'prize', value: '$15k', label: 'Prize Pool' },
+      { id: 'prize', value: 'LKR 15k', label: 'Prize Pool' },
     ],
     []
   );

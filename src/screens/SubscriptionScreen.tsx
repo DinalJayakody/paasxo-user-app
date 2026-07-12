@@ -163,7 +163,7 @@ export default function SubscriptionScreen() {
             <View style={[styles.planCard, styles.planCardPrimary]}>
               <View style={styles.planCardHeader}>
                 <Shield color={Colors.primary} size={20} strokeWidth={2} />
-                <Text style={styles.planCardTitle}>Monthly — £9.99 / mo</Text>
+                <Text style={styles.planCardTitle}>Monthly — LKR 9.99 / mo</Text>
               </View>
               <Text style={styles.planCardDesc}>
                 Full access, auto-renews monthly. Cancel anytime.
@@ -228,7 +228,7 @@ export default function SubscriptionScreen() {
             </View>
 
             <Button
-              title={loading ? 'Processing…' : 'Pay £9.99 / month'}
+              title={loading ? 'Processing…' : 'Pay LKR 9.99 / month'}
               onPress={handlePay}
               loading={loading}
               style={{ marginBottom: 12 }}

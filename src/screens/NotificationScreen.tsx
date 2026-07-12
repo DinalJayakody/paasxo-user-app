@@ -114,7 +114,7 @@ function NotificationCard({
               <Text style={styles.snapText}>{snap.currentPlayers}/{snap.maxPlayers} players</Text>
             )}
             {snap.entryFeePerPlayer && (
-              <Text style={styles.snapText}>£{snap.entryFeePerPlayer}/player</Text>
+              <Text style={styles.snapText}>LKR {snap.entryFeePerPlayer}/player</Text>
             )}
           </View>
         )}
@@ -241,6 +241,10 @@ export default function NotificationScreen() {
   const handlePress = async (n: NotificationResponse) => {
     await markRead(n);
     if (n.bookingId && n.invitationStatus === 'JOIN_COMPLETED') {
+      router.push(`/match/${n.bookingId}` as any);
+    } else if (n.bookingId && (n.type === 'BOOKING_CONFIRMED' || n.type === 'BOOKING_REJECTED')) {
+      // MatchDetailsScreen already branches on ACTIVE_MATCH/CANCELLED, so it's the
+      // right landing page for either a vendor acceptance or rejection.
       router.push(`/match/${n.bookingId}` as any);
     }
   };

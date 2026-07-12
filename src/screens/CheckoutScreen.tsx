@@ -62,7 +62,7 @@ export default function CheckoutScreen({ matchId }: CheckoutScreenProps) {
     );
   }
 
-  const sym = match.currencySymbol ?? '£';
+  const sym = match.currencySymbol ?? 'LKR ';
   const pricePerSlot = match.pricePerSlot ?? 0;
   const slotCount = match.slotCount ?? 1;
   const priceKnown = match.totalPrice != null || match.pricePerSlot != null;

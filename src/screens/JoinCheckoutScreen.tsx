@@ -81,7 +81,7 @@ export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], 
     );
   }
 
-  const sym = match.currencySymbol ?? '£';
+  const sym = match.currencySymbol ?? 'LKR ';
   const totalPrice = match.totalPrice ?? match.pricePerSlot ?? 0;
   const maxSpots = match.maxSpots;
 

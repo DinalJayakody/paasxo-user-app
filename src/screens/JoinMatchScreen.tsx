@@ -277,7 +277,7 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
     );
   }
 
-  const sym = match.currencySymbol ?? '£';
+  const sym = match.currencySymbol ?? 'LKR ';
   const totalPrice = match.totalPrice ?? match.pricePerSlot ?? 0;
   const slotCount = match.slotCount ?? 1;
   const maxSpots = match.maxSpots;

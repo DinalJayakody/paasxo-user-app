@@ -304,7 +304,7 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total Paid</Text>
             <Text style={styles.totalAmount}>
-              {match.currencySymbol}{match.totalPrice.toFixed(2)}
+              {match.currencySymbol ?? 'LKR '}{match.totalPrice.toFixed(2)}
             </Text>
           </View>
         )}

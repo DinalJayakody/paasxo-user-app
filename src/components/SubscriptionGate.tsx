@@ -43,7 +43,7 @@ export function SubscriptionGate({ children, feature = 'this feature' }: Props) 
             <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.optionGrad}>
               <Zap color={Colors.warning} size={18} strokeWidth={2.5} fill={Colors.warning} />
               <View style={styles.optionText}>
-                <Text style={styles.optionTitle}>Subscribe — £9.99 / mo</Text>
+                <Text style={styles.optionTitle}>Subscribe — LKR 9.99 / mo</Text>
                 <Text style={styles.optionDesc}>Full access + 1-month free trial available</Text>
               </View>
             </LinearGradient>
@@ -58,7 +58,7 @@ export function SubscriptionGate({ children, feature = 'this feature' }: Props) 
             <View style={styles.optionOutline}>
               <CreditCard color={Colors.white} size={18} strokeWidth={2} />
               <View style={styles.optionText}>
-                <Text style={styles.optionTitle}>One-time Payment — £2.99</Text>
+                <Text style={styles.optionTitle}>One-time Payment — LKR 2.99</Text>
                 <Text style={styles.optionDesc}>Single event creation, no commitment</Text>
               </View>
             </View>

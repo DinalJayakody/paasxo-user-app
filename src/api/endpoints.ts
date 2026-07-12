@@ -128,20 +128,9 @@ export const ENDPOINTS = {
     DELETE: (id: string) => `/activities/${id}`,
   },
 
-  // Vendor-side endpoints — used by the vendor app to accept/reject booking requests.
-  // The backend sends a push notification to the venue's device when a booking is created
-  // with status PENDING_VENDOR. The vendor calls ACCEPT or REJECT; ACCEPT transitions
-  // the booking to ACTIVE_MATCH and makes it visible in the public nearby/search feed.
-  VENDOR: {
-    PENDING_BOOKINGS: '/vendor/bookings/pending',
-    MY_VENUE_BOOKINGS: '/vendor/bookings',
-    ACCEPT: (id: string | number) => `/vendor/bookings/${id}/accept`,
-    REJECT: (id: string | number) => `/vendor/bookings/${id}/reject`,
-    NOTIFICATIONS: '/vendor/notifications',
-    NOTIFICATION_UNREAD_COUNT: '/vendor/notifications/unread-count',
-    MARK_NOTIFICATION_READ: (id: string | number) => `/vendor/notifications/${id}/read`,
-    MARK_ALL_READ: '/vendor/notifications/read-all',
-  },
+  // Vendor-only actions (accept/reject a booking request, vendor notifications feed) live
+  // in the Vendor App (vendor-app/src/api/*), not here — this app is the customer-facing
+  // surface only. See vendor-app's ENDPOINTS.bookings.acceptAsVendor/rejectAsVendor.
 
   SOCIAL: {
     CREATE_POST: '/social/posts',

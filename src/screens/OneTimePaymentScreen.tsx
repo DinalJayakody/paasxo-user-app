@@ -67,7 +67,7 @@ export default function OneTimePaymentScreen() {
         <LinearGradient colors={[Colors.neutral800, Colors.neutral900]} style={styles.hero}>
           <CreditCard color={Colors.warning} size={32} strokeWidth={1.8} />
           <Text style={styles.heroTitle}>Single Event Access</Text>
-          <Text style={styles.heroDesc}>Pay £2.99 once to create one match or tournament. No subscription required.</Text>
+          <Text style={styles.heroDesc}>Pay LKR 2.99 once to create one match or tournament. No subscription required.</Text>
         </LinearGradient>
 
         <View style={styles.featureList}>
@@ -102,7 +102,7 @@ export default function OneTimePaymentScreen() {
           </Text>
         </View>
 
-        <Button title={loading ? 'Processing…' : 'Pay £2.99'} onPress={handlePay} loading={loading} style={{ marginBottom: 16 }} />
+        <Button title={loading ? 'Processing…' : 'Pay LKR 2.99'} onPress={handlePay} loading={loading} style={{ marginBottom: 16 }} />
         <TouchableOpacity onPress={() => router.push('/subscription' as any)} activeOpacity={0.7} style={styles.subLink}>
           <Text style={styles.subLinkText}>Want unlimited access? View subscription plans →</Text>
         </TouchableOpacity>

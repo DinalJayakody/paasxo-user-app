@@ -576,7 +576,13 @@ export default function ExploreScreen() {
             sport: sportFilter !== 'ALL' ? sportFilter : undefined,
             date: filterDate, freeOnly: freeOnly || undefined,
           });
-          setResults(raw.map((b: any): GameResult => ({
+          // Defensive: never show a match still awaiting vendor approval as joinable,
+          // even though the backend already excludes it — mirrors HomeScreen's filtering.
+          const liveOnly = raw.filter((b: any) => {
+            const s = b.status ?? b.vendorStatus;
+            return s !== 'PENDING_VENDOR' && s !== 'PENDING';
+          });
+          setResults(liveOnly.map((b: any): GameResult => ({
             id: String(b.id ?? b._id),
             title: b.title ?? 'Match',
             sport: b.sport ?? 'FUTSAL',
@@ -671,7 +677,7 @@ export default function ExploreScreen() {
   // ─── Card renderers ──────────────────────────────────────────────────────
   const renderVenueCard = (venue: VenueResult) => {
     const imageUri = resolveImage(venue);
-    const priceLabel = venue.pricePerSlot != null ? `£${venue.pricePerSlot.toFixed(2)}/slot` : 'Free';
+    const priceLabel = venue.pricePerSlot != null ? `LKR ${venue.pricePerSlot.toFixed(2)}/slot` : 'Free';
     return (
       <TouchableOpacity
         key={venue.id}
@@ -730,9 +736,9 @@ export default function ExploreScreen() {
       : '';
     const feeLabel =
       game.pricePerPlayer != null
-        ? `£${game.pricePerPlayer.toFixed(2)}/player`
+        ? `LKR ${game.pricePerPlayer.toFixed(2)}/player`
         : game.totalPrice != null
-        ? `£${game.totalPrice.toFixed(2)} total`
+        ? `LKR ${game.totalPrice.toFixed(2)} total`
         : 'Free';
     return (
       <TouchableOpacity
@@ -801,7 +807,7 @@ export default function ExploreScreen() {
 
   const renderTrainerCard = (trainer: TrainerResult) => {
     const imageUri = resolveImage(trainer);
-    const priceLabel = trainer.pricePerSession != null ? `£${trainer.pricePerSession.toFixed(2)}/session` : 'Free';
+    const priceLabel = trainer.pricePerSession != null ? `LKR ${trainer.pricePerSession.toFixed(2)}/session` : 'Free';
     return (
       <TouchableOpacity key={trainer.id} style={styles.resultCard} activeOpacity={0.88} onPress={() => openSheet(trainer)}>
         {imageUri ? (
@@ -1355,7 +1361,7 @@ export default function ExploreScreen() {
               )}
               {'pricePerSlot' in selectedItem && (selectedItem as VenueResult).pricePerSlot != null && (
                 <Text style={styles.sheetPrice}>
-                  £{(selectedItem as VenueResult).pricePerSlot!.toFixed(2)}/slot
+                  LKR {(selectedItem as VenueResult).pricePerSlot!.toFixed(2)}/slot
                 </Text>
               )}
               <TouchableOpacity

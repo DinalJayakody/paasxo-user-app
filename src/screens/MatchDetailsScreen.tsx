@@ -497,7 +497,7 @@ function JoinerView({
 
           {/* Price info row — total cost + per-player split */}
           {(match.totalPrice != null || match.pricePerSlot != null) && (() => {
-            const sym = match.currencySymbol ?? '£';
+            const sym = match.currencySymbol ?? 'LKR ';
             const total = match.totalPrice ?? match.pricePerSlot ?? 0;
             const slotCount = match.slotCount ?? 1;
             const perPlayer =
@@ -628,9 +628,9 @@ function JoinerView({
           <Text style={styles.bottomBarLabel}>TOTAL PRICE</Text>
           <Text style={styles.bottomBarPrice}>
             {match.totalPrice != null
-              ? `${match.currencySymbol ?? '£'}${match.totalPrice.toFixed(2)}`
+              ? `${match.currencySymbol ?? 'LKR '}${match.totalPrice.toFixed(2)}`
               : match.pricePerSlot != null
-              ? `${match.currencySymbol ?? '£'}${match.pricePerSlot.toFixed(2)}`
+              ? `${match.currencySymbol ?? 'LKR '}${match.pricePerSlot.toFixed(2)}`
               : 'TBD'}
           </Text>
           {(() => {
@@ -642,7 +642,7 @@ function JoinerView({
                 : null);
             return perPlayer != null ? (
               <Text style={styles.bottomBarPerPlayer}>
-                {`${match.currencySymbol ?? '£'}${Number(perPlayer).toFixed(2)} / player`}
+                {`${match.currencySymbol ?? 'LKR '}${Number(perPlayer).toFixed(2)} / player`}
               </Text>
             ) : null;
           })()}
@@ -756,6 +756,19 @@ function OwnerView({
           </View>
         )}
 
+        {/* Vendor rejection banner */}
+        {isCancelled && match.rejectionReason && (
+          <View style={[styles.vendorBanner, { backgroundColor: Colors.error + '12', borderColor: Colors.error + '30' }]}>
+            <View style={[styles.vendorBannerIcon, { backgroundColor: Colors.error + '20' }]}>
+              <CircleX color={Colors.error} size={20} strokeWidth={2} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.vendorBannerTitle, { color: Colors.error }]}>Request Declined by Venue</Text>
+              <Text style={styles.vendorBannerText}>{match.rejectionReason}</Text>
+            </View>
+          </View>
+        )}
+
         <View style={styles.pitchPreviewWrap}>
           {match.images && match.images.length > 0 ? (
             <Image source={{ uri: match.images[0] }} style={styles.pitchPreviewImage} resizeMode="cover" />
@@ -810,7 +823,7 @@ function OwnerView({
             </Text>
           </View>
           {(() => {
-            const sym = match.currencySymbol ?? '£';
+            const sym = match.currencySymbol ?? 'LKR ';
             const total = match.totalPrice ?? match.pricePerSlot;
             const slotCount = match.slotCount ?? 1;
             const perPlayer =

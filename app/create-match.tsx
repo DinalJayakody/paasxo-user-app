@@ -506,7 +506,7 @@ function VenueItem({ item, index, onSelect }: { item: any; index: number; onSele
         </View>
         {item.pricePerSlot != null && (
           <View style={venueStyles.priceBadge}>
-            <Text style={venueStyles.priceText}>£{item.pricePerSlot}</Text>
+            <Text style={venueStyles.priceText}>LKR {item.pricePerSlot}</Text>
             <Text style={venueStyles.perSlot}>/slot</Text>
           </View>
         )}
@@ -593,7 +593,7 @@ export default function CreateMatch() {
       setSlots(receivedSlots.map((slot: any) => ({
         ...slot,
         time: slot.time || (slot.startTime ? `${slot.startTime.slice(0, 5)} - ${slot.endTime?.slice(0, 5) ?? ''}` : ''),
-        status: slot.status || (slot.available ? 'available' : 'booked') || 'booked',
+        status: slot.status ? String(slot.status).toLowerCase() : (slot.available ? 'available' : 'booked'),
       })));
       if (typeof data.pricePerSlot === 'number') { setVenuePrice(data.pricePerSlot); setPricePerSlot(data.pricePerSlot.toFixed(2)); }
       else if (typeof data.price === 'number') { setVenuePrice(data.price); setPricePerSlot(data.price.toFixed(2)); }
@@ -844,9 +844,9 @@ export default function CreateMatch() {
           <>
             {/* Slot price */}
             <View style={styles.section}>
-              <Text style={styles.label}>Total Slot Price (£)</Text>
+              <Text style={styles.label}>Total Slot Price (LKR)</Text>
               <View style={styles.inputWithIcon}>
-                <Text style={styles.currencySymbol}>£</Text>
+                <Text style={styles.currencySymbol}>LKR</Text>
                 <TextInput
                   style={[styles.input, { flex: 1, marginLeft: 8, borderWidth: 0 }]}
                   placeholder="0.00"
@@ -914,12 +914,12 @@ export default function CreateMatch() {
 
                 <View style={styles.priceBreakdownRow}>
                   <Text style={styles.pbLabel}>Total slot cost</Text>
-                  <Text style={styles.pbValue}>£{totalCost.toFixed(2)}</Text>
+                  <Text style={styles.pbValue}>LKR {totalCost.toFixed(2)}</Text>
                 </View>
                 <View style={styles.priceBreakdownRow}>
                   <Text style={styles.pbLabel}>Per player (if {maxP} join)</Text>
                   <Text style={[styles.pbValue, { color: Colors.primary, fontWeight: '800' }]}>
-                    £{perPlayer.toFixed(2)} / player
+                    LKR {perPlayer.toFixed(2)} / player
                   </Text>
                 </View>
                 {minPlayersValid && emptySlotsCost > 0 && (
@@ -929,7 +929,7 @@ export default function CreateMatch() {
                       {`(if only ${minP} join → you cover ${maxP - minP} empty ${maxP - minP === 1 ? 'slot' : 'slots'})`}
                     </Text>
                     <Text style={[styles.pbValue, { color: '#EA580C' }]}>
-                      £{emptySlotsCost.toFixed(2)}
+                      LKR {emptySlotsCost.toFixed(2)}
                     </Text>
                   </View>
                 )}
@@ -938,7 +938,7 @@ export default function CreateMatch() {
                 <View style={styles.pbInfoRow}>
                   <AlertCircle color="#EA580C" size={13} strokeWidth={2} />
                   <Text style={styles.pbInfoText}>
-                    {'You pay £'}
+                    {'You pay LKR '}
                     {totalCost.toFixed(2)}
                     {' upfront — held securely in escrow. Players reimburse their share when they join. Funds release to the venue 48 h before the match.'}
                   </Text>

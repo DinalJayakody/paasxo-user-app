@@ -108,6 +108,7 @@ export interface BookingRecord {
   joinedPlayersCount?: number;
   players?: string[];
   vendorStatus?: 'PENDING_VENDOR' | 'ACTIVE_MATCH';
+  rejectionReason?: string;
 }
 
 // UI-facing model used by MatchDetailsScreen/CheckoutScreen/BookingStatusScreen.
@@ -148,6 +149,7 @@ export interface MatchDetails {
   creatorId?: string;
   status?: BackendBookingStatus;
   vendorStatus?: 'PENDING_VENDOR' | 'ACTIVE_MATCH';
+  rejectionReason?: string;
   bookedAt?: string;
 }
 

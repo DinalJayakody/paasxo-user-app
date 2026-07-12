@@ -197,7 +197,7 @@ export default function HomeScreen() {
       const maxP = item.maxSpots ?? item.totalSpots ?? item.maxPlayers;
       const perPlayer =
         totalBookingPrice != null && maxP && maxP > 0
-          ? `£${(totalBookingPrice / maxP).toFixed(2)}`
+          ? `LKR ${(totalBookingPrice / maxP).toFixed(2)}`
           : undefined;
       return {
         id: String(item.id ?? item._id ?? item.bookingId ?? index),
@@ -217,7 +217,7 @@ export default function HomeScreen() {
         startDate: combinedStart,
         endDate: item.endDate || item.end ||
           (item.slotDate && item.endTime ? `${item.slotDate}T${item.endTime}` : undefined),
-        price: totalBookingPrice == null ? 'Free' : `£${totalBookingPrice.toFixed(2)}`,
+        price: totalBookingPrice == null ? 'Free' : `LKR ${totalBookingPrice.toFixed(2)}`,
         pricePerPlayer: perPlayer,
         spotsLeft: item.spotsLeft ?? item.availableSpots ?? 0,
         maxSpots: maxP,

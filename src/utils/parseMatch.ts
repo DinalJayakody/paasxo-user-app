@@ -78,7 +78,7 @@ export const parseMatchDetails = (raw: any): MatchDetails => {
     pricePerPlayer: data.pricePerPlayer ?? undefined,
     serviceFeePercent: data.serviceFeePercent ?? 0,
     totalPrice: data.totalPrice ?? data.pricePerSlot ?? data.price,
-    currencySymbol: data.currencySymbol || '£',
+    currencySymbol: data.currencySymbol || 'LKR ',
     rules: Array.isArray(data.rules) && data.rules.length > 0 ? data.rules : GENERIC_RULES,
     description: data.description,
     creatorId: data.userId,
@@ -90,6 +90,7 @@ export const parseMatchDetails = (raw: any): MatchDetails => {
       : status === 'ACTIVE_MATCH' || status === 'CONFIRMED' ? 'ACTIVE_MATCH'
       : undefined
     ),
+    rejectionReason: data.rejectionReason,
     bookedAt: data.bookedAt,
   };
 };
