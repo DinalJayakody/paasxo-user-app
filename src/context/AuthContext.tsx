@@ -6,10 +6,14 @@ import { socialApi } from '../api/socialApi';
 import { AUTH_LOGOUT_EVENT } from '../api/axios';
 import { AuthResponse, LoginPayload, RegisterPayload, UserProfile } from '../types/api';
 import axiosInstance from '../api/axios';
+import { CompleteProfileModal } from '../components/CompleteProfileModal';
 
 type AuthContextShape = {
   user: UserProfile | null;
   loading: boolean;
+  // True only for a first-time Google sign-in that hasn't picked an
+  // activity yet. Drives the CompleteProfileModal rendered below.
+  needsProfileCompletion: boolean;
   signIn: (payload: LoginPayload) => Promise<void>;
   signUp: (payload: RegisterPayload) => Promise<void>;
   signOut: () => Promise<void>;
@@ -18,6 +22,8 @@ type AuthContextShape = {
   signInWithGoogle: (firebaseIdToken: string) => Promise<void>;
   // completeSocialSignIn is the lower-level helper kept for Apple and future providers.
   completeSocialSignIn: (provider: 'google' | 'apple', token: string, appleUser?: any) => Promise<void>;
+  // Saves the activity + referral code collected by CompleteProfileModal.
+  completeProfile: (sports: string[], referralCode?: string) => Promise<void>;
 };
 
 export const AuthContext = createContext<AuthContextShape>({} as AuthContextShape);
@@ -156,11 +162,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // ─── Complete profile (post-Google-signup popup) ─────────────────────────
+
+  const completeProfile = async (sports: string[], referralCode?: string): Promise<void> => {
+    const updated = await authApi.completeProfile({ sports, referralCode });
+    setUser(updated);
+    await AsyncStorage.setItem('user', JSON.stringify(updated));
+  };
+
+  const needsProfileCompletion = !!user && user.profileCompleted === false;
+
   return (
     <AuthContext.Provider
-      value={{ user, loading, signIn, signUp, signOut, signInWithGoogle, completeSocialSignIn }}
+      value={{
+        user,
+        loading,
+        needsProfileCompletion,
+        signIn,
+        signUp,
+        signOut,
+        signInWithGoogle,
+        completeSocialSignIn,
+        completeProfile,
+      }}
     >
       {children}
+      <CompleteProfileModal
+        visible={needsProfileCompletion}
+        displayName={user?.displayName}
+        onSubmit={completeProfile}
+        onSignOut={signOut}
+      />
     </AuthContext.Provider>
   );
 };

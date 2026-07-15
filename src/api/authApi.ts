@@ -1,6 +1,6 @@
 import axiosInstance from './axios';
 import { ENDPOINTS } from './endpoints';
-import { LoginPayload, RegisterPayload, AuthResponse } from '../types/api';
+import { LoginPayload, RegisterPayload, AuthResponse, CompleteProfilePayload, UserProfile } from '../types/api';
 
 export const authApi = {
     login: async (payload: LoginPayload): Promise<AuthResponse> => {
@@ -53,6 +53,13 @@ formData.append("profileImage", {
   // Placeholder for refresh token call
   refreshToken: async (refreshToken: string) => {
     const { data } = await axiosInstance.post(ENDPOINTS.AUTH.REFRESH, { refreshToken });
+    return data;
+  },
+
+  // Called from CompleteProfileModal after a first-time Google sign-in to
+  // save the activity/referral code the OAuth flow never collected.
+  completeProfile: async (payload: CompleteProfilePayload): Promise<UserProfile> => {
+    const { data } = await axiosInstance.put(ENDPOINTS.AUTH.COMPLETE_PROFILE, payload);
     return data;
   },
 };

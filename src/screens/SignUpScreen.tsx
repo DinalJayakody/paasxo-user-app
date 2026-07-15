@@ -11,6 +11,7 @@ import {
   Animated,
   Easing,
   useWindowDimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -18,29 +19,27 @@ import {
   ArrowLeft,
   LogIn,
   UserPlus,
-  Trophy,
-  Users,
-  Dumbbell,
-  Activity,
 } from 'lucide-react-native';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+import { GoogleAuthProvider, signInWithCredential, signInWithPopup } from 'firebase/auth';
 import { Colors } from '../styles/colors';
 import { Button } from '../components/Button';
 import { InputField } from '../components/InputField';
 import { useContext, useRef, useEffect } from 'react';
-import { AuthContext } from '../context/AuthContext';
+import { AuthContext, useAuth } from '../context/AuthContext';
 import { RegisterPayload } from '../types/api';
+import { SPORTS } from '../constants/sports';
+import { GOOGLE_CLIENT_IDS, GOOGLE_CONFIGURED } from '../config/googleAuth';
+import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
+
+// Required by expo-auth-session on web to close the auth popup and return
+// the result to the app. Harmless to call from multiple screens/modules.
+WebBrowser.maybeCompleteAuthSession();
 
 // --- Validation helpers ---
 const isValidEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const isValidPhone = (v: string) => /^\+?[\d\s\-()]{7,}$/.test(v);
-
-const SPORTS = [
-  { id: 'FUTSAL', label: 'Futsal', icon: Users },
-  { id: 'CRICKET', label: 'Cricket', icon: Trophy },
-  { id: 'PICKLEBALL', label: 'Pickleball', icon: Dumbbell },
-  { id: 'PADDLEBALL', label: 'Paddleball', icon: Activity },
-  { id: 'TRAINER_GYM', label: 'Trainer (Gym)', icon: Dumbbell },
-];
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -69,7 +68,59 @@ export default function SignUpScreen() {
   const [selectedSports, setSelectedSports] = useState<string[]>(['FUTSAL']);
   const [referralCode, setReferralCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [socialError, setSocialError] = useState<string | undefined>();
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const { signInWithGoogle } = useAuth();
+
+  // ─── expo-auth-session Google hook (native only) ──────────────────────────
+  // On web we use Firebase signInWithPopup instead (see handleGoogleLogin).
+  const [, googleResponse, googlePromptAsync] = Google.useAuthRequest({
+    webClientId:     GOOGLE_CLIENT_IDS.WEB,
+    iosClientId:     GOOGLE_CLIENT_IDS.IOS,
+    androidClientId: GOOGLE_CLIENT_IDS.ANDROID,
+  });
+
+  // ─── Handle native Google OAuth response ─────────────────────────────────
+  useEffect(() => {
+    if (!googleResponse) return;
+
+    if (googleResponse.type === 'success') {
+      const { authentication } = googleResponse;
+      (async () => {
+        try {
+          const firebaseAuth = getFirebaseAuth();
+          if (firebaseAuth && FIREBASE_CONFIGURED) {
+            const credential = GoogleAuthProvider.credential(
+              authentication?.idToken ?? null,
+              authentication?.accessToken ?? null
+            );
+            const result = await signInWithCredential(firebaseAuth, credential);
+            const firebaseIdToken = await result.user.getIdToken();
+            await signInWithGoogle(firebaseIdToken);
+          } else {
+            const googleIdToken = authentication?.idToken;
+            if (!googleIdToken) throw new Error('No ID token in Google response');
+            await signInWithGoogle(googleIdToken);
+          }
+          // New Google accounts are marked profileCompleted=false by the
+          // backend — AuthProvider shows CompleteProfileModal automatically,
+          // so it's safe to head straight to /home either way.
+          router.replace('/home');
+        } catch (err: any) {
+          setSocialError(err?.message ?? 'Google sign-in failed. Please try again.');
+        } finally {
+          setGoogleLoading(false);
+        }
+      })();
+    } else if (googleResponse.type === 'error' || googleResponse.type === 'dismiss') {
+      setGoogleLoading(false);
+      if (googleResponse.type === 'error') {
+        setSocialError('Google sign-in was cancelled or failed.');
+      }
+    }
+  }, [googleResponse]);
 
   const toggleSport = (id: string) => {
     setSelectedSports((prev) =>
@@ -136,10 +187,41 @@ await auth.signUp(payload);
     }
   };
 
-  // Google / Apple sign-up routes through the sign-in screen where the
-  // OAuth hook lives. The backend creates a new account automatically
-  // for first-time social sign-ins.
-  const handleGoogleLogin = () => router.push('/sign-in');
+  // ─── Google button handler ────────────────────────────────────────────────
+  // Same OAuth flow as SignInScreen. The backend creates a new account
+  // automatically for first-time Google sign-ins (see AuthService#loginWithGoogle)
+  // and flags it profileCompleted=false so the app prompts for activity +
+  // referral code right after landing on /home.
+  const handleGoogleLogin = async () => {
+    if (!GOOGLE_CONFIGURED) {
+      setSocialError('Google sign-in not yet configured. Fill in GOOGLE_CLIENT_IDS in src/config/googleAuth.ts.');
+      return;
+    }
+
+    setSocialError(undefined);
+    setGoogleLoading(true);
+
+    if (Platform.OS === 'web') {
+      try {
+        if (!FIREBASE_CONFIGURED) throw new Error('Firebase config is not set up yet.');
+        const firebaseAuth = getFirebaseAuth()!;
+        const provider = new GoogleAuthProvider();
+        provider.addScope('profile');
+        provider.addScope('email');
+        const result = await signInWithPopup(firebaseAuth, provider);
+        const firebaseIdToken = await result.user.getIdToken();
+        await signInWithGoogle(firebaseIdToken);
+        router.replace('/home');
+      } catch (err: any) {
+        setSocialError(err?.message ?? 'Google sign-in failed. Please try again.');
+        setGoogleLoading(false);
+      }
+    } else {
+      // Native: expo-auth-session handles the OAuth flow.
+      // The response is handled in the useEffect above.
+      await googlePromptAsync();
+    }
+  };
 
   /* Avatar picker guide (Expo)
      - Install: `expo install expo-image-picker`
@@ -218,12 +300,22 @@ await auth.signUp(payload);
 
             <View style={styles.socialColumn}>
               <Button
-                title="Continue with Google"
+                title={googleLoading ? 'Signing in…' : 'Continue with Google'}
                 onPress={handleGoogleLogin}
                 variant="secondary"
                 style={styles.socialButton}
-                icon={<Image source={{ uri: 'https://img.icons8.com/color/48/000000/google-logo.png' }} style={styles.socialIcon} />}
+                disabled={googleLoading}
+                icon={
+                  googleLoading ? (
+                    <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 8 }} />
+                  ) : (
+                    <Image source={{ uri: 'https://img.icons8.com/color/48/000000/google-logo.png' }} style={styles.socialIcon} />
+                  )
+                }
               />
+              {socialError ? (
+                <Text style={styles.socialError}>{socialError}</Text>
+              ) : null}
 
               <Button
                 title="Continue with Apple"
@@ -667,6 +759,13 @@ const styles = StyleSheet.create({
     color: Colors.error,
     fontSize: 13,
     textAlign: 'center',
+    marginBottom: 8,
+  },
+  socialError: {
+    color: Colors.error,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: -4,
     marginBottom: 8,
   },
   finishButton: {

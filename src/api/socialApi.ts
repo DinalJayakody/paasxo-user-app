@@ -42,39 +42,24 @@ export const socialApi = {
 
 /*
   Implementation Notes:
-  
-  1. Google Sign-In Flow:
-     - Frontend gets idToken from Google SDK
-     - Sends idToken to backend /api/auth/social/google
-     - Backend validates token with Google using credentials
-     - Backend creates/updates user and returns JWT tokens
-     
+
+  1. Google Sign-In Flow (see SignInScreen.tsx / SignUpScreen.tsx):
+     - Screen runs expo-auth-session's Google OAuth flow, exchanges the
+       result for a Firebase credential, and gets a Firebase ID token via
+       result.user.getIdToken().
+     - That Firebase ID token is the `idToken` sent here to
+       com.pasxo.controller.AuthController#loginWithGoogle (POST /auth/login-google).
+     - Backend verifies it with FirebaseAuth.verifyIdToken, then finds-or-creates
+       the Mongo user (com.pasxo.service.AuthService#loginWithGoogle).
+     - First-time Google users are created with profileCompleted=false (no
+       sports/referralCode yet) — AuthContext shows CompleteProfileModal
+       until authApi.completeProfile is called.
+
   2. Apple Sign-In Flow:
-     - Similar to Google but Apple ID tokens are JWTs themselves
-     - Apple returns user data (email, name) ONLY on first sign-in
-     - Must save this info because Apple won't send it again
-     - Tokens are time-limited; refresh required
-     
-  3. Backend Validation (Spring Boot example):
-     
-     @PostMapping("/api/auth/social/google")
-     public ResponseEntity<?> googleSignIn(@RequestBody GoogleTokenRequest req) {
-       // Verify idToken with Google
-       GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(...)
-         .setAudience(Collections.singletonList(GOOGLE_CLIENT_ID))
-         .build();
-       
-       IdToken idToken = verifier.verify(req.getIdToken());
-       String email = (String) idToken.getPayload().get("email");
-       
-       // Find or create user in database
-       User user = userRepository.findByEmail(email)
-         .orElseGet(() -> userRepository.save(new User(email)));
-       
-       // Generate JWT tokens
-       String accessToken = jwtProvider.generateAccessToken(user.getId());
-       String refreshToken = jwtProvider.generateRefreshToken(user.getId());
-       
-       return ResponseEntity.ok(new AuthResponse(accessToken, refreshToken, user));
-     }
+     - Similar to Google but Apple ID tokens are JWTs themselves.
+     - Apple returns user data (email, name) ONLY on first sign-in.
+     - Must save this info because Apple won't send it again.
+     - Tokens are time-limited; refresh required.
+     - NOT yet implemented on the backend (no /auth/social/apple endpoint) -
+       loginWithApple below will 404 until that's added.
 */

@@ -15,10 +15,14 @@ import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
 
 const firebaseConfig = {
-  apiKey:            'YOUR_API_KEY',
-  authDomain:        'YOUR_PROJECT_ID.firebaseapp.com',
-  projectId:         'YOUR_PROJECT_ID',
-  storageBucket:     'YOUR_PROJECT_ID.appspot.com',
+  // apiKey + projectId pulled from the backend's application.yml (firebase.api-key /
+  // firebase.project-id) — same Firebase project the Admin SDK verifies tokens against.
+  apiKey:            'AIzaSyBPw64jTzdD2SYrUje39tC5TGp8qiwzRhI',
+  authDomain:        'paasxo-a3769.firebaseapp.com',
+  projectId:         'paasxo-a3769',
+  storageBucket:     'paasxo-a3769.appspot.com',
+  // Still need these two — Firebase Console → Project Settings → General →
+  // Your apps → (any) Web app → SDK setup and configuration.
   messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
   appId:             'YOUR_APP_ID',
 };

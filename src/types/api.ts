@@ -31,12 +31,22 @@ export interface UserProfile {
   displayName: string;
   phoneNumber: string;
   sport: string | string[];
+  sports?: string[];
   skillLevel: string;
   locationAccess: boolean;
   referralCode?: string;
   bio?: string;
   profileImageUrl?: string | { uri: string; name: string; type: string };
+  authProvider?: string;
+  // False only for a first-time Google sign-in that hasn't picked an
+  // activity yet — AuthProvider shows CompleteProfileModal while this is false.
+  profileCompleted?: boolean;
   // extend with domain-specific fields
+}
+
+export interface CompleteProfilePayload {
+  sports: string[];
+  referralCode?: string;
 }
 
 export type CreatePostPayload = {

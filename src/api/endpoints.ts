@@ -32,6 +32,9 @@ export const ENDPOINTS = {
     GOOGLE_LOGIN: '/auth/login-google',
     APPLE_LOGIN: '/auth/social/apple',
     FORGOT_PASSWORD: '/auth/forgot-password',
+    // Popup shown right after a first-time Google sign-in to collect the
+    // activity + referral code the normal registration form would have.
+    COMPLETE_PROFILE: '/auth/complete-profile',
   },
   // com.pasxo.controller.AuthController exposes profile under /auth, not /user.
   // NOTE: the real PUT /auth/profile is multipart (UpdateProfileRequest +
