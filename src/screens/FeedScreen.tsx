@@ -117,9 +117,7 @@ const FeedScreen = () => {
     try {
       setLoading(true);
       const res = await socialMediaApi.getPosts(nextPage);
-   
-
-      const safeData = Array.isArray(res) ? res : [];
+      const safeData = res.content ?? [];
 
       setPosts(prev => {
         const merged =
@@ -130,7 +128,7 @@ const FeedScreen = () => {
         return merged;
       });
 
-      setHasMore(safeData.length > 0);
+      setHasMore(res.hasMore);
       setPage(nextPage);
 
     } catch (err) {
@@ -226,14 +224,7 @@ const FeedScreen = () => {
       setSearchLoading(true);
 
       const response = await socialMediaApi.searchUsers(text);
-      setSearchResults(response);
-      // console.log('RAW SEARCH RESPONSE:', response);
-
-      const safe = Array.isArray(response.data)
-        ? response.data
-        : [];
-
-      // setSearchResults(safe);
+      setSearchResults(response.content || []);
     } catch (err) {
       console.log('SEARCH ERROR:', err);
     } finally {

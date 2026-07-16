@@ -1,15 +1,16 @@
 import React from 'react';
 import { CaptureFlow, CaptureFlowPayload } from '../components/mediaCreate/CaptureFlow';
-import { storyApi } from '../api/storyApi';
+import { reelApi } from '../api/reelApi';
 
-const MAX_STORY_SECONDS = 30;
+const MAX_REEL_SECONDS = 180;
 
-export default function StoryCreateScreen() {
+export default function CreateReelScreen() {
   const handleSubmit = async (payload: CaptureFlowPayload) => {
-    await storyApi.createStory({
+    await reelApi.createReel({
       mediaUri: payload.mediaUri,
-      mediaType: payload.mediaType,
       mimeType: payload.mimeType,
+      thumbnailUri: payload.thumbnailUri,
+      caption: payload.caption,
       durationSeconds: payload.durationSeconds,
       filterName: payload.filterName,
       captionText: payload.captionText,
@@ -19,7 +20,6 @@ export default function StoryCreateScreen() {
       emoji: payload.emoji,
       emojiX: payload.emojiX,
       emojiY: payload.emojiY,
-      isBoomerang: payload.isBoomerang,
       audioTrackId: payload.audioTrackId,
       audioTrackUrl: payload.audioTrackUrl,
       audioVolume: payload.audioVolume,
@@ -28,13 +28,14 @@ export default function StoryCreateScreen() {
 
   return (
     <CaptureFlow
-      maxVideoSeconds={MAX_STORY_SECONDS}
-      allowPhoto
-      allowBoomerang
+      maxVideoSeconds={MAX_REEL_SECONDS}
+      allowPhoto={false}
+      requireCaption
       allowMusic
-      submitLabel="Share Story"
-      submittingLabel="Uploading…"
-      doneLabel="Shared!"
+      captionPlaceholder="Write a caption for your reel..."
+      submitLabel="Post Reel"
+      submittingLabel="Posting…"
+      doneLabel="Posted!"
       onSubmit={handleSubmit}
     />
   );

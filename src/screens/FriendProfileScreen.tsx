@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   Pressable,
   SafeAreaView,
@@ -13,6 +14,8 @@ import { ArrowLeft, MoreVertical, Share2, CheckCircle2 } from 'lucide-react-nati
 import { BottomNavbar } from '../components/BottomNavbar';
 import { Colors } from '../styles/colors';
 import { socialMediaApi } from '../api/socialMediaApi';
+import { PostGrid } from '../components/PostGrid';
+import { PostSummary } from '../types/api';
 
 
 const profileUsers = {
@@ -45,14 +48,6 @@ const profileUsers = {
 };
 
 const tabs = ['Moments', 'Videos', 'Tagged', 'Stats'];
-const gallery = [
-  'https://images.pexels.com/photos/163403/cricket-batsman-batting-cricket-pitch-163403.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'https://images.pexels.com/photos/2159/football-american-sport-ball.jpg?auto=compress&cs=tinysrgb&w=400',
-  'https://images.pexels.com/photos/2265878/pexels-photo-2265878.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'https://images.pexels.com/photos/1858804/pexels-photo-1858804.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'https://images.pexels.com/photos/3991856/pexels-photo-3991856.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'https://images.pexels.com/photos/1023755/pexels-photo-1023755.jpeg?auto=compress&cs=tinysrgb&w=400',
-];
 
 export default function FriendProfileScreen() {
   const router = useRouter();
@@ -66,21 +61,37 @@ export default function FriendProfileScreen() {
   const [loading, setLoading] = useState(true);
   const userId = Array.isArray(user) ? user[0] : user;
 
-  //FOLLOW AND UNFOLLOW LOGIC
-  const [isFollowing, setIsFollowing] = useState(false);
+  // FOLLOW / FOLLOW-REQUEST LOGIC — 'ACCEPTED' means you follow them, 'PENDING'
+  // means you've sent a request to a private account that hasn't accepted yet.
+  const [relationshipStatus, setRelationshipStatus] = useState<'NONE' | 'PENDING' | 'ACCEPTED'>('NONE');
   const [actionLoading, setActionLoading] = useState(false);
+
+  const [posts, setPosts] = useState<PostSummary[]>([]);
+  const [postsLoading, setPostsLoading] = useState(false);
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!userId) return;
+    setPostsLoading(true);
+    socialMediaApi.getUserPosts(userId as string, 0, 30)
+      .then((res) => setPosts(res.content))
+      .catch(() => setPosts([]))
+      .finally(() => setPostsLoading(false));
+  }, [userId]);
 
   useEffect(() => {
     const fetchProfile = async () => {
       console.log('Fetching profile for user ID:', userId);
       try {
         setLoading(true);
-        setIsFollowing(!isFollowing);
 
         const res = await socialMediaApi.getUserProfile(userId as string);
 
         setProfileData(res);
-        setIsFollowing(res.following);
+        // Jackson strips the "is"/"has" prefix from boolean getters, so these
+        // come back as `following`/`private`/`hasPendingRequestFromMe` on the
+        // wire even though the DTO fields are isFollowing/isPrivate/etc.
+        setRelationshipStatus(res.following ? 'ACCEPTED' : res.hasPendingRequestFromMe ? 'PENDING' : 'NONE');
       } catch (err) {
         console.log('PROFILE ERROR:', err);
       } finally {
@@ -95,14 +106,14 @@ export default function FriendProfileScreen() {
     try {
       setActionLoading(true);
 
-      if (isFollowing) {
-        await socialMediaApi.unfollowUser(userId as string);
-        setIsFollowing(false);
+      if (relationshipStatus === 'NONE') {
+        const res = await socialMediaApi.followUser(userId as string);
+        setRelationshipStatus(res?.status === 'PENDING' ? 'PENDING' : 'ACCEPTED');
       } else {
-        await socialMediaApi.followUser(userId as string);
-        setIsFollowing(true);
+        // Also cancels a still-pending request.
+        await socialMediaApi.unfollowUser(userId as string);
+        setRelationshipStatus('NONE');
       }
-
     } catch (err) {
       console.log('FOLLOW ERROR:', err);
     } finally {
@@ -157,7 +168,7 @@ export default function FriendProfileScreen() {
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{profileData.posts}</Text>
+              <Text style={styles.statNumber}>{postsLoading ? '…' : posts.length}</Text>
               <Text style={styles.statLabel}>POSTS</Text>
             </View>
             <View style={styles.statItem}>
@@ -176,15 +187,17 @@ export default function FriendProfileScreen() {
               disabled={actionLoading}
               style={[
                 styles.followButton,
-                isFollowing && { backgroundColor: Colors.neutral900 }
+                relationshipStatus !== 'NONE' && { backgroundColor: Colors.neutral900 }
               ]}
             >
               <Text style={styles.followButtonText}>
                 {actionLoading
                   ? 'Loading...'
-                  : isFollowing
+                  : relationshipStatus === 'ACCEPTED'
                     ? 'Unfollow'
-                    : 'Follow'}
+                    : relationshipStatus === 'PENDING'
+                      ? 'Requested'
+                      : 'Follow'}
               </Text>
             </Pressable>
             <Pressable style={styles.messageButton}>
@@ -215,11 +228,20 @@ export default function FriendProfileScreen() {
           ))}
         </View>
 
-        <View style={styles.galleryGrid}>
-          {gallery.map((uri, index) => (
-            <Image key={String(index)} source={{ uri }} style={styles.galleryImage} />
-          ))}
-        </View>
+        {postsLoading ? (
+          <ActivityIndicator color={Colors.primary} style={{ marginTop: 20 }} />
+        ) : posts.length === 0 ? (
+          <View style={styles.emptyPosts}>
+            <Text style={styles.emptyPostsText}>No posts yet</Text>
+          </View>
+        ) : (
+          <PostGrid
+            posts={posts}
+            selectedPostId={selectedPostId}
+            onSelectPost={(post) => setSelectedPostId(post.id)}
+            onCloseDetail={() => setSelectedPostId(null)}
+          />
+        )}
       </ScrollView>
 
       <BottomNavbar activeTab="FRIENDS" showCreateButton={false} />
@@ -456,15 +478,13 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: Colors.logoBlue,
   },
-  galleryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+  emptyPosts: {
+    alignItems: 'center',
+    paddingVertical: 40,
   },
-  galleryImage: {
-    width: '32%',
-    aspectRatio: 1,
-    borderRadius: 18,
-    marginBottom: 12,
+  emptyPostsText: {
+    fontSize: 13,
+    color: Colors.neutral500,
+    fontWeight: '600',
   },
 });

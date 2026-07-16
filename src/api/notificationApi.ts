@@ -26,7 +26,16 @@ export type NotificationType =
   | 'INVITATION_EXPIRED'
   | 'MATCH_CANCELLED_NOTIFY'
   | 'BOOKING_CONFIRMED'
-  | 'BOOKING_REJECTED';
+  | 'BOOKING_REJECTED'
+  | 'FOLLOW_REQUEST_RECEIVED'
+  | 'FOLLOW_REQUEST_ACCEPTED'
+  | 'NEW_FOLLOWER'
+  | 'POST_LIKED'
+  | 'POST_COMMENTED'
+  | 'TOURNAMENT_PLAYER_ADDED'
+  | 'WALK_RUN_INVITE_RECEIVED'
+  | 'WALK_RUN_INVITE_ACCEPTED'
+  | 'WALK_RUN_INVITE_DECLINED';
 
 export const notificationApi = {
   getAll: async (): Promise<NotificationResponse[]> => {

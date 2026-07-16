@@ -20,6 +20,18 @@ export const userApi = {
     });
     return data;
   },
+
+  // Small dedicated JSON endpoints, kept separate from updateProfile (which is
+  // multipart-only on the backend for the avatar upload flow).
+  updatePrivacy: async (isPrivate: boolean) => {
+    const { data } = await axiosInstance.patch(ENDPOINTS.SOCIAL.UPDATE_PRIVACY, { isPrivate });
+    return data;
+  },
+
+  updateLocation: async (latitude: number, longitude: number) => {
+    const { data } = await axiosInstance.patch(ENDPOINTS.SOCIAL.UPDATE_LOCATION, { latitude, longitude });
+    return data;
+  },
 };
 
 /*

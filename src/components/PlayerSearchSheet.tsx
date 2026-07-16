@@ -72,8 +72,9 @@ export function PlayerSearchSheet({
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const raw = await socialMediaApi.searchUsers(query.trim());
+        const raw: any = await socialMediaApi.searchUsers(query.trim());
         const list: any[] = Array.isArray(raw) ? raw
+          : Array.isArray(raw?.content) ? raw.content
           : Array.isArray(raw?.data) ? raw.data
           : Array.isArray(raw?.users) ? raw.users : [];
 

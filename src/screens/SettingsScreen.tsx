@@ -1,11 +1,36 @@
-import React from 'react';
-import { SafeAreaView, StyleSheet, Text, View, Pressable, Alert } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { SafeAreaView, StyleSheet, Text, View, Pressable, Alert, Switch, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ArrowLeft } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
+import { useAuth } from '../context/AuthContext';
+import { userApi } from '../api/userApi';
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const { user } = useAuth();
+
+  const [isPrivate, setIsPrivate] = useState(!!user?.isPrivate);
+  const [savingPrivacy, setSavingPrivacy] = useState(false);
+
+  useEffect(() => {
+    userApi.getProfile()
+      .then((profile) => setIsPrivate(!!profile?.isPrivate))
+      .catch(() => {});
+  }, []);
+
+  const handleTogglePrivacy = async (value: boolean) => {
+    setIsPrivate(value);
+    setSavingPrivacy(true);
+    try {
+      await userApi.updatePrivacy(value);
+    } catch {
+      setIsPrivate(!value);
+      Alert.alert('Something went wrong', 'Could not update your privacy setting. Please try again.');
+    } finally {
+      setSavingPrivacy(false);
+    }
+  };
 
   const handleLogout = () => {
     // Placeholder logout flow
@@ -29,6 +54,28 @@ export default function SettingsScreen() {
           <Pressable onPress={() => router.push('/profile')} style={styles.row}>
             <Text style={styles.rowText}>View profile</Text>
           </Pressable>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Privacy</Text>
+          <View style={styles.privacyRow}>
+            <View style={styles.privacyTextWrap}>
+              <Text style={styles.rowText}>Private Account</Text>
+              <Text style={styles.privacySubtext}>
+                Approve who can follow you and see your posts
+              </Text>
+            </View>
+            {savingPrivacy ? (
+              <ActivityIndicator color={Colors.logoBlue || Colors.primary} />
+            ) : (
+              <Switch
+                value={isPrivate}
+                onValueChange={handleTogglePrivacy}
+                trackColor={{ false: Colors.neutral200, true: Colors.logoBlue || Colors.primary }}
+                thumbColor={Colors.white}
+              />
+            )}
+          </View>
         </View>
 
         <View style={styles.card}>
@@ -69,6 +116,15 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 13, fontWeight: '800', color: Colors.neutral700, marginBottom: 8 },
   row: { paddingVertical: 10 },
   rowText: { color: Colors.neutral900, fontWeight: '700' },
+  privacyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    gap: 12,
+  },
+  privacyTextWrap: { flex: 1 },
+  privacySubtext: { color: Colors.neutral500, fontSize: 12, fontWeight: '500', marginTop: 3 },
   logoutButton: {
     marginTop: 20,
     backgroundColor: Colors.logoBlue || Colors.primary,

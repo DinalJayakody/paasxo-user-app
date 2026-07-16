@@ -25,11 +25,15 @@ import { resolveMediaUrl } from '../utils/mediaUrl';
 // expo-video (SDK 54+) – platform-safe import
 let useVideoPlayer: any = null;
 let VideoView: any = null;
+let Audio: any = null;
 if (Platform.OS !== 'web') {
   try {
     const vid = require('expo-video');
     useVideoPlayer = vid.useVideoPlayer;
     VideoView = vid.VideoView;
+  } catch {}
+  try {
+    Audio = require('expo-av').Audio;
   } catch {}
 }
 
@@ -60,11 +64,13 @@ function timeAgo(iso: string): string {
 function VideoStory({
   uri,
   paused,
+  muted,
   onReady,
   onEnd,
 }: {
   uri: string;
   paused: boolean;
+  muted: boolean;
   onReady: () => void;
   onEnd: () => void;
 }) {
@@ -80,9 +86,13 @@ function VideoStory({
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const player = useVideoPlayer({ uri }, (p: any) => {
     p.loop = false;
-    p.muted = false;
+    p.muted = muted;
     if (!paused) p.play();
   });
+
+  useEffect(() => {
+    player.muted = muted;
+  }, [muted, player]);
 
   useEffect(() => {
     const sub = player.addListener('playToEnd', onEnd);
@@ -134,6 +144,46 @@ export function StoryViewer({ visible, groups, initialGroupIndex, onClose, onDel
 
   const group: UserStoryGroup | undefined = groups[groupIdx];
   const story: StoryItem | undefined = group?.stories[storyIdx];
+
+  // Background music — a separate audio track played alongside the (usually
+  // muted) video/photo, not baked into the media. Reloads whenever the
+  // current story changes; torn down on unmount/close.
+  const bgSoundRef = useRef<any>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (bgSoundRef.current) {
+        await bgSoundRef.current.unloadAsync().catch(() => {});
+        bgSoundRef.current = null;
+      }
+      if (Audio && visible && story?.audioTrackUrl) {
+        try {
+          const { sound } = await Audio.Sound.createAsync(
+            { uri: story.audioTrackUrl },
+            { shouldPlay: !paused, isLooping: true, volume: story.audioVolume ?? 0.85 }
+          );
+          if (cancelled) await sound.unloadAsync().catch(() => {});
+          else bgSoundRef.current = sound;
+        } catch {
+          // Non-fatal — story still plays, just without its background track.
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [story?.id, visible]);
+
+  // Keep the background track in lockstep with the pause/resume tap gesture.
+  useEffect(() => {
+    if (!bgSoundRef.current) return;
+    if (paused) bgSoundRef.current.pauseAsync().catch(() => {});
+    else bgSoundRef.current.playAsync().catch(() => {});
+  }, [paused]);
+
+  useEffect(() => {
+    return () => {
+      bgSoundRef.current?.unloadAsync?.().catch(() => {});
+    };
+  }, []);
 
   // Reset when group changes
   useEffect(() => {
@@ -269,6 +319,7 @@ export function StoryViewer({ visible, groups, initialGroupIndex, onClose, onDel
           <VideoStory
             uri={mediaUri}
             paused={paused}
+            muted={!!story.audioTrackUrl}
             onReady={() => setVideoReady(true)}
             onEnd={advance}
           />
@@ -288,6 +339,27 @@ export function StoryViewer({ visible, groups, initialGroupIndex, onClose, onDel
             style={[StyleSheet.absoluteFillObject, { backgroundColor: filterOverlay }]}
             pointerEvents="none"
           />
+        )}
+
+        {/* Caption / emoji stickers - stored as normalized position metadata,
+            rendered at view time rather than baked into the media pixels. */}
+        {!!story.captionText && (
+          <View
+            style={[s.stickerPos, { left: (story.captionX ?? 0.5) * W, top: (story.captionY ?? 0.4) * H }]}
+            pointerEvents="none"
+          >
+            <Text style={[s.stickerCaptionText, { color: story.captionColor || '#fff' }]}>
+              {story.captionText}
+            </Text>
+          </View>
+        )}
+        {!!story.emoji && (
+          <View
+            style={[s.stickerPos, { left: (story.emojiX ?? 0.5) * W, top: (story.emojiY ?? 0.6) * H }]}
+            pointerEvents="none"
+          >
+            <Text style={s.stickerEmoji}>{story.emoji}</Text>
+          </View>
         )}
 
         {/* Scrim gradients */}
@@ -390,6 +462,13 @@ const s = StyleSheet.create({
     position: 'absolute', bottom: 0, left: 0, right: 0, height: 90,
     backgroundColor: 'rgba(0,0,0,0.28)',
   },
+
+  stickerPos: { position: 'absolute' },
+  stickerCaptionText: {
+    fontSize: 22, fontWeight: '800', textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+  },
+  stickerEmoji: { fontSize: 44 },
 
   tapLeft: { position: 'absolute', left: 0, top: 0, bottom: 0, width: '40%' },
   tapRight: { position: 'absolute', right: 0, top: 0, bottom: 0, width: '60%' },

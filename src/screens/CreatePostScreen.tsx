@@ -11,6 +11,9 @@ import {
   Alert,
   ActivityIndicator,
   ListRenderItemInfo,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -130,7 +133,7 @@ const fetchUsers = async () => {
 
     const data = await socialMediaApi.searchUsers(searchText);
 
-    setSearchResults(data || []);
+    setSearchResults(data?.content || []);
   } catch (error) {
     console.log(error);
   } finally {
@@ -163,7 +166,7 @@ const fetchUsers = async () => {
           text
         );
 
-      setSearchResults(data);
+      setSearchResults(data?.content || []);
     } catch (error) {
       console.log(error);
     }
@@ -259,7 +262,16 @@ const fetchUsers = async () => {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.content}>
+      <KeyboardAvoidingView
+        style={styles.flexOne}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.mediaRow}>
           <TouchableOpacity
             style={styles.mediaCard}
@@ -484,7 +496,8 @@ const fetchUsers = async () => {
             </View>
           </LinearGradient>
         </View>
-      </View>
+      </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* TAG PLAYER MODAL */}
 
@@ -647,6 +660,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
 
+  flexOne: {
+    flex: 1,
+  },
+
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -683,8 +700,8 @@ const styles = StyleSheet.create({
   },
 
   content: {
-    flex: 1,
     padding: 16,
+    paddingBottom: 40,
   },
 
   mediaRow: {

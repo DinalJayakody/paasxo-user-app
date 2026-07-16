@@ -1,17 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  FlatList,
   Image,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -28,12 +23,8 @@ import {
   Award,
   Shield,
   Users,
-  Heart,
-  MessageCircle,
-  Send,
-  X,
 } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BottomNavbar } from '../components/BottomNavbar';
 import { Colors } from '../styles/colors';
@@ -41,6 +32,10 @@ import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
 import { socialMediaApi } from '../api/socialMediaApi';
 import { ENDPOINTS } from '../api/endpoints';
+import { PostGrid } from '../components/PostGrid';
+import { ReelGrid } from '../components/ReelGrid';
+import { PostSummary, ReelSummary } from '../types/api';
+import { reelApi } from '../api/reelApi';
 
 const SPORT_STATS: Record<string, { icon: any; value: string; label: string; color: string }[]> = {
   CRICKET: [
@@ -75,7 +70,7 @@ const SPORT_STATS: Record<string, { icon: any; value: string; label: string; col
   ],
 };
 
-const PROFILE_TABS = ['Moments', 'Stats', 'Videos', 'Tagged'] as const;
+const PROFILE_TABS = ['Moments', 'Saved', 'Stats', 'Reels', 'Tagged'] as const;
 type ProfileTab = (typeof PROFILE_TABS)[number];
 
 const AnimatedPressable = ({
@@ -123,25 +118,9 @@ const StatCard = ({ icon: Icon, value, label, color, index }: any) => {
   );
 };
 
-const parseMediaUrl = (url?: string): string | undefined => {
-  if (!url) return undefined;
-  if (url.startsWith('http') || url.startsWith('file') || url.startsWith('data:')) return url;
-  return `data:image/jpeg;base64,${url}`;
-};
-
-const formatTimeAgo = (dateString?: string) => {
-  if (!dateString) return '';
-  const diff = Date.now() - new Date(dateString).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-};
-
 export default function ProfileScreen() {
   const router = useRouter();
+  const { openPostId, openReelId, tab } = useLocalSearchParams<{ openPostId?: string; openReelId?: string; tab?: string }>();
   const { user, loading: authLoading } = useAuth();
   const { active: isPro } = useSubscription();
   const [selectedTab, setSelectedTab] = useState<ProfileTab>('Moments');
@@ -149,19 +128,31 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
 
   // Posts
-  const [userPosts, setUserPosts] = useState<any[]>([]);
+  const [userPosts, setUserPosts] = useState<PostSummary[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
 
-  // Post detail modal
-  const [selectedPost, setSelectedPost] = useState<any | null>(null);
-  const [comments, setComments] = useState<any[]>([]);
-  const [commentsLoading, setCommentsLoading] = useState(false);
-  const [commentText, setCommentText] = useState('');
-  const [submittingComment, setSubmittingComment] = useState(false);
-  const [likedPosts, setLikedPosts] = useState<Set<string | number>>(new Set());
-  const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
+  // Saved tab - lazily loaded the first time it's opened (same pattern as
+  // Friends' Suggested tab).
+  const [savedPosts, setSavedPosts] = useState<PostSummary[]>([]);
+  const [savedLoading, setSavedLoading] = useState(false);
+  const [savedLoaded, setSavedLoaded] = useState(false);
+  const [selectedSavedPostId, setSelectedSavedPostId] = useState<string | null>(null);
+
+  // Reels tab - lazily loaded the first time it's opened (same pattern as Saved).
+  const [userReels, setUserReels] = useState<ReelSummary[]>([]);
+  const [reelsLoading, setReelsLoading] = useState(false);
+  const [reelsLoaded, setReelsLoaded] = useState(false);
 
   const userId = user?.firebaseUid;
+
+  // Deep link from a notification requesting a specific starting tab
+  // (e.g. "liked your reel" -> Reels tab).
+  useEffect(() => {
+    if (tab && (PROFILE_TABS as readonly string[]).includes(tab)) {
+      setSelectedTab(tab as ProfileTab);
+    }
+  }, [tab]);
 
   const headerSlide = useRef(new Animated.Value(-20)).current;
   const headerFade = useRef(new Animated.Value(0)).current;
@@ -196,12 +187,8 @@ export default function ProfileScreen() {
       if (!userId) return;
       setPostsLoading(true);
       try {
-        const data = await socialMediaApi.getUserPosts(userId);
-        setUserPosts(data);
-        // seed like counts from API data
-        const counts: Record<string, number> = {};
-        data.forEach((p: any) => { counts[String(p.id)] = p.likes ?? p.likesCount ?? 0; });
-        setLikeCounts(counts);
+        const res = await socialMediaApi.getUserPosts(userId, 0, 30);
+        setUserPosts(res.content);
       } catch {
         setUserPosts([]);
       } finally {
@@ -211,71 +198,44 @@ export default function ProfileScreen() {
     fetchPosts();
   }, [userId]);
 
-  const openPost = useCallback(async (post: any) => {
-    setSelectedPost(post);
-    setComments([]);
-    setCommentsLoading(true);
-    try {
-      const data = await socialMediaApi.getComments(post.id);
-      setComments(data);
-    } catch {
-      setComments([]);
-    } finally {
-      setCommentsLoading(false);
+  // Deep link from a "liked/commented your post" notification - open that
+  // exact post once its data has loaded. Only ever consumed once so closing
+  // the detail view afterwards doesn't reopen it.
+  const openedFromLinkRef = useRef(false);
+  useEffect(() => {
+    if (!openPostId || openedFromLinkRef.current || userPosts.length === 0) return;
+    if (userPosts.some((p) => p.id === openPostId)) {
+      openedFromLinkRef.current = true;
+      setSelectedTab('Moments');
+      setSelectedPostId(openPostId);
     }
-  }, []);
+  }, [openPostId, userPosts]);
 
-  const closePost = useCallback(() => {
-    setSelectedPost(null);
-    setCommentText('');
-    setComments([]);
-  }, []);
+  // Saved tab is fetched lazily, the first time it's opened.
+  useEffect(() => {
+    if (selectedTab !== 'Saved' || savedLoaded) return;
+    setSavedLoading(true);
+    socialMediaApi.getSavedPosts()
+      .then((res) => setSavedPosts(res.content))
+      .catch(() => setSavedPosts([]))
+      .finally(() => {
+        setSavedLoading(false);
+        setSavedLoaded(true);
+      });
+  }, [selectedTab, savedLoaded]);
 
-  const toggleLike = useCallback(async (postId: string | number) => {
-    const key = String(postId);
-    const isLiked = likedPosts.has(postId);
-    setLikedPosts((prev) => {
-      const next = new Set(prev);
-      isLiked ? next.delete(postId) : next.add(postId);
-      return next;
-    });
-    setLikeCounts((prev) => ({
-      ...prev,
-      [key]: Math.max(0, (prev[key] ?? 0) + (isLiked ? -1 : 1)),
-    }));
-    try {
-      if (isLiked) {
-        await socialMediaApi.unlikePost(postId);
-      } else {
-        await socialMediaApi.likePost(postId);
-      }
-    } catch { /* optimistic UI — ignore errors */ }
-  }, [likedPosts]);
-
-  const submitComment = useCallback(async () => {
-    if (!commentText.trim() || !selectedPost) return;
-    setSubmittingComment(true);
-    const text = commentText.trim();
-    setCommentText('');
-    try {
-      const newComment = await socialMediaApi.addComment(selectedPost.id, text);
-      setComments((prev) => [
-        ...(newComment
-          ? [newComment]
-          : [{ id: Date.now(), text, authorDisplayName: user?.displayName || 'You', createdAt: new Date().toISOString() }]
-        ),
-        ...prev,
-      ]);
-    } catch {
-      // add optimistic comment even on error
-      setComments((prev) => [
-        { id: Date.now(), text, authorDisplayName: user?.displayName || 'You', createdAt: new Date().toISOString() },
-        ...prev,
-      ]);
-    } finally {
-      setSubmittingComment(false);
-    }
-  }, [commentText, selectedPost, user]);
+  // Reels tab is fetched lazily, the first time it's opened.
+  useEffect(() => {
+    if (selectedTab !== 'Reels' || reelsLoaded || !userId) return;
+    setReelsLoading(true);
+    reelApi.getUserReels(userId)
+      .then((res) => setUserReels(res.content))
+      .catch(() => setUserReels([]))
+      .finally(() => {
+        setReelsLoading(false);
+        setReelsLoaded(true);
+      });
+  }, [selectedTab, reelsLoaded, userId]);
 
   const sport = useMemo(() => {
     const s = Array.isArray(user?.sport) ? user?.sport[0] : user?.sport;
@@ -393,28 +353,62 @@ export default function ProfileScreen() {
       );
     }
     return (
-      <View style={styles.galleryGrid}>
-        {userPosts.map((post, index) => {
-          const imgUri = parseMediaUrl(post.mediaUrl);
-          return (
-            <Pressable key={post.id ?? index} style={styles.galleryItem} onPress={() => openPost(post)}>
-              {imgUri ? (
-                <Image source={{ uri: imgUri }} style={styles.galleryImage} />
-              ) : (
-                <View style={[styles.galleryImage, styles.galleryPlaceholder]}>
-                  <Text style={styles.galleryPlaceholderText} numberOfLines={3}>{post.caption || 'Post'}</Text>
-                </View>
-              )}
-              <LinearGradient colors={['transparent', 'rgba(0,0,0,0.45)']} style={styles.galleryOverlay} />
-              <View style={styles.galleryMeta}>
-                <Heart color={Colors.white} size={11} strokeWidth={2} fill={Colors.white} />
-                <Text style={styles.galleryMetaText}>{likeCounts[String(post.id)] ?? post.likes ?? 0}</Text>
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
+      <PostGrid
+        posts={userPosts}
+        selectedPostId={selectedPostId}
+        onSelectPost={(post) => setSelectedPostId(post.id)}
+        onCloseDetail={() => setSelectedPostId(null)}
+      />
     );
+  };
+
+  const renderSavedTab = () => {
+    if (savedLoading) {
+      return (
+        <View style={styles.emptyTabContent}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.emptyTabSubtitle}>Loading saved posts...</Text>
+        </View>
+      );
+    }
+    if (savedPosts.length === 0) {
+      return (
+        <View style={styles.emptyTabContent}>
+          <Text style={styles.emptyTabEmoji}>🔖</Text>
+          <Text style={styles.emptyTabTitle}>No saved posts yet</Text>
+          <Text style={styles.emptyTabSubtitle}>Tap the bookmark icon on a post to save it here.</Text>
+        </View>
+      );
+    }
+    return (
+      <PostGrid
+        posts={savedPosts}
+        selectedPostId={selectedSavedPostId}
+        onSelectPost={(post) => setSelectedSavedPostId(post.id)}
+        onCloseDetail={() => setSelectedSavedPostId(null)}
+      />
+    );
+  };
+
+  const renderReelsTab = () => {
+    if (reelsLoading) {
+      return (
+        <View style={styles.emptyTabContent}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.emptyTabSubtitle}>Loading your reels...</Text>
+        </View>
+      );
+    }
+    if (userReels.length === 0) {
+      return (
+        <View style={styles.emptyTabContent}>
+          <Text style={styles.emptyTabEmoji}>🎬</Text>
+          <Text style={styles.emptyTabTitle}>No reels yet</Text>
+          <Text style={styles.emptyTabSubtitle}>Tap the + button to record your first reel!</Text>
+        </View>
+      );
+    }
+    return <ReelGrid reels={userReels} autoOpenReelId={openReelId} />;
   };
 
   const renderEmptyTab = (label: string) => (
@@ -425,156 +419,11 @@ export default function ProfileScreen() {
     </View>
   );
 
-  // ── Post detail modal ────────────────────────────────────────────────────
-
-  const renderPostModal = () => {
-    if (!selectedPost) return null;
-    const postImgUri = parseMediaUrl(selectedPost.mediaUrl);
-    const authorAvatarUri = parseMediaUrl(selectedPost.authorProfileImageUrl);
-    const isLiked = likedPosts.has(selectedPost.id);
-    const likeCount = likeCounts[String(selectedPost.id)] ?? selectedPost.likes ?? 0;
-
-    return (
-      <Modal
-        visible={!!selectedPost}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={closePost}
-      >
-        <SafeAreaView style={styles.modalSafe} edges={['top', 'bottom']}>
-          {/* Modal header */}
-          <View style={styles.modalHeader}>
-            <Pressable onPress={closePost} style={styles.modalBackBtn}>
-              <X color={Colors.text} size={20} strokeWidth={2.5} />
-            </Pressable>
-            <Text style={styles.modalHeaderTitle}>Post</Text>
-            <View style={{ width: 36 }} />
-          </View>
-
-          <KeyboardAvoidingView
-            style={{ flex: 1 }}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            keyboardVerticalOffset={0}
-          >
-            <FlatList
-              data={comments}
-              keyExtractor={(c, i) => String(c.id ?? i)}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.modalContent}
-              ListHeaderComponent={
-                <>
-                  {/* Author row */}
-                  <View style={styles.modalAuthorRow}>
-                    {authorAvatarUri ? (
-                      <Image source={{ uri: authorAvatarUri }} style={styles.modalAvatar} />
-                    ) : (
-                      <View style={[styles.modalAvatar, styles.modalAvatarFallback]}>
-                        <Text style={styles.modalAvatarInitial}>
-                          {(selectedPost.authorDisplayName || 'U')[0].toUpperCase()}
-                        </Text>
-                      </View>
-                    )}
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.modalAuthorName}>{selectedPost.authorDisplayName || 'Unknown'}</Text>
-                      <Text style={styles.modalPostTime}>{formatTimeAgo(selectedPost.createdAt)}</Text>
-                    </View>
-                  </View>
-
-                  {/* Caption */}
-                  {!!selectedPost.caption && (
-                    <Text style={styles.modalCaption}>{selectedPost.caption}</Text>
-                  )}
-
-                  {/* Image */}
-                  {postImgUri && (
-                    <Image
-                      source={{ uri: postImgUri }}
-                      style={styles.modalPostImage}
-                      resizeMode="cover"
-                    />
-                  )}
-
-                  {/* Like / comment actions */}
-                  <View style={styles.modalActions}>
-                    <Pressable style={styles.modalActionBtn} onPress={() => toggleLike(selectedPost.id)}>
-                      <Heart
-                        color={isLiked ? Colors.liveRed : Colors.textSecondary}
-                        size={22}
-                        strokeWidth={2}
-                        fill={isLiked ? Colors.liveRed : 'none'}
-                      />
-                      <Text style={[styles.modalActionText, isLiked && { color: Colors.liveRed }]}>{likeCount}</Text>
-                    </Pressable>
-                    <View style={styles.modalActionBtn}>
-                      <MessageCircle color={Colors.textSecondary} size={22} strokeWidth={2} />
-                      <Text style={styles.modalActionText}>{comments.length}</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.modalDivider} />
-                  <Text style={styles.modalCommentsTitle}>Comments</Text>
-
-                  {commentsLoading && (
-                    <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 12 }} />
-                  )}
-                </>
-              }
-              renderItem={({ item }) => (
-                <View style={styles.commentRow}>
-                  <View style={styles.commentAvatar}>
-                    <Text style={styles.commentAvatarInitial}>
-                      {(item.authorDisplayName || item.userName || 'U')[0].toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={styles.commentBubble}>
-                    <Text style={styles.commentAuthor}>{item.authorDisplayName || item.userName || 'User'}</Text>
-                    <Text style={styles.commentText}>{item.text || item.content || item.comment}</Text>
-                    <Text style={styles.commentTime}>{formatTimeAgo(item.createdAt)}</Text>
-                  </View>
-                </View>
-              )}
-              ListEmptyComponent={
-                !commentsLoading ? (
-                  <Text style={styles.noCommentsText}>No comments yet. Be the first!</Text>
-                ) : null
-              }
-            />
-
-            {/* Comment input */}
-            <View style={styles.commentInputWrap}>
-              <TextInput
-                style={styles.commentInput}
-                placeholder="Add a comment..."
-                placeholderTextColor={Colors.textMuted}
-                value={commentText}
-                onChangeText={setCommentText}
-                multiline
-                maxLength={300}
-              />
-              <Pressable
-                style={[styles.commentSendBtn, !commentText.trim() && styles.commentSendBtnDisabled]}
-                onPress={submitComment}
-                disabled={!commentText.trim() || submittingComment}
-              >
-                {submittingComment ? (
-                  <ActivityIndicator size="small" color={Colors.white} />
-                ) : (
-                  <Send color={Colors.white} size={16} strokeWidth={2.5} />
-                )}
-              </Pressable>
-            </View>
-          </KeyboardAvoidingView>
-        </SafeAreaView>
-      </Modal>
-    );
-  };
 
   // ── Main render ──────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {renderPostModal()}
-
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <Animated.View style={[styles.profileCardHeader, { opacity: headerFade, transform: [{ translateY: headerSlide }] }]}>
@@ -648,8 +497,9 @@ export default function ProfileScreen() {
 
         {/* Tab content */}
         {selectedTab === 'Moments' && renderMomentsTab()}
+        {selectedTab === 'Saved' && renderSavedTab()}
         {selectedTab === 'Stats' && renderStatsTab()}
-        {selectedTab === 'Videos' && renderEmptyTab('Videos')}
+        {selectedTab === 'Reels' && renderReelsTab()}
         {selectedTab === 'Tagged' && renderEmptyTab('Tags')}
       </ScrollView>
 
@@ -764,86 +614,11 @@ const styles = StyleSheet.create({
   recentMatchScore: { fontSize: 15, fontWeight: '800', color: Colors.primary },
   recentMatchDate: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
 
-  // Moments / gallery
-  galleryGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, gap: 6, marginBottom: 16 },
-  galleryItem: { width: '32%', aspectRatio: 1, borderRadius: 14, overflow: 'hidden' },
-  galleryImage: { width: '100%', height: '100%', backgroundColor: Colors.neutral200 },
-  galleryPlaceholder: { backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center', padding: 6 },
-  galleryPlaceholderText: { fontSize: 10, color: Colors.primary, textAlign: 'center', fontWeight: '600' },
-  galleryOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '40%' },
-  galleryMeta: { position: 'absolute', bottom: 6, left: 8, flexDirection: 'row', alignItems: 'center', gap: 3 },
-  galleryMetaText: { fontSize: 10, color: Colors.white, fontWeight: '700' },
-
   // Empty tabs
   emptyTabContent: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 32, gap: 8 },
   emptyTabEmoji: { fontSize: 48, marginBottom: 8 },
   emptyTabTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
   emptyTabSubtitle: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-
-  // Post detail modal
-  modalSafe: { flex: 1, backgroundColor: Colors.background },
-  modalHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: Colors.neutral200,
-    backgroundColor: Colors.white,
-  },
-  modalBackBtn: {
-    width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.neutral100,
-  },
-  modalHeaderTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
-
-  modalContent: { paddingBottom: 16 },
-
-  modalAuthorRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, paddingBottom: 12 },
-  modalAvatar: { width: 44, height: 44, borderRadius: 22 },
-  modalAvatarFallback: { backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  modalAvatarInitial: { fontSize: 18, fontWeight: '800', color: Colors.primary },
-  modalAuthorName: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  modalPostTime: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-
-  modalCaption: { fontSize: 14, color: Colors.text, lineHeight: 20, paddingHorizontal: 16, marginBottom: 12 },
-  modalPostImage: { width: '100%', aspectRatio: 1, backgroundColor: Colors.neutral100 },
-
-  modalActions: {
-    flexDirection: 'row', gap: 20, paddingHorizontal: 16, paddingVertical: 14,
-  },
-  modalActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  modalActionText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
-
-  modalDivider: { height: 1, backgroundColor: Colors.neutral100, marginHorizontal: 16, marginBottom: 12 },
-  modalCommentsTitle: { fontSize: 14, fontWeight: '800', color: Colors.text, paddingHorizontal: 16, marginBottom: 8 },
-
-  commentRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginBottom: 12 },
-  commentAvatar: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center',
-  },
-  commentAvatarInitial: { fontSize: 13, fontWeight: '700', color: Colors.primary },
-  commentBubble: { flex: 1, backgroundColor: Colors.neutral100, borderRadius: 12, padding: 10 },
-  commentAuthor: { fontSize: 12, fontWeight: '700', color: Colors.text, marginBottom: 3 },
-  commentText: { fontSize: 13, color: Colors.text, lineHeight: 18 },
-  commentTime: { fontSize: 10, color: Colors.textMuted, marginTop: 4 },
-
-  noCommentsText: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', paddingVertical: 20 },
-
-  commentInputWrap: {
-    flexDirection: 'row', alignItems: 'flex-end', gap: 10,
-    paddingHorizontal: 16, paddingVertical: 10,
-    borderTopWidth: 1, borderTopColor: Colors.neutral200,
-    backgroundColor: Colors.white,
-  },
-  commentInput: {
-    flex: 1, backgroundColor: Colors.neutral100, borderRadius: 20,
-    paddingHorizontal: 14, paddingVertical: 10, fontSize: 14,
-    color: Colors.text, maxHeight: 100,
-  },
-  commentSendBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
-  },
-  commentSendBtnDisabled: { backgroundColor: Colors.neutral300 },
 
   pressed: { opacity: 0.88 },
   proAvatarBadge: {

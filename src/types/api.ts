@@ -41,7 +41,80 @@ export interface UserProfile {
   // False only for a first-time Google sign-in that hasn't picked an
   // activity yet — AuthProvider shows CompleteProfileModal while this is false.
   profileCompleted?: boolean;
+  // Account-level visibility. Undefined/false = public. When true, new
+  // followers must be accepted via a follow request (see FriendsScreen).
+  isPrivate?: boolean;
   // extend with domain-specific fields
+}
+
+// Row shape shared by the Friends screen's Followers/Following/Search/
+// Suggested/Requests tabs — mirrors the backend's UserCardResponse exactly.
+export type FollowRelationship = 'NONE' | 'PENDING' | 'ACCEPTED' | 'SELF';
+
+export interface UserCard {
+  firebaseUid: string;
+  displayName: string;
+  profileImageUrl?: string;
+  sports?: string[];
+  skillLevel?: string;
+  relationshipStatus: FollowRelationship;
+  distanceKm?: number;
+  requestedAt?: string;
+}
+
+// Mirrors the backend's PostResponse exactly - the shape every screen that
+// renders a post (Feed, my Profile, a friend's Profile) works with.
+export interface PostSummary {
+  id: string;
+  authorId: string;
+  authorDisplayName: string;
+  authorProfileImageUrl?: string;
+  caption?: string;
+  mediaUrl?: string;
+  sport?: string;
+  likeCount: number;
+  commentCount: number;
+  likedByCurrentUser: boolean;
+  savedByCurrentUser: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// Mirrors the backend's CommentResponse - a comment is either text or a GIF.
+export interface CommentItem {
+  id: string;
+  postId: string;
+  firebaseUid: string;
+  displayName: string;
+  profileImageUrl?: string;
+  content?: string;
+  gifUrl?: string;
+  createdAt: string;
+}
+
+export interface ReelSummary {
+  id: string;
+  authorId: string;
+  authorDisplayName: string;
+  authorProfileImageUrl?: string;
+  caption?: string;
+  mediaUrl: string;
+  thumbnailUrl?: string;
+  durationSeconds?: number;
+  filterName?: string;
+  captionText?: string;
+  captionColor?: string;
+  captionX?: number;
+  captionY?: number;
+  emoji?: string;
+  emojiX?: number;
+  emojiY?: number;
+  audioTrackUrl?: string;
+  audioVolume?: number;
+  likeCount: number;
+  likedByCurrentUser: boolean;
+  viewCount: number;
+  createdAt: string;
 }
 
 export interface CompleteProfilePayload {

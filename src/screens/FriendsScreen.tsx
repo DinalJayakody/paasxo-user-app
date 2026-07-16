@@ -1,10 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   FlatList,
   Image,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -16,43 +15,46 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Bell,
   MessageCircle,
-  Plus,
   Search,
-  UserPlus,
   X,
   MapPin,
   Users,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../styles/colors';
 import { BottomNavbar } from '../components/BottomNavbar';
 import { socialMediaApi } from '../api/socialMediaApi';
+import { userApi } from '../api/userApi';
 import { useAuth } from '../context/AuthContext';
+import { UserCard, FollowRelationship } from '../types/api';
+import {
+  NoFollowersIllustration,
+  NoFollowingIllustration,
+  AllCaughtUpIllustration,
+  NoSuggestionsIllustration,
+} from '../components/illustrations/FriendsIllustrations';
 
-// ─── Demo data (replaces with real API results) ──────────────
+const PAGE_SIZE = 10;
 
-const DEMO_REQUESTS = [
-  { id: '1', name: 'Marcus Chen', sport: 'FUTSAL', location: 'MUMBAI', avatar: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=400', firebaseUid: 'uid1' },
-  { id: '2', name: 'Sarah Jenkins', sport: 'CRICKET', location: 'BANGALORE', avatar: 'https://images.pexels.com/photos/2379005/pexels-photo-2379005.jpeg?auto=compress&cs=tinysrgb&w=400', firebaseUid: 'uid2' },
-];
-
-const DEMO_NEARBY = [
-  { id: 'n1', name: 'Ravi Patel', sport: 'CRICKET', distance: '0.4 km', avatar: 'https://images.pexels.com/photos/614810/pexels-photo-614810.jpeg?auto=compress&cs=tinysrgb&w=400', firebaseUid: 'nuid1', skill: 'INTERMEDIATE' },
-  { id: 'n2', name: 'Aisha Nwosu', sport: 'FUTSAL', distance: '0.8 km', avatar: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=400', firebaseUid: 'nuid2', skill: 'ADVANCED' },
-  { id: 'n3', name: 'Liam Torres', sport: 'PICKLEBALL', distance: '1.2 km', avatar: 'https://images.pexels.com/photos/1681010/pexels-photo-1681010.jpeg?auto=compress&cs=tinysrgb&w=400', firebaseUid: 'nuid3', skill: 'BEGINNER' },
-  { id: 'n4', name: 'Yuna Kim', sport: 'FUTSAL', distance: '1.9 km', avatar: 'https://images.pexels.com/photos/733872/pexels-photo-733872.jpeg?auto=compress&cs=tinysrgb&w=400', firebaseUid: 'nuid4', skill: 'INTERMEDIATE' },
-  { id: 'n5', name: 'Omar Siddiqui', sport: 'CRICKET', distance: '2.3 km', avatar: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=400', firebaseUid: 'nuid5', skill: 'ADVANCED' },
-];
-
-const SEGMENT_ITEMS = ['Followers', 'Following', 'Requests', 'Nearby'] as const;
+const SEGMENT_ITEMS = ['Followers', 'Following', 'Requests', 'Suggested'] as const;
 type Segment = typeof SEGMENT_ITEMS[number];
 
 const SKILL_COLOR: Record<string, string> = {
   BEGINNER: Colors.success,
   INTERMEDIATE: Colors.warning,
-  ADVANCED: Colors.liveRed,
+  PRO: Colors.liveRed,
 };
+
+const DEFAULT_AVATAR = {
+  uri: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=400',
+};
+
+function avatarSource(url?: string) {
+  if (!url) return DEFAULT_AVATAR;
+  return { uri: url.startsWith('http') ? url : `data:image/jpeg;base64,${url}` };
+}
 
 // ─── Animated press wrapper ──────────────────────────────────
 
@@ -75,90 +77,238 @@ function ScalePressable({ onPress, style, children, ...rest }: any) {
   );
 }
 
+// ─── Generic 10-at-a-time paginated list, shared by every tab ─
+
+interface PaginatedList<T> {
+  data: T[];
+  loading: boolean;
+  loadingMore: boolean;
+  hasMore: boolean;
+  reload: () => void;
+  loadMore: () => void;
+  reset: () => void;
+  updateItem: (id: string, patch: Partial<T>) => void;
+  removeItem: (id: string) => void;
+  momentumRef: React.MutableRefObject<boolean>;
+}
+
+function usePaginatedList<T>(
+  fetchPage: (page: number) => Promise<{ content: T[]; hasMore: boolean }>,
+  keyExtractor: (item: T) => string
+): PaginatedList<T> {
+  const [data, setData] = useState<T[]>([]);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const momentumRef = useRef(false);
+
+  const reload = useCallback(() => {
+    setLoading(true);
+    fetchPage(0)
+      .then((res) => {
+        setData(res.content);
+        setHasMore(res.hasMore);
+        setPage(0);
+      })
+      .catch(() => {
+        setData([]);
+        setHasMore(false);
+      })
+      .finally(() => setLoading(false));
+  }, [fetchPage]);
+
+  const loadMore = useCallback(() => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const nextPage = page + 1;
+    fetchPage(nextPage)
+      .then((res) => {
+        setData((prev) => {
+          const map = new Map(prev.map((item) => [keyExtractor(item), item]));
+          res.content.forEach((item) => map.set(keyExtractor(item), item));
+          return Array.from(map.values());
+        });
+        setHasMore(res.hasMore);
+        setPage(nextPage);
+      })
+      .catch(() => setHasMore(false))
+      .finally(() => setLoadingMore(false));
+  }, [fetchPage, hasMore, loadingMore, page, keyExtractor]);
+
+  const reset = useCallback(() => {
+    setData([]);
+    setHasMore(true);
+    setPage(0);
+    setLoading(false);
+    setLoadingMore(false);
+  }, []);
+
+  const updateItem = useCallback(
+    (id: string, patch: Partial<T>) => {
+      setData((prev) => prev.map((item) => (keyExtractor(item) === id ? { ...item, ...patch } : item)));
+    },
+    [keyExtractor]
+  );
+
+  const removeItem = useCallback(
+    (id: string) => {
+      setData((prev) => prev.filter((item) => keyExtractor(item) !== id));
+    },
+    [keyExtractor]
+  );
+
+  return { data, loading, loadingMore, hasMore, reload, loadMore, reset, updateItem, removeItem, momentumRef };
+}
+
+const cardKey = (u: UserCard) => u.firebaseUid;
+
 // ─── Main screen ─────────────────────────────────────────────
 
 export default function FriendsScreen() {
   const router = useRouter();
+  const { user } = useAuth();
+  const myUid = user?.firebaseUid ?? 'me';
+
   const [activeTab, setActiveTab] = useState<Segment>('Followers');
   const [searchValue, setSearchValue] = useState('');
   const [isFocused, setIsFocused] = useState(false);
+  const [actionLoadingUids, setActionLoadingUids] = useState<Set<string>>(new Set());
 
-  const [followers, setFollowers] = useState<any[]>([]);
-  const [following, setFollowing] = useState<any[]>([]);
-  const [requests, setRequests] = useState(DEMO_REQUESTS);
-  const [nearby] = useState(DEMO_NEARBY);
-  const [loadingFollowers, setLoadingFollowers] = useState(false);
-  const [loadingFollowing, setLoadingFollowing] = useState(false);
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-
-  const { user } = useAuth();
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const locationRequestedRef = useRef(false);
 
-  // Load followers / following from API
+  const isSearching = searchValue.trim().length >= 2;
+
+  const fetchFollowersPage = useCallback(
+    (page: number) => socialMediaApi.getFollowers(myUid, page, PAGE_SIZE),
+    [myUid]
+  );
+  const followersList = usePaginatedList<UserCard>(fetchFollowersPage, cardKey);
+
+  const fetchFollowingPage = useCallback(
+    (page: number) => socialMediaApi.getFollowing(myUid, page, PAGE_SIZE),
+    [myUid]
+  );
+  const followingList = usePaginatedList<UserCard>(fetchFollowingPage, cardKey);
+
+  const fetchRequestsPage = useCallback((page: number) => socialMediaApi.getFollowRequests(page, PAGE_SIZE), []);
+  const requestsList = usePaginatedList<UserCard>(fetchRequestsPage, cardKey);
+
+  const fetchSuggestedPage = useCallback((page: number) => socialMediaApi.getSuggestedUsers(page, PAGE_SIZE), []);
+  const suggestedList = usePaginatedList<UserCard>(fetchSuggestedPage, cardKey);
+
+  const fetchSearchPage = useCallback(
+    (page: number) => socialMediaApi.searchUsers(searchValue.trim(), page, PAGE_SIZE),
+    [searchValue]
+  );
+  const searchList = usePaginatedList<UserCard>(fetchSearchPage, cardKey);
+
+  // Initial load — Followers/Following/Requests are cheap and give the
+  // Requests-tab badge a real count as soon as the screen opens.
   useEffect(() => {
-    const uid = user?.firebaseUid ?? 'me';
-    loadFollowers(uid);
-    loadFollowing(uid);
-  }, [user]);
+    followersList.reload();
+    followingList.reload();
+    requestsList.reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myUid]);
 
-  const loadFollowers = async (uid: string) => {
-    setLoadingFollowers(true);
-    try {
-      const data = await socialMediaApi.getFollowers(uid);
-      setFollowers(Array.isArray(data) ? data : []);
-    } catch {
-      setFollowers([]);
-    } finally {
-      setLoadingFollowers(false);
+  // Suggested is lazy — it's the only tab that opportunistically asks for
+  // location permission, so we defer that prompt until the user actually
+  // opens the tab rather than firing it the moment Friends is opened.
+  useEffect(() => {
+    if (activeTab !== 'Suggested') return;
+    if (suggestedList.data.length === 0 && !suggestedList.loading) {
+      suggestedList.reload();
     }
-  };
-
-  const loadFollowing = async (uid: string) => {
-    setLoadingFollowing(true);
-    try {
-      const data = await socialMediaApi.getFollowing(uid);
-      setFollowing(Array.isArray(data) ? data : []);
-    } catch {
-      setFollowing([]);
-    } finally {
-      setLoadingFollowing(false);
+    if (!locationRequestedRef.current) {
+      locationRequestedRef.current = true;
+      (async () => {
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status !== 'granted') return;
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          await userApi.updateLocation(pos.coords.latitude, pos.coords.longitude);
+          suggestedList.reload();
+        } catch {
+          // Silent — Suggested still works without location, just without distance sorting.
+        }
+      })();
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
-  // Search debounce
+  // Search debounce — resets to page 0 on every new query.
   useEffect(() => {
     clearTimeout(searchDebounce.current);
-    if (searchValue.trim().length < 2) { setSearchResults([]); return; }
-    searchDebounce.current = setTimeout(async () => {
-      setSearchLoading(true);
-      try {
-        const res = await socialMediaApi.searchUsers(searchValue.trim());
-        const arr = Array.isArray(res) ? res : Array.isArray((res as any)?.data) ? (res as any).data : [];
-        setSearchResults(arr);
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setSearchLoading(false);
-      }
+    if (!isSearching) {
+      searchList.reset();
+      return;
+    }
+    searchDebounce.current = setTimeout(() => {
+      searchList.reload();
     }, 380);
     return () => clearTimeout(searchDebounce.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchValue]);
 
-  const handleAccept = (id: string) => setRequests((prev) => prev.filter((r) => r.id !== id));
-  const handleDecline = (id: string) => setRequests((prev) => prev.filter((r) => r.id !== id));
-
-  const handleUnfollow = async (uid: string) => {
-    try {
-      await socialMediaApi.unfollowUser(uid);
-      setFollowing((prev) => prev.filter((u: any) => (u.firebaseUid ?? u.id) !== uid));
-    } catch {}
+  const setActionLoading = (uid: string, loading: boolean) => {
+    setActionLoadingUids((prev) => {
+      const next = new Set(prev);
+      if (loading) next.add(uid);
+      else next.delete(uid);
+      return next;
+    });
   };
 
-  const handleFollow = async (uid: string) => {
+  const handleFollowPress = async (item: UserCard) => {
+    const uid = item.firebaseUid;
+    if (actionLoadingUids.has(uid)) return;
+    const allLists = [followersList, followingList, suggestedList, searchList];
+    setActionLoading(uid, true);
     try {
-      await socialMediaApi.followUser(uid);
-    } catch {}
+      if (item.relationshipStatus === 'NONE') {
+        const res = await socialMediaApi.followUser(uid);
+        const status: FollowRelationship = res?.status === 'PENDING' ? 'PENDING' : 'ACCEPTED';
+        allLists.forEach((list) => list.updateItem(uid, { relationshipStatus: status }));
+      } else {
+        await socialMediaApi.unfollowUser(uid);
+        allLists.forEach((list) => list.updateItem(uid, { relationshipStatus: 'NONE' }));
+      }
+    } catch {
+      // Leave state as-is on failure so the user can retry.
+    } finally {
+      setActionLoading(uid, false);
+    }
+  };
+
+  const handleAcceptRequest = async (item: UserCard) => {
+    const uid = item.firebaseUid;
+    if (actionLoadingUids.has(uid)) return;
+    setActionLoading(uid, true);
+    try {
+      await socialMediaApi.acceptFollowRequest(uid);
+      requestsList.removeItem(uid);
+      followersList.updateItem(uid, { relationshipStatus: 'ACCEPTED' });
+    } catch {
+      // Leave the request in place on failure.
+    } finally {
+      setActionLoading(uid, false);
+    }
+  };
+
+  const handleRejectRequest = async (item: UserCard) => {
+    const uid = item.firebaseUid;
+    if (actionLoadingUids.has(uid)) return;
+    setActionLoading(uid, true);
+    try {
+      await socialMediaApi.rejectFollowRequest(uid);
+      requestsList.removeItem(uid);
+    } catch {
+      // Leave the request in place on failure.
+    } finally {
+      setActionLoading(uid, false);
+    }
   };
 
   const goToProfile = (uid: string) => router.push(`/friend-profile?user=${uid}` as any);
@@ -166,177 +316,226 @@ export default function FriendsScreen() {
 
   // ─── Sub-renderers ───────────────────────────────────────────
 
-  const renderUserRow = (user: any, actions: React.ReactNode) => {
-    const uid = user.firebaseUid ?? user.id ?? user._id;
-    const name = user.displayName ?? user.name ?? 'Unknown';
-    const avatar = user.profileImageUrl ?? user.avatar;
-    const sport = user.sport ?? '';
-    const location = user.location ?? '';
-
+  const renderActionButton = (item: UserCard) => {
+    const uid = item.firebaseUid;
+    if (item.relationshipStatus === 'SELF') return null;
+    if (actionLoadingUids.has(uid)) {
+      return (
+        <View style={[styles.followBtn, styles.followBtnLoading]}>
+          <ActivityIndicator size="small" color={Colors.primary} />
+        </View>
+      );
+    }
+    if (item.relationshipStatus === 'ACCEPTED') {
+      return (
+        <ScalePressable onPress={() => handleFollowPress(item)} style={[styles.followBtn, styles.followingBtn]}>
+          <Text style={[styles.followBtnText, styles.followingBtnText]}>Following</Text>
+        </ScalePressable>
+      );
+    }
+    if (item.relationshipStatus === 'PENDING') {
+      return (
+        <ScalePressable onPress={() => handleFollowPress(item)} style={[styles.followBtn, styles.requestedBtn]}>
+          <Text style={[styles.followBtnText, styles.requestedBtnText]}>Requested</Text>
+        </ScalePressable>
+      );
+    }
     return (
-      <TouchableOpacity
-        key={uid}
-        style={styles.userCard}
-        activeOpacity={0.88}
-        onPress={() => goToProfile(uid)}
-      >
-        <Image
-          source={avatar
-            ? { uri: avatar.startsWith('http') ? avatar : `data:image/jpeg;base64,${avatar}` }
-            : { uri: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=400' }}
-          style={styles.userAvatar}
-        />
+      <ScalePressable onPress={() => handleFollowPress(item)} style={styles.followBtn}>
+        <Text style={styles.followBtnText}>Follow</Text>
+      </ScalePressable>
+    );
+  };
+
+  const renderUserRow = (item: UserCard) => {
+    const uid = item.firebaseUid;
+    const sport = item.sports?.[0] ?? '';
+    return (
+      <TouchableOpacity key={uid} style={styles.userCard} activeOpacity={0.88} onPress={() => goToProfile(uid)}>
+        <Image source={avatarSource(item.profileImageUrl)} style={styles.userAvatar} />
         <View style={styles.userInfo}>
-          <Text style={styles.userName}>{name}</Text>
-          <Text style={styles.userMeta}>
-            {[sport, location].filter(Boolean).join(' · ')}
-          </Text>
+          <Text style={styles.userName}>{item.displayName}</Text>
+          <Text style={styles.userMeta}>{[sport, item.skillLevel].filter(Boolean).join(' · ')}</Text>
         </View>
         <View style={styles.userActions}>
-          <TouchableOpacity style={styles.msgIconBtn} onPress={() => goToChat(uid, name)} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.msgIconBtn} onPress={() => goToChat(uid, item.displayName)} activeOpacity={0.8}>
             <MessageCircle color={Colors.primary} size={18} strokeWidth={2} />
           </TouchableOpacity>
-          {actions}
+          {renderActionButton(item)}
         </View>
       </TouchableOpacity>
     );
   };
 
-  const renderFollowersTab = () => {
-    const list = searchValue.trim().length > 0 ? searchResults : followers;
-    const loading = searchValue.trim().length > 0 ? searchLoading : loadingFollowers;
+  const renderSuggestedRow = (item: UserCard) => {
+    const uid = item.firebaseUid;
+    const skillColor = item.skillLevel ? SKILL_COLOR[item.skillLevel] ?? Colors.primary : Colors.primary;
     return (
-      <View style={{ flex: 1 }}>
-        {loading ? (
-          <View style={styles.loadingWrap}><ActivityIndicator color={Colors.primary} /></View>
-        ) : list.length === 0 ? (
-          renderEmptyState('👥', 'No followers yet', 'Share your profile to grow your network')
-        ) : (
-          <FlatList
-            data={list}
-            keyExtractor={(u: any) => u.firebaseUid ?? u.id ?? Math.random().toString()}
-            renderItem={({ item }) =>
-              renderUserRow(item, (
-                <ScalePressable onPress={() => handleFollow(item.firebaseUid ?? item.id)} style={styles.followBtn}>
-                  <Text style={styles.followBtnText}>Follow</Text>
-                </ScalePressable>
-              ))
-            }
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
-        )}
-      </View>
-    );
-  };
-
-  const renderFollowingTab = () => {
-    const list = searchValue.trim().length > 0 ? searchResults : following;
-    const loading = searchValue.trim().length > 0 ? searchLoading : loadingFollowing;
-    return (
-      <View style={{ flex: 1 }}>
-        {loading ? (
-          <View style={styles.loadingWrap}><ActivityIndicator color={Colors.primary} /></View>
-        ) : list.length === 0 ? (
-          renderEmptyState('🔍', 'Not following anyone yet', 'Discover players in Explore')
-        ) : (
-          <FlatList
-            data={list}
-            keyExtractor={(u: any) => u.firebaseUid ?? u.id ?? Math.random().toString()}
-            renderItem={({ item }) =>
-              renderUserRow(item, (
-                <ScalePressable onPress={() => handleUnfollow(item.firebaseUid ?? item.id)} style={[styles.followBtn, styles.followingBtn]}>
-                  <Text style={[styles.followBtnText, styles.followingBtnText]}>Following</Text>
-                </ScalePressable>
-              ))
-            }
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
-        )}
-      </View>
-    );
-  };
-
-  const renderRequestsTab = () => {
-    if (requests.length === 0) {
-      return renderEmptyState('✅', 'No pending requests', 'You\'re all caught up!');
-    }
-    return (
-      <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-        {requests.map((req) => (
-          <View key={req.id} style={styles.requestCard}>
-            <TouchableOpacity onPress={() => goToProfile(req.firebaseUid)} activeOpacity={0.85}>
-              <Image source={{ uri: req.avatar }} style={styles.requestAvatar} />
-            </TouchableOpacity>
-            <View style={styles.requestInfo}>
-              <Text style={styles.userName}>{req.name}</Text>
-              <Text style={styles.userMeta}>{req.sport} · {req.location}</Text>
+      <TouchableOpacity key={uid} style={styles.userCard} activeOpacity={0.88} onPress={() => goToProfile(uid)}>
+        <View style={styles.nearbyAvatarWrap}>
+          <Image source={avatarSource(item.profileImageUrl)} style={styles.userAvatar} />
+          {typeof item.distanceKm === 'number' && (
+            <View style={styles.nearbyDistanceBadge}>
+              <Text style={styles.nearbyDistanceText}>
+                {item.distanceKm < 1 ? `${Math.round(item.distanceKm * 1000)}m` : `${item.distanceKm.toFixed(1)}km`}
+              </Text>
             </View>
-            <View style={styles.requestBtns}>
-              <TouchableOpacity style={styles.declineBtn} onPress={() => handleDecline(req.id)} activeOpacity={0.8}>
-                <X color={Colors.neutral500} size={15} strokeWidth={2.5} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.acceptBtn} onPress={() => handleAccept(req.id)} activeOpacity={0.85}>
-                <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.acceptBtnGrad}>
-                  <Text style={styles.acceptBtnText}>Accept</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ))}
-      </ScrollView>
-    );
-  };
-
-  const renderNearbyTab = () => (
-    <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-      {/* Info banner */}
-      <View style={styles.nearbyBanner}>
-        <MapPin color={Colors.primary} size={16} strokeWidth={2} />
-        <Text style={styles.nearbyBannerText}>Players within 5 km of your location</Text>
-      </View>
-
-      {nearby.map((player) => (
-        <TouchableOpacity
-          key={player.id}
-          style={styles.userCard}
-          activeOpacity={0.88}
-          onPress={() => goToProfile(player.firebaseUid)}
-        >
-          <View style={styles.nearbyAvatarWrap}>
-            <Image source={{ uri: player.avatar }} style={styles.userAvatar} />
-            <View style={[styles.nearbyDistanceBadge]}>
-              <Text style={styles.nearbyDistanceText}>{player.distance}</Text>
-            </View>
-          </View>
-          <View style={styles.userInfo}>
-            <Text style={styles.userName}>{player.name}</Text>
-            <View style={styles.nearbyMeta}>
-              <Text style={styles.userMeta}>{player.sport}</Text>
-              <View style={[styles.skillBadge, { backgroundColor: SKILL_COLOR[player.skill] + '20' }]}>
-                <Text style={[styles.skillText, { color: SKILL_COLOR[player.skill] }]}>{player.skill}</Text>
+          )}
+        </View>
+        <View style={styles.userInfo}>
+          <Text style={styles.userName}>{item.displayName}</Text>
+          <View style={styles.nearbyMeta}>
+            <Text style={styles.userMeta}>{item.sports?.[0] ?? ''}</Text>
+            {!!item.skillLevel && (
+              <View style={[styles.skillBadge, { backgroundColor: skillColor + '20' }]}>
+                <Text style={[styles.skillText, { color: skillColor }]}>{item.skillLevel}</Text>
               </View>
-            </View>
+            )}
           </View>
-          <View style={styles.userActions}>
-            <TouchableOpacity style={styles.msgIconBtn} onPress={() => goToChat(player.firebaseUid, player.name)} activeOpacity={0.8}>
-              <MessageCircle color={Colors.primary} size={18} strokeWidth={2} />
-            </TouchableOpacity>
-            <ScalePressable onPress={() => handleFollow(player.firebaseUid)} style={styles.followBtn}>
-              <Text style={styles.followBtnText}>Follow</Text>
-            </ScalePressable>
-          </View>
-        </TouchableOpacity>
-      ))}
-    </ScrollView>
-  );
+        </View>
+        <View style={styles.userActions}>
+          <TouchableOpacity style={styles.msgIconBtn} onPress={() => goToChat(uid, item.displayName)} activeOpacity={0.8}>
+            <MessageCircle color={Colors.primary} size={18} strokeWidth={2} />
+          </TouchableOpacity>
+          {renderActionButton(item)}
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
-  const renderEmptyState = (emoji: string, title: string, sub: string) => (
+  const renderRequestRow = (item: UserCard) => {
+    const uid = item.firebaseUid;
+    const isLoading = actionLoadingUids.has(uid);
+    return (
+      <View key={uid} style={styles.requestCard}>
+        <TouchableOpacity onPress={() => goToProfile(uid)} activeOpacity={0.85}>
+          <Image source={avatarSource(item.profileImageUrl)} style={styles.requestAvatar} />
+        </TouchableOpacity>
+        <View style={styles.requestInfo}>
+          <Text style={styles.userName}>{item.displayName}</Text>
+          <Text style={styles.userMeta}>{[item.sports?.[0], item.skillLevel].filter(Boolean).join(' · ')}</Text>
+        </View>
+        {isLoading ? (
+          <ActivityIndicator color={Colors.primary} />
+        ) : (
+          <View style={styles.requestBtns}>
+            <TouchableOpacity style={styles.declineBtn} onPress={() => handleRejectRequest(item)} activeOpacity={0.8}>
+              <X color={Colors.neutral500} size={15} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.acceptBtn} onPress={() => handleAcceptRequest(item)} activeOpacity={0.85}>
+              <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.acceptBtnGrad}>
+                <Text style={styles.acceptBtnText}>Accept</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const renderEmptyState = (illustration: React.ReactNode, title: string, sub: string) => (
     <View style={styles.emptyWrap}>
-      <Text style={styles.emptyEmoji}>{emoji}</Text>
+      {illustration}
       <Text style={styles.emptyTitle}>{title}</Text>
       <Text style={styles.emptySub}>{sub}</Text>
+    </View>
+  );
+
+  const renderPaginatedTab = (
+    list: PaginatedList<UserCard>,
+    renderRow: (item: UserCard) => React.ReactElement,
+    emptyIllustration: React.ReactNode,
+    emptyTitle: string,
+    emptySub: string
+  ) => {
+    if (list.loading && list.data.length === 0) {
+      return (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator color={Colors.primary} />
+        </View>
+      );
+    }
+    if (list.data.length === 0) {
+      return renderEmptyState(emptyIllustration, emptyTitle, emptySub);
+    }
+    return (
+      <FlatList
+        data={list.data}
+        keyExtractor={cardKey}
+        renderItem={({ item }) => renderRow(item)}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        onEndReachedThreshold={0.5}
+        onEndReached={() => {
+          if (!list.momentumRef.current) {
+            list.momentumRef.current = true;
+            list.loadMore();
+          }
+        }}
+        onMomentumScrollBegin={() => {
+          list.momentumRef.current = false;
+        }}
+        ListFooterComponent={
+          list.loadingMore ? (
+            <View style={styles.footerLoading}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+            </View>
+          ) : null
+        }
+      />
+    );
+  };
+
+  const renderFollowersTab = () =>
+    isSearching
+      ? renderPaginatedTab(
+          searchList,
+          renderUserRow,
+          <NoFollowingIllustration />,
+          'No results',
+          `No players found for "${searchValue.trim()}"`
+        )
+      : renderPaginatedTab(
+          followersList,
+          renderUserRow,
+          <NoFollowersIllustration />,
+          'No followers yet',
+          'Share your profile to grow your network'
+        );
+
+  const renderFollowingTab = () =>
+    isSearching
+      ? renderPaginatedTab(
+          searchList,
+          renderUserRow,
+          <NoFollowingIllustration />,
+          'No results',
+          `No players found for "${searchValue.trim()}"`
+        )
+      : renderPaginatedTab(
+          followingList,
+          renderUserRow,
+          <NoFollowingIllustration />,
+          'Not following anyone yet',
+          'Discover players in Suggested'
+        );
+
+  const renderRequestsTab = () =>
+    renderPaginatedTab(requestsList, renderRequestRow, <AllCaughtUpIllustration />, 'No pending requests', "You're all caught up!");
+
+  const renderSuggestedTab = () => (
+    <View style={{ flex: 1 }}>
+      <View style={styles.nearbyBanner}>
+        <MapPin color={Colors.primary} size={16} strokeWidth={2} />
+        <Text style={styles.nearbyBannerText}>People who share your sports, ranked by fit and distance</Text>
+      </View>
+      {renderPaginatedTab(
+        suggestedList,
+        renderSuggestedRow,
+        <NoSuggestionsIllustration />,
+        'No suggestions yet',
+        'Follow a few players or add your sports in your profile'
+      )}
     </View>
   );
 
@@ -351,11 +550,8 @@ export default function FriendsScreen() {
           <Text style={styles.headerTitle}>Friends</Text>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.iconBtn} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/notifications' as any)} activeOpacity={0.8}>
             <Bell color={Colors.neutral700} size={20} strokeWidth={2} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/create-match' as any)} activeOpacity={0.8}>
-            <UserPlus color={Colors.neutral700} size={20} strokeWidth={2} />
           </TouchableOpacity>
         </View>
       </View>
@@ -374,11 +570,11 @@ export default function FriendsScreen() {
           returnKeyType="search"
         />
         {!!searchValue && (
-          <TouchableOpacity onPress={() => { setSearchValue(''); setSearchResults([]); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <TouchableOpacity onPress={() => setSearchValue('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <X color={Colors.neutral400} size={15} strokeWidth={2} />
           </TouchableOpacity>
         )}
-        {searchLoading && <ActivityIndicator size="small" color={Colors.primary} />}
+        {isSearching && searchList.loading && <ActivityIndicator size="small" color={Colors.primary} />}
       </View>
 
       {/* Segment bar */}
@@ -391,13 +587,10 @@ export default function FriendsScreen() {
             activeOpacity={0.8}
           >
             <Text style={[styles.segmentText, activeTab === seg && styles.segmentTextActive]}>{seg}</Text>
-            {seg === 'Requests' && requests.length > 0 && (
+            {seg === 'Requests' && requestsList.data.length > 0 && (
               <View style={styles.requestBadge}>
-                <Text style={styles.requestBadgeText}>{requests.length}</Text>
+                <Text style={styles.requestBadgeText}>{requestsList.data.length}</Text>
               </View>
-            )}
-            {seg === 'Nearby' && (
-              <View style={styles.nearbyBadgeDot} />
             )}
           </TouchableOpacity>
         ))}
@@ -408,19 +601,8 @@ export default function FriendsScreen() {
         {activeTab === 'Followers' && renderFollowersTab()}
         {activeTab === 'Following' && renderFollowingTab()}
         {activeTab === 'Requests' && renderRequestsTab()}
-        {activeTab === 'Nearby' && renderNearbyTab()}
+        {activeTab === 'Suggested' && renderSuggestedTab()}
       </View>
-
-      {/* Create Team FAB */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push('/create-match' as any)}
-        activeOpacity={0.88}
-      >
-        <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.fabGrad}>
-          <Plus color={Colors.white} size={22} strokeWidth={2.5} />
-        </LinearGradient>
-      </TouchableOpacity>
 
       <BottomNavbar activeTab="FRIENDS" showCreateButton={false} />
     </SafeAreaView>
@@ -476,11 +658,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.liveRed, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
   },
   requestBadgeText: { fontSize: 9, fontWeight: '900', color: Colors.white },
-  nearbyBadgeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.success },
 
   // Lists
   listContent: { paddingHorizontal: 18, paddingBottom: 120, gap: 12, paddingTop: 4 },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 40 },
+  footerLoading: { paddingVertical: 16, alignItems: 'center' },
 
   // User card
   userCard: {
@@ -500,10 +682,14 @@ const styles = StyleSheet.create({
   followBtn: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12,
     borderWidth: 1.5, borderColor: Colors.primary, backgroundColor: Colors.white,
+    minWidth: 76, alignItems: 'center', justifyContent: 'center',
   },
+  followBtnLoading: { borderColor: Colors.neutral200 },
   followBtnText: { fontSize: 12, fontWeight: '800', color: Colors.primary },
   followingBtn: { backgroundColor: Colors.neutral100, borderColor: Colors.neutral200 },
   followingBtnText: { color: Colors.neutral600 },
+  requestedBtn: { backgroundColor: Colors.primaryLight, borderColor: Colors.primaryLight },
+  requestedBtnText: { color: Colors.primary },
 
   // Request card
   requestCard: {
@@ -523,10 +709,11 @@ const styles = StyleSheet.create({
   acceptBtnGrad: { paddingHorizontal: 16, paddingVertical: 10 },
   acceptBtnText: { fontSize: 13, fontWeight: '800', color: Colors.white },
 
-  // Nearby
+  // Suggested
   nearbyBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: Colors.primaryLight, borderRadius: 14, padding: 12, marginBottom: 4,
+    backgroundColor: Colors.primaryLight, borderRadius: 14, padding: 12,
+    marginHorizontal: 18, marginBottom: 4,
   },
   nearbyBannerText: { fontSize: 13, fontWeight: '600', color: Colors.primary, flex: 1 },
   nearbyAvatarWrap: { position: 'relative' },
@@ -541,16 +728,7 @@ const styles = StyleSheet.create({
   skillText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.4 },
 
   // Empty state
-  emptyWrap: { alignItems: 'center', paddingTop: 60, gap: 10 },
-  emptyEmoji: { fontSize: 48, marginBottom: 4 },
+  emptyWrap: { alignItems: 'center', paddingTop: 44, gap: 10 },
   emptyTitle: { fontSize: 17, fontWeight: '800', color: Colors.text },
   emptySub: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', paddingHorizontal: 32 },
-
-  // FAB
-  fab: {
-    position: 'absolute', right: 20, bottom: 88,
-    borderRadius: 18, overflow: 'hidden',
-    shadowColor: Colors.primary, shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 8,
-  },
-  fabGrad: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
 });

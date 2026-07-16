@@ -13,6 +13,8 @@ import {
   Alert,
   Switch,
   Image,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -950,6 +952,11 @@ export default function CreateTournamentScreen() {
         </View>
       )}
 
+      <KeyboardAvoidingView
+        style={styles.flex1}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
       <ScrollView
         style={styles.flex1}
         contentContainerStyle={styles.scrollContent}
@@ -958,6 +965,7 @@ export default function CreateTournamentScreen() {
       >
         <Animated.View style={{ opacity: fadeAnim }}>{renderStep()}</Animated.View>
       </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Venue modal */}
       <Modal visible={venueModalVisible} transparent animationType="slide">

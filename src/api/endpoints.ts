@@ -1,12 +1,14 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 // ─── Backend URL Config ──────────────────────────────────────────────────────
 // Each environment gets the right URL automatically — no manual switching needed.
 //
-// iOS Simulator  → localhost (direct, no tunnel needed)
-// Android Emulator → 10.0.2.2 (Android's alias for the host machine)
-// Physical device → your Mac's LAN IP (run: ipconfig getifaddr en0)
-// Web (Vercel)   → Cloudflare tunnel URL (run: bash start-tunnel.sh)
+// iOS Simulator     → localhost (direct, no tunnel needed)
+// Android Emulator  → 10.0.2.2 (Android's alias for the host machine)
+// Physical device   → auto-detected from the LAN IP Expo Go is already
+//                      connected through (no manual IP editing, ever)
+// Web (Vercel)      → Cloudflare tunnel URL (run: bash start-tunnel.sh)
 //
 // ↓ Update this URL each time you run: bash start-tunnel.sh
 const TUNNEL_URL = 'https://centres-station-chicago-dot.trycloudflare.com/api';
@@ -16,8 +18,17 @@ const TUNNEL_URL = 'https://centres-station-chicago-dot.trycloudflare.com/api';
 
 function resolveBaseUrl(): string {
   if (Platform.OS === 'web') return TUNNEL_URL;
+
+  // Expo Go/dev builds already hold a connection to the Metro bundler at
+  // <hostUri> (e.g. "192.168.1.4:8081") to load this very JS bundle — reusing
+  // that host means a physical device always finds the right Mac, and it
+  // keeps working automatically if your Wi-Fi network or IP changes.
+  const hostUri = Constants.expoConfig?.hostUri;
+  const lanHost = hostUri?.split(':')[0];
+  const isLanIp = !!lanHost && /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(lanHost);
+  if (isLanIp) return `http://${lanHost}:8080/api`;
+
   if (Platform.OS === 'ios') return 'http://localhost:8080/api';        // iOS Simulator → user backend
-  // Physical device on same WiFi: 'http://192.168.1.10:8080/api'
   return 'http://10.0.2.2:8080/api';                                    // Android Emulator → user backend
 }
 
@@ -102,6 +113,18 @@ export const ENDPOINTS = {
     DELETE: (id: string) => `/stories/${id}`,
   },
 
+  REELS: {
+    CREATE: '/reels',
+    GET_USER_REELS: (userId: string, page: number, size: number) =>
+      `/reels/users/${userId}?page=${page}&size=${size}`,
+    LIKE: (id: string) => `/reels/${id}/like`,
+    VIEW: (id: string) => `/reels/${id}/view`,
+  },
+
+  MEDIA: {
+    AUDIO_TRACKS: '/media/audio-tracks',
+  },
+
   INVITATIONS: {
     INVITE: '/match-invitations/invite',
     REQUEST: '/match-invitations/request',
@@ -138,28 +161,41 @@ export const ENDPOINTS = {
   SOCIAL: {
     CREATE_POST: '/social/posts',
     USERS_BY_FIREBASE_UIDS: '/social/users/by-firebase-uids',
-    SEARCH_USERS: (query: string) =>
-      `/social/users/search/${encodeURIComponent(query)}`,
-    FEED: '/social/feed',
+    SEARCH_USERS: (query: string, page: number, size: number) =>
+      `/social/users/search/${encodeURIComponent(query)}?page=${page}&size=${size}`,
+    FEED: (page: number, size: number) =>
+      `/social/feed?page=${page}&size=${size}`,
     GET_USER_PROFILE: (id: string) =>
       `/social/users/${id}/profile`,
-    GET_USER_POSTS: (userId: string) =>
-      `/social/users/${userId}/posts`,
+    GET_USER_POSTS: (userId: string, page: number, size: number) =>
+      `/social/users/${userId}/posts?page=${page}&size=${size}`,
     GET_POST: (id: string | number) =>
       `/social/posts/${id}`,
     LIKE_POST: (id: string | number) =>
       `/social/posts/${id}/like`,
-    UNLIKE_POST: (id: string | number) =>
-      `/social/posts/${id}/unlike`,
+    SAVE_POST: (id: string | number) =>
+      `/social/posts/${id}/save`,
+    GET_SAVED_POSTS: (page: number, size: number) =>
+      `/social/posts/saved?page=${page}&size=${size}`,
     GET_COMMENTS: (id: string | number) =>
       `/social/posts/${id}/comments`,
     ADD_COMMENT: (id: string | number) =>
-      `/social/posts/${id}/comments`,
+      `/social/posts/${id}/comment`,
 
     FOLLOW: (id: string) => `/social/users/${id}/follow`,
     UNFOLLOW: (id: string) => `/social/users/${id}/unfollow`,
-    GET_FOLLOWERS: (id: string) => `/social/users/${id}/followers`,
-    GET_FOLLOWING: (id: string) => `/social/users/${id}/following`,
+    GET_FOLLOWERS: (id: string, page: number, size: number) =>
+      `/social/users/${id}/followers?page=${page}&size=${size}`,
+    GET_FOLLOWING: (id: string, page: number, size: number) =>
+      `/social/users/${id}/following?page=${page}&size=${size}`,
+    GET_SUGGESTED: (page: number, size: number) =>
+      `/social/users/suggested?page=${page}&size=${size}`,
+    GET_REQUESTS: (page: number, size: number) =>
+      `/social/requests?page=${page}&size=${size}`,
+    ACCEPT_REQUEST: (uid: string) => `/social/requests/${uid}/accept`,
+    REJECT_REQUEST: (uid: string) => `/social/requests/${uid}/reject`,
+    UPDATE_PRIVACY: '/social/users/me/privacy',
+    UPDATE_LOCATION: '/social/users/me/location',
   },
 };
 

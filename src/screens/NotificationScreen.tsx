@@ -19,7 +19,9 @@ import {
   CircleCheckBig,
   CircleX,
   CreditCard,
+  Heart,
   MapPin,
+  MessageCircle,
   Trophy,
   UserCheck,
   UserMinus,
@@ -56,6 +58,17 @@ function NotificationIcon({ type }: { type: string }) {
     case 'PLAYER_ADDED_DIRECTLY': return <UserCheck color={Colors.primary} size={size} strokeWidth={sw} />;
     case 'BOOKING_CONFIRMED':     return <CircleCheckBig color={Colors.success} size={size} strokeWidth={sw} />;
     case 'BOOKING_REJECTED':      return <CircleX color={Colors.error} size={size} strokeWidth={sw} />;
+    case 'MATCH_CANCELLED_NOTIFY': return <CircleX color={Colors.error} size={size} strokeWidth={sw} />;
+    case 'FOLLOW_REQUEST_RECEIVED': return <UserPlus color={Colors.primary} size={size} strokeWidth={sw} />;
+    case 'FOLLOW_REQUEST_ACCEPTED': return <UserCheck color={Colors.success} size={size} strokeWidth={sw} />;
+    case 'NEW_FOLLOWER':          return <UserPlus color={Colors.success} size={size} strokeWidth={sw} />;
+    case 'POST_LIKED':            return <Heart color="#EF4444" size={size} strokeWidth={sw} />;
+    case 'POST_COMMENTED':        return <MessageCircle color={Colors.primary} size={size} strokeWidth={sw} />;
+    case 'REEL_LIKED':            return <Heart color="#EF4444" size={size} strokeWidth={sw} />;
+    case 'TOURNAMENT_PLAYER_ADDED': return <Trophy color={Colors.primary} size={size} strokeWidth={sw} />;
+    case 'WALK_RUN_INVITE_RECEIVED': return <UserPlus color={Colors.primary} size={size} strokeWidth={sw} />;
+    case 'WALK_RUN_INVITE_ACCEPTED': return <UserCheck color={Colors.success} size={size} strokeWidth={sw} />;
+    case 'WALK_RUN_INVITE_DECLINED': return <UserMinus color={Colors.error} size={size} strokeWidth={sw} />;
     default:                      return <Users color={Colors.textMuted} size={size} strokeWidth={sw} />;
   }
 }
@@ -240,13 +253,29 @@ export default function NotificationScreen() {
 
   const handlePress = async (n: NotificationResponse) => {
     await markRead(n);
+    const snap = n.matchSnapshot ?? {};
+
     if (n.bookingId && n.invitationStatus === 'JOIN_COMPLETED') {
       router.push(`/match/${n.bookingId}` as any);
-    } else if (n.bookingId && (n.type === 'BOOKING_CONFIRMED' || n.type === 'BOOKING_REJECTED')) {
+    } else if (n.bookingId && (n.type === 'BOOKING_CONFIRMED' || n.type === 'BOOKING_REJECTED' || n.type === 'MATCH_CANCELLED_NOTIFY')) {
       // MatchDetailsScreen already branches on ACTIVE_MATCH/CANCELLED, so it's the
-      // right landing page for either a vendor acceptance or rejection.
+      // right landing page for a vendor acceptance, rejection, or cancellation.
       router.push(`/match/${n.bookingId}` as any);
+    } else if (
+      (n.type === 'FOLLOW_REQUEST_RECEIVED' || n.type === 'FOLLOW_REQUEST_ACCEPTED' || n.type === 'NEW_FOLLOWER')
+      && snap.firebaseUid
+    ) {
+      router.push(`/friend-profile?user=${snap.firebaseUid}` as any);
+    } else if ((n.type === 'POST_LIKED' || n.type === 'POST_COMMENTED') && snap.postId) {
+      // These notifications are always about the recipient's own post, so the
+      // right landing spot is that exact post in the recipient's own profile.
+      router.push(`/profile?openPostId=${snap.postId}` as any);
+    } else if (n.type === 'REEL_LIKED' && snap.reelId) {
+      router.push(`/profile?openReelId=${snap.reelId}&tab=Reels` as any);
+    } else if (n.type === 'TOURNAMENT_PLAYER_ADDED' && snap.tournamentId) {
+      router.push(`/tournament/${snap.tournamentId}` as any);
     }
+    // WALK_RUN_INVITE_* has no dedicated viewer screen yet - falls through to mark-read only.
   };
 
   const handleMarkAllRead = async () => {

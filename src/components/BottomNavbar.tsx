@@ -12,7 +12,7 @@ import {
 import { useRouter } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Home as HomeIcon, Search, Plus, Settings, Users, Trophy, Swords, X, Sparkles } from 'lucide-react-native';
+import { Home as HomeIcon, Search, Plus, Settings, Users, Trophy, Swords, X, Sparkles, Camera, Video } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
 
 const NAV_ITEMS = [
@@ -69,11 +69,7 @@ export function BottomNavbar({ activeTab, showCreateButton = false }: BottomNavb
     router.push(route as any);
   };
 
-  const handleCreatePost = () => {
-    router.push('/create-post' as any);
-  };
-
-  const openMatchMenu = () => {
+  const openCreateMenu = () => {
     // reset animation values and show modal
     scaleAnim.setValue(0);
     opacityAnim.setValue(0);
@@ -167,6 +163,79 @@ export function BottomNavbar({ activeTab, showCreateButton = false }: BottomNavb
     router.push('/create-tournament' as any);
   };
 
+  const handleCreatePostOption = () => {
+    closeMatchMenu();
+    router.push('/create-post' as any);
+  };
+
+  const handleCreateReelOption = () => {
+    closeMatchMenu();
+    router.push('/create-reel' as any);
+  };
+
+  const handleCreateStoryOption = () => {
+    closeMatchMenu();
+    router.push('/story-create' as any);
+  };
+
+  const matchMenuOptions = [
+    {
+      key: 'match',
+      emoji: '⚽',
+      title: 'Create Match',
+      subtitle: 'Book a quick game and invite friends',
+      colors: [Colors.primary, Colors.primaryDark] as [string, string],
+      Icon: Swords,
+      spin: false,
+      onPress: handleNormalMatch,
+    },
+    {
+      key: 'tournament',
+      emoji: '🏆',
+      title: 'Create Tournament',
+      subtitle: 'Run a bracket with live scores',
+      colors: ['#F59E0B', '#DC2626'] as [string, string],
+      Icon: Sparkles,
+      spin: true,
+      onPress: handleTournamentMode,
+    },
+  ];
+
+  const postMenuOptions = [
+    {
+      key: 'post',
+      emoji: '📷',
+      title: 'Create Post',
+      subtitle: 'Share a photo with your feed',
+      colors: [Colors.primary, Colors.primaryDark] as [string, string],
+      Icon: Camera,
+      spin: false,
+      onPress: handleCreatePostOption,
+    },
+    {
+      key: 'reel',
+      emoji: '🎬',
+      title: 'Create Reel',
+      subtitle: 'Post a short video, up to 3 minutes',
+      colors: ['#F59E0B', '#DC2626'] as [string, string],
+      Icon: Video,
+      spin: false,
+      onPress: handleCreateReelOption,
+    },
+    {
+      key: 'story',
+      emoji: '✨',
+      title: 'Create Story',
+      subtitle: 'Share a moment that disappears in 24h',
+      colors: ['#7B1FA2', '#3B1D6E'] as [string, string],
+      Icon: Sparkles,
+      spin: true,
+      onPress: handleCreateStoryOption,
+    },
+  ];
+
+  const activeMenuOptions = isExploreTab ? matchMenuOptions : postMenuOptions;
+
   return (
     <View style={styles.container}>
       {NAV_ITEMS.slice(0, 2).map(({ id, label, Icon, route }) => {
@@ -196,99 +265,61 @@ export function BottomNavbar({ activeTab, showCreateButton = false }: BottomNavb
             style={{ transform: [{ scale: fabScale }] }}
           >
             <Pressable
-              onPress={isExploreTab ? openMatchMenu : handleCreatePost}
+              onPress={openCreateMenu}
               style={styles.fab}
               android_ripple={{ color: Colors.primaryLight, borderless: true }}
             >
               <Plus color={Colors.white} size={26} strokeWidth={3} />
             </Pressable>
           </Animated.View>
-          {isExploreTab && (
-            <Modal
-              visible={createMenuVisible}
-              transparent
-              animationType="none"
-              onRequestClose={closeMatchMenu}
-            >
-              <View style={styles.sheetOverlay}>
-                <Pressable style={styles.backdropPress} onPress={closeMatchMenu}>
-                  <Animated.View style={[StyleSheet.absoluteFill, { opacity: opacityAnim }]}>
-                    <BlurView intensity={35} tint="dark" style={StyleSheet.absoluteFill} />
-                  </Animated.View>
-                </Pressable>
+          <Modal
+            visible={createMenuVisible}
+            transparent
+            animationType="none"
+            onRequestClose={closeMatchMenu}
+          >
+            <View style={styles.sheetOverlay}>
+              <Pressable style={styles.backdropPress} onPress={closeMatchMenu}>
+                <Animated.View style={[StyleSheet.absoluteFill, { opacity: opacityAnim }]}>
+                  <BlurView intensity={35} tint="dark" style={StyleSheet.absoluteFill} />
+                </Animated.View>
+              </Pressable>
 
-                <Animated.View
-                  style={[
-                    styles.sheetCard,
-                    {
-                      opacity: opacityAnim,
-                      transform: [
-                        {
-                          translateY: scaleAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [220, 0],
-                          }),
-                        },
-                      ],
-                    },
-                  ]}
-                >
-                  <View style={styles.sheetHandle} />
-                  <View style={styles.sheetHeaderRow}>
-                    <View>
-                      <Text style={styles.sheetTitle}>Let's get started 🎉</Text>
-                      <Text style={styles.sheetSubtitle}>What would you like to create?</Text>
-                    </View>
-                    <Pressable style={styles.sheetCloseBtn} onPress={closeMatchMenu}>
-                      <X color={Colors.neutral600} size={18} strokeWidth={2.5} />
-                    </Pressable>
+              <Animated.View
+                style={[
+                  styles.sheetCard,
+                  {
+                    opacity: opacityAnim,
+                    transform: [
+                      {
+                        translateY: scaleAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [220, 0],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                <View style={styles.sheetHandle} />
+                <View style={styles.sheetHeaderRow}>
+                  <View>
+                    <Text style={styles.sheetTitle}>Let's get started 🎉</Text>
+                    <Text style={styles.sheetSubtitle}>What would you like to create?</Text>
                   </View>
-
-                  <Pressable
-                    onPress={handleNormalMatch}
-                    style={({ pressed }) => [styles.creativeOption, pressed && styles.creativeOptionPressed]}
-                  >
-                    <LinearGradient
-                      colors={[Colors.primary, Colors.primaryDark]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.creativeOptionGradient}
-                    >
-                      <Animated.Text
-                        style={[
-                          styles.creativeMascot,
-                          {
-                            transform: [
-                              {
-                                translateY: bounceAnim.interpolate({
-                                  inputRange: [0, 1],
-                                  outputRange: [0, -8],
-                                }),
-                              },
-                            ],
-                          },
-                        ]}
-                      >
-                        ⚽
-                      </Animated.Text>
-                      <View style={styles.creativeOptionTextWrap}>
-                        <Text style={styles.creativeOptionTitle}>Create Match</Text>
-                        <Text style={styles.creativeOptionSubtitle}>
-                          Book a quick game and invite friends
-                        </Text>
-                      </View>
-                      <View style={styles.creativeOptionIconWrap}>
-                        <Swords color={Colors.white} size={20} strokeWidth={2.5} />
-                      </View>
-                    </LinearGradient>
+                  <Pressable style={styles.sheetCloseBtn} onPress={closeMatchMenu}>
+                    <X color={Colors.neutral600} size={18} strokeWidth={2.5} />
                   </Pressable>
+                </View>
 
+                {activeMenuOptions.map((option) => (
                   <Pressable
-                    onPress={handleTournamentMode}
+                    key={option.key}
+                    onPress={option.onPress}
                     style={({ pressed }) => [styles.creativeOption, pressed && styles.creativeOptionPressed]}
                   >
                     <LinearGradient
-                      colors={['#F59E0B', '#DC2626']}
+                      colors={option.colors}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.creativeOptionGradient}
@@ -308,18 +339,16 @@ export function BottomNavbar({ activeTab, showCreateButton = false }: BottomNavb
                           },
                         ]}
                       >
-                        🏆
+                        {option.emoji}
                       </Animated.Text>
                       <View style={styles.creativeOptionTextWrap}>
-                        <Text style={styles.creativeOptionTitle}>Create Tournament</Text>
-                        <Text style={styles.creativeOptionSubtitle}>
-                          Run a bracket with live scores
-                        </Text>
+                        <Text style={styles.creativeOptionTitle}>{option.title}</Text>
+                        <Text style={styles.creativeOptionSubtitle}>{option.subtitle}</Text>
                       </View>
                       <Animated.View
                         style={[
                           styles.creativeOptionIconWrap,
-                          {
+                          option.spin && {
                             transform: [
                               {
                                 rotate: spinAnim.interpolate({
@@ -331,14 +360,14 @@ export function BottomNavbar({ activeTab, showCreateButton = false }: BottomNavb
                           },
                         ]}
                       >
-                        <Sparkles color={Colors.white} size={20} strokeWidth={2.5} />
+                        <option.Icon color={Colors.white} size={20} strokeWidth={2.5} />
                       </Animated.View>
                     </LinearGradient>
                   </Pressable>
-                </Animated.View>
-              </View>
-            </Modal>
-          )}
+                ))}
+              </Animated.View>
+            </View>
+          </Modal>
         </>
       )}
 
