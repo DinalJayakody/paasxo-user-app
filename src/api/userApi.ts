@@ -2,23 +2,58 @@ import axiosInstance from './axios';
 import { ENDPOINTS } from './endpoints';
 import { UserProfile } from '../types/api';
 
+export interface ProfileImageAsset {
+  uri: string;
+  name?: string;
+  type?: string;
+}
+
+export interface UpdateProfilePayload {
+  displayName?: string;
+  phoneNumber?: string;
+  bio?: string;
+  sports?: string[];
+  skillLevel?: string;
+  locationAccess?: boolean;
+  profileImage?: ProfileImageAsset;
+}
+
 export const userApi = {
   getProfile: async (): Promise<UserProfile> => {
     const { data } = await axiosInstance.get(ENDPOINTS.USER.PROFILE);
     return data;
   },
 
-  updateProfile: async (payload: Partial<UserProfile>) => {
-    const { data } = await axiosInstance.put(ENDPOINTS.USER.PROFILE, payload);
-    return data;
-  },
+  // PUT /auth/profile is multipart on the backend (UpdateProfileRequest bound
+  // via @ModelAttribute + an optional profileImage file part) - every field
+  // is sent as a plain form field, never as a JSON body.
+  updateProfile: async (payload: UpdateProfilePayload): Promise<UserProfile> => {
+    const formData = new FormData();
+    if (payload.displayName !== undefined) formData.append('displayName', payload.displayName);
+    if (payload.phoneNumber !== undefined) formData.append('phoneNumber', payload.phoneNumber);
+    if (payload.bio !== undefined) formData.append('bio', payload.bio);
+    if (payload.skillLevel !== undefined) formData.append('skillLevel', payload.skillLevel);
+    if (payload.locationAccess !== undefined) formData.append('locationAccess', String(payload.locationAccess));
+    payload.sports?.forEach((sport) => formData.append('sports', sport));
+    if (payload.profileImage) {
+      formData.append('profileImage', {
+        uri: payload.profileImage.uri,
+        name: payload.profileImage.name || 'avatar.jpg',
+        type: payload.profileImage.type || 'image/jpeg',
+      } as any);
+    }
 
-  uploadAvatar: async (formData: FormData) => {
-    // When uploading file, ensure axiosInstance has proper headers for multipart/form-data
-    const { data } = await axiosInstance.post(ENDPOINTS.USER.UPLOAD_AVATAR, formData, {
+    const { data } = await axiosInstance.put(ENDPOINTS.USER.UPDATE_PROFILE, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     return data;
+  },
+
+  // Thin convenience wrapper around updateProfile for the avatar-only flow
+  // (tap avatar -> pick from gallery/camera) so callers don't need to know
+  // the endpoint is shared with the full edit-profile form.
+  uploadAvatar: async (image: ProfileImageAsset): Promise<UserProfile> => {
+    return userApi.updateProfile({ profileImage: image });
   },
 
   // Small dedicated JSON endpoints, kept separate from updateProfile (which is
@@ -33,12 +68,3 @@ export const userApi = {
     return data;
   },
 };
-
-/*
-  Notes:
-  - For file upload on React Native, use `FormData()` and append the file with proper `uri`, `name`, and `type`.
-  - Example:
-    const fd = new FormData();
-    fd.append('avatar', { uri: localUri, name: 'avatar.jpg', type: 'image/jpeg' } as any);
-    await userApi.uploadAvatar(fd);
-*/

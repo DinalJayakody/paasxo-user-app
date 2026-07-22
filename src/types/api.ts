@@ -72,6 +72,10 @@ export interface PostSummary {
   caption?: string;
   mediaUrl?: string;
   sport?: string;
+  // 'PROFILE_PICTURE_UPDATE' for the auto-generated "updated their profile
+  // picture" post (see backend SocialService.createProfilePictureUpdatePost);
+  // absent/'NORMAL' for a regular post.
+  postType?: 'NORMAL' | 'PROFILE_PICTURE_UPDATE';
   likeCount: number;
   commentCount: number;
   likedByCurrentUser: boolean;
@@ -199,6 +203,23 @@ export interface BookingRecord {
 // expose yet (organizer, participants, pricing, amenities, rules, images...)
 // are left undefined or given a generic placeholder, and are wired up for
 // real once the backend adds the corresponding attribute.
+// Mirrors the backend's MatchScoreResponse exactly (com.pasxo.dto.booking.MatchScoreResponse).
+export type MatchLiveStatus = 'NOT_STARTED' | 'LIVE' | 'PAUSED' | 'COMPLETED';
+
+export interface MatchScoreState {
+  bookingId: number;
+  sport: string;
+  status: MatchLiveStatus;
+  teamAScore: number;
+  teamBScore: number;
+  state: Record<string, any>;
+  timerRunning: boolean;
+  timerStartedAt?: string | null;
+  elapsedSeconds: number;
+  updatedAt?: string | null;
+  canScore: boolean;
+}
+
 export interface MatchDetails {
   id: string;
   futsalId?: number;
@@ -241,6 +262,7 @@ export interface CreateBookingPayload {
   slotId: number;
   slotIds: number[];
   title?: string;
+  sport?: string;
   maxPlayers?: number;
   minPlayers?: number;
   players?: string[];

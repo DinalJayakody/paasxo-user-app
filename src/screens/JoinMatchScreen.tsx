@@ -35,6 +35,7 @@ import { socialMediaApi } from '../api/socialMediaApi';
 import { MatchDetails } from '../types/api';
 import { parseMatchDetails } from '../utils/parseMatch';
 import { AuthContext } from '../context/AuthContext';
+import { resolveMediaUrl } from '../utils/mediaUrl';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -48,9 +49,7 @@ interface PlayerProfile {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function resolveImageUri(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('data:') || url.startsWith('http') || url.startsWith('/')) return url;
-  return `data:image/jpeg;base64,${url}`;
+  return resolveMediaUrl(url) ?? null;
 }
 
 // ─── Sub-components (identical pattern to MatchDetailsScreen) ─────────────────

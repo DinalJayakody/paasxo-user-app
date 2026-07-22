@@ -13,6 +13,14 @@ const extractList = (data: any): any[] => {
   return [];
 };
 
+// Normalizes the backend's PagedResponse<T> ({content, page, hasMore}) shape,
+// falling back gracefully if an older/unpaginated endpoint returns a raw array.
+function normalizePage(data: any): { content: any[]; hasMore: boolean } {
+  if (Array.isArray(data)) return { content: data, hasMore: false };
+  const content = Array.isArray(data?.content) ? data.content : [];
+  return { content, hasMore: !!data?.hasMore };
+}
+
 export const bookingApi = {
   // GET /bookings/my — matches the user organised (userId == me)
   getMyBookings: async () => {
@@ -77,7 +85,7 @@ export const bookingApi = {
     return extractList(data);
   },
 
-  // GET /bookings/filter — server-side filtered matches (text, sport, date, radius, free-only)
+  // GET /bookings/filter — server-side filtered matches (text, sport, date, radius, free-only), paginated
   filterBookings: async (params: {
     query?: string;
     lat?: number;
@@ -86,9 +94,11 @@ export const bookingApi = {
     sport?: string;
     date?: string;
     freeOnly?: boolean;
-  }): Promise<any[]> => {
+    page?: number;
+    size?: number;
+  }): Promise<{ content: any[]; hasMore: boolean }> => {
     const { data } = await axiosInstance.get(ENDPOINTS.BOOKINGS.FILTER, { params });
-    return Array.isArray(data) ? data : [];
+    return normalizePage(data);
   },
 
   // GET /bookings/nearby?lat=&lng=&radiusKm= - server-filtered by 20km Haversine

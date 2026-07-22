@@ -11,6 +11,8 @@ import {
   Animated,
   Share,
   RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -342,7 +344,10 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
 
       {/* Add team modal */}
       <Modal visible={addTeamVisible} transparent animationType="fade" onRequestClose={() => setAddTeamVisible(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
           <View style={styles.modalCard}>
             <Pressable style={styles.modalClose} onPress={() => setAddTeamVisible(false)}>
               <X color={Colors.text} size={18} strokeWidth={2.5} />
@@ -363,7 +368,7 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
               {addingTeam ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.modalSubmitText}>Add Team</Text>}
             </Pressable>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Add match modal */}

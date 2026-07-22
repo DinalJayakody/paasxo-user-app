@@ -50,6 +50,11 @@ import { AuthContext } from '../context/AuthContext';
 import { MatchDetails } from '../types/api';
 import { parseMatchDetails } from '../utils/parseMatch';
 import { useSubscription } from '../hooks/useSubscription';
+import { resolveMediaUrl, resolveAvatarUri } from '../utils/mediaUrl';
+import { useLiveMatchScore } from '../hooks/useLiveMatchScore';
+import { LiveScoreboard } from '../components/scoring/LiveScoreboard';
+
+const SCOREABLE_SPORTS = new Set(['FUTSAL', 'CRICKET', 'PICKLEBALL', 'PADDLEBALL']);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,9 +75,7 @@ const AMENITY_ICONS: Record<string, any> = {
 };
 
 function resolveImageUri(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('data:') || url.startsWith('http') || url.startsWith('/')) return url;
-  return `data:image/jpeg;base64,${url}`;
+  return resolveMediaUrl(url) ?? null;
 }
 
 function formatDateLabel(value?: string) {
@@ -439,6 +442,7 @@ function JoinerView({
   onViewPlayers: () => void;
 }) {
   const [showInviteSheet, setShowInviteSheet] = useState(false);
+  const { score, displaySeconds } = useLiveMatchScore(matchId);
 
   const joinedCount = playerProfiles.length || match.participants?.length || 0;
   const spotsLeftKnown = match.spotsLeft != null;
@@ -480,6 +484,12 @@ function JoinerView({
           </View>
 
           <Text style={styles.title}>{match.title}</Text>
+
+          {score && SCOREABLE_SPORTS.has((match.sportType || '').toUpperCase()) && (
+            <View style={styles.scoreboardWrap}>
+              <LiveScoreboard score={score} displaySeconds={displaySeconds} />
+            </View>
+          )}
 
           <View style={styles.infoRow}>
             <View style={styles.infoIconWrap}>
@@ -541,11 +551,10 @@ function JoinerView({
               <Text style={styles.sectionLabel}>ORGANIZER</Text>
               <View style={styles.organizerRow}>
                 <View style={styles.organizerAvatar}>
-                  {match.organizer.avatarUrl ? (
-                    <Image source={{ uri: match.organizer.avatarUrl }} style={styles.avatarImage} />
-                  ) : (
-                    <Text style={styles.avatarInitial}>{match.organizer.name.charAt(0)}</Text>
-                  )}
+                  <Image
+                    source={{ uri: resolveAvatarUri(match.organizer.avatarUrl, match.organizer.name) }}
+                    style={styles.avatarImage}
+                  />
                 </View>
                 <View style={styles.flex1}>
                   <Text style={styles.organizerName}>{match.organizer.name}</Text>
@@ -696,6 +705,7 @@ function OwnerView({
 }) {
   const [cancelling, setCancelling] = useState(false);
   const [showInviteSheet, setShowInviteSheet] = useState(false);
+  const { score, displaySeconds } = useLiveMatchScore(matchId);
   const capacityKnown = match.maxSpots != null;
   const totalSpots = match.maxSpots ?? 0;
   const joinedCount = playerProfiles.length || match.participants?.length || 0;
@@ -787,6 +797,12 @@ function OwnerView({
           <MapPin color={Colors.textSecondary} size={14} strokeWidth={2} />
           <Text style={styles.ownerLocationText}>{match.venue.name}</Text>
         </View>
+
+        {score && SCOREABLE_SPORTS.has((match.sportType || '').toUpperCase()) && (
+          <View style={styles.scoreboardWrap}>
+            <LiveScoreboard score={score} displaySeconds={displaySeconds} />
+          </View>
+        )}
 
         {/* Players progress card */}
         {capacityKnown && (
@@ -947,32 +963,40 @@ function OwnerView({
           </Pressable>
         )}
 
-        {/* Scoring — Pro subscribers only */}
-        <Pressable
-          style={[styles.scoringButton, !isPro && styles.scoringButtonLocked]}
-          onPress={() => {
-            if (!isPro) {
-              Alert.alert(
-                'Pro Feature',
-                'Match scoring is available for Pro subscribers only. Upgrade to unlock live scoring, stats tracking, and more.',
-                [
-                  { text: 'Not now', style: 'cancel' },
-                  { text: 'Upgrade to Pro', onPress: () => router.push('/subscription' as any) },
-                ]
-              );
-              return;
+        {/* Scoring — organizer + Pro subscribers only (also enforced server-side) */}
+        {SCOREABLE_SPORTS.has((match.sportType || '').toUpperCase()) && (
+          <Pressable
+            style={[styles.scoringButton, !isPro && styles.scoringButtonLocked]}
+            onPress={() => {
+              if (!isPro) {
+                Alert.alert(
+                  'Pro Feature',
+                  'Match scoring is available for Pro subscribers only. Upgrade to unlock live scoring, stats tracking, and more.',
+                  [
+                    { text: 'Not now', style: 'cancel' },
+                    { text: 'Upgrade to Pro', onPress: () => router.push('/subscription' as any) },
+                  ]
+                );
+                return;
+              }
+              router.push(`/match/${matchId}/scoring` as any);
+            }}
+          >
+            {isPro
+              ? <Goal color={Colors.white} size={18} strokeWidth={2.2} />
+              : <Lock color={Colors.white} size={18} strokeWidth={2.2} />
             }
-            router.push(`/match/${matchId}/scoring` as any);
-          }}
-        >
-          {isPro
-            ? <Goal color={Colors.white} size={18} strokeWidth={2.2} />
-            : <Lock color={Colors.white} size={18} strokeWidth={2.2} />
-          }
-          <Text style={styles.scoringButtonText}>
-            {isPro ? 'Start Scoring' : 'Start Scoring  ·  Pro'}
-          </Text>
-        </Pressable>
+            <Text style={styles.scoringButtonText}>
+              {!isPro
+                ? 'Score Match  ·  Pro'
+                : score?.status === 'LIVE' || score?.status === 'PAUSED'
+                ? 'Manage Live Score'
+                : score?.status === 'COMPLETED'
+                ? 'View Final Score'
+                : 'Start Scoring'}
+            </Text>
+          </Pressable>
+        )}
 
         {!isCancelled && (
           <Pressable style={styles.manageButton} onPress={handleCancel} disabled={cancelling}>
@@ -1010,6 +1034,7 @@ function OwnerView({
 
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
+  scoreboardWrap: { marginTop: 14, marginBottom: 4 },
   loadingScreen: {
     flex: 1,
     backgroundColor: Colors.background,

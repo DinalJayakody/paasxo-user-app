@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
-import MatchScoringScreen from '../../../src/screens/MatchScoringScreen';
+import MatchScoreboardScreen from '../../../src/screens/MatchScoreboardScreen';
 
 export default function NormalMatchScoringRoute() {
   const params = useLocalSearchParams();
@@ -8,7 +8,7 @@ export default function NormalMatchScoringRoute() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <MatchScoringScreen normalMatchId={id ?? ''} />
+      <MatchScoreboardScreen matchId={id ?? ''} />
     </>
   );
 }

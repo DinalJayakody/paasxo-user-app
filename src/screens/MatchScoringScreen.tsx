@@ -10,6 +10,8 @@ import {
   Modal,
   TextInput,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -832,7 +834,10 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
 
       {/* Futsal event modal */}
       <Modal visible={eventModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Log Match Event</Text>
@@ -885,12 +890,15 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
               <Text style={styles.modalSubmitText}>Log Event</Text>
             </Pressable>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Cricket ball modal */}
       <Modal visible={cricketModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Record Ball</Text>
@@ -925,7 +933,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
             <Text style={styles.modalLabel}>Bowler</Text>
             <TextInput style={styles.modalInput} placeholder="Bowler name..." placeholderTextColor={Colors.neutral400} value={currentBowler} onChangeText={setCurrentBowler} />
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
     </SubscriptionGate>

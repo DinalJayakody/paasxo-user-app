@@ -1,7 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DeviceEventEmitter } from 'react-native';
-import { ENDPOINTS } from './endpoints';
+import { DeviceEventEmitter, Platform } from 'react-native';
+import { ENDPOINTS, HOSTINGER_URL, HOSTINGER_PROBE_TIMEOUT_MS, LOCAL_FALLBACK_URL } from './endpoints';
 
 export const AUTH_LOGOUT_EVENT = 'AUTH_LOGOUT';
 
@@ -13,9 +13,43 @@ const axiosInstance = axios.create({
   },
 });
 
+// ─── Resolve Hostinger vs. local backend, once per app launch ────────────────
+// Tries the Hostinger VPS first; if it doesn't answer within
+// HOSTINGER_PROBE_TIMEOUT_MS (e.g. not deployed yet, or unreachable), every
+// request just keeps using the local URL that was already the default.
+// Memoized so only the very first request pays the probe's latency - every
+// request after that reuses the same resolved promise.
+let baseUrlResolution: Promise<string> | null = null;
+
+async function resolvePreferredBaseUrl(): Promise<string> {
+  if (Platform.OS === 'web') return ENDPOINTS.BASE_URL; // web keeps its own tunnel/local logic, untouched
+
+  if (!baseUrlResolution) {
+    baseUrlResolution = (async () => {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), HOSTINGER_PROBE_TIMEOUT_MS);
+        const response = await fetch(`${HOSTINGER_URL}/auth/health`, { signal: controller.signal });
+        clearTimeout(timer);
+        if (response.ok) return HOSTINGER_URL;
+      } catch {
+        // Not deployed yet / unreachable / timed out — fall back to local below.
+      }
+      return LOCAL_FALLBACK_URL;
+    })();
+
+    baseUrlResolution.then((resolved) => {
+      ENDPOINTS.BASE_URL = resolved;
+      axiosInstance.defaults.baseURL = resolved;
+    });
+  }
+  return baseUrlResolution;
+}
+
 // ─── Request interceptor: attach JWT ─────────────────────────────────────────
 axiosInstance.interceptors.request.use(
   async (config) => {
+    config.baseURL = await resolvePreferredBaseUrl();
     try {
       const token = await AsyncStorage.getItem('accessToken');
       if (token && config.headers) {

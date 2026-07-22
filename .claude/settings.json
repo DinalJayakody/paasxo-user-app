@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "/Users/user/Documents/Paasxo Apps/vendor-app/src/screens",
+      "/Users/user/Documents/Paasxo Apps/mobile-app-paasxo/src/main/java/com/pasxo/model/booking",
+      "/Users/user/Documents/Paasxo Apps/mobile-app-paasxo/src/main/java/com/pasxo/service/booking",
+      "/Users/user/Documents/Paasxo Apps/mobile-app-paasxo/src/main/java/com/pasxo/model/notification",
+      "/Users/user/Documents/Paasxo Apps/mobile-app-paasxo/src/main/java/com/pasxo/repository/booking",
+      "/Users/user/Documents/Paasxo Apps/mobile-app-paasxo/src/main/java/com/pasxo/dto/booking",
+      "/Users/user/Documents/Paasxo Apps/mobile-app-paasxo/src/main/java/com/pasxo/controller",
+      "/Users/user/Documents/Paasxo Apps/mobile-app-paasxo/src/main/java/com/pasxo/service/invitation"
+    ]
+  }
+}

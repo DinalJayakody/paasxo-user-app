@@ -35,6 +35,7 @@ import { TournamentFeedCard, TournamentFeedItem } from '../components/Tournament
 import { futsalApi } from '../api/futsalApi';
 import { tournamentApi } from '../api/tournamentApi';
 import { StoryReel } from '../components/StoryReel';
+import { resolveAvatarUri } from '../utils/mediaUrl';
 
 const communityCards = [
   {
@@ -326,13 +327,7 @@ const FeedScreen = () => {
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
 
                     <Image
-                      source={{
-                        uri: user.profileImageUrl
-                          ? user.profileImageUrl?.startsWith('http') || user.profileImageUrl?.startsWith('file')
-                            ? user.profileImageUrl
-                            : `data:image/jpeg;base64,${user.profileImageUrl}`
-                          : undefined,
-                      }}
+                      source={{ uri: resolveAvatarUri(user.profileImageUrl, user.displayName) }}
                       style={{
                         width: 40,
                         height: 40,

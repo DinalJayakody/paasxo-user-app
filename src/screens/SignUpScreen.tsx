@@ -15,14 +15,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   ArrowLeft,
   LogIn,
   UserPlus,
+  Trophy,
 } from 'lucide-react-native';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
-import { GoogleAuthProvider, signInWithCredential, signInWithPopup } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithCredential, signInWithRedirect } from 'firebase/auth';
 import { Colors } from '../styles/colors';
 import { Button } from '../components/Button';
 import { InputField } from '../components/InputField';
@@ -62,6 +64,17 @@ export default function SignUpScreen() {
       ])
     ).start();
   }, [pulse]);
+
+  // gentle pulse for the hero trophy badge
+  const badgePulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(badgePulse, { toValue: 1.08, duration: 1300, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(badgePulse, { toValue: 1, duration: 1300, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ])
+    ).start();
+  }, [badgePulse]);
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -202,16 +215,18 @@ await auth.signUp(payload);
     setGoogleLoading(true);
 
     if (Platform.OS === 'web') {
+      // Full-page redirect, not a popup — signInWithPopup is unreliable
+      // (Chrome's default Cross-Origin-Opener-Policy blocks the popup/opener
+      // handshake, so it silently closes with nothing happening). AuthContext
+      // picks up the result via getRedirectResult() once the page reloads.
       try {
         if (!FIREBASE_CONFIGURED) throw new Error('Firebase config is not set up yet.');
         const firebaseAuth = getFirebaseAuth()!;
         const provider = new GoogleAuthProvider();
         provider.addScope('profile');
         provider.addScope('email');
-        const result = await signInWithPopup(firebaseAuth, provider);
-        const firebaseIdToken = await result.user.getIdToken();
-        await signInWithGoogle(firebaseIdToken);
-        router.replace('/home');
+        await signInWithRedirect(firebaseAuth, provider);
+        // Page navigates away here — nothing after this line runs.
       } catch (err: any) {
         setSocialError(err?.message ?? 'Google sign-in failed. Please try again.');
         setGoogleLoading(false);
@@ -249,26 +264,6 @@ await auth.signUp(payload);
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Bottom tab bar */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={styles.tab}
-          onPress={() => router.push('/sign-in')}
-          activeOpacity={0.7}
-        >
-          <LogIn color={Colors.neutral400} size={20} strokeWidth={2} />
-          <Text style={styles.tabLabel}>LOGIN</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, styles.tabActive]}
-          onPress={() => {}}
-          activeOpacity={0.9}
-        >
-          <UserPlus color={Colors.primary} size={20} strokeWidth={2} />
-          <Text style={styles.tabLabelActive}>REGISTER</Text>
-        </TouchableOpacity>
-      </View>
-
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -287,6 +282,15 @@ await auth.signUp(payload);
             <Image source={require('../../assets/logo.jpeg')} style={{width:40, height:40}} resizeMode="contain" />
             <View style={{ width: 40 }} />
           </View>
+
+          {/* Colorful gradient hero band */}
+          <LinearGradient colors={[Colors.primaryLight, Colors.background]} style={styles.heroGradient}>
+            <View style={styles.heroDecorCircleA} />
+            <View style={styles.heroDecorCircleB} />
+            <Animated.View style={[styles.heroBadge, { transform: [{ scale: badgePulse }] }]}>
+              <Trophy color={Colors.primary} size={30} strokeWidth={2} />
+            </Animated.View>
+          </LinearGradient>
 
           {/* Hero text */}
           <Text style={styles.title}>Join the{'\n'}Movement.</Text>
@@ -444,19 +448,16 @@ await auth.signUp(payload);
             />
           </View>
 
-          {/* Hero image */}
-          <View style={styles.heroImageContainer}>
-            <Image
-              source={{
-                uri: 'https://images.pexels.com/photos/1552249/pexels-photo-1552249.jpeg?auto=compress&cs=tinysrgb&w=600',
-              }}
-              style={styles.heroImage}
-              resizeMode="cover"
-            />
-            <View style={styles.heroOverlay}>
-              <Text style={styles.heroOverlayText}>Unleash Your Potential</Text>
-            </View>
-          </View>
+          {/* Motivational banner - solid gradient, no network image dependency */}
+          <LinearGradient
+            colors={[Colors.primary, Colors.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.motivationBanner}
+          >
+            <Text style={styles.motivationText}>Unleash Your Potential 🏆</Text>
+            <Text style={styles.motivationSubtext}>Every champion started with a single sign-up.</Text>
+          </LinearGradient>
 
           {/* General error */}
           {errors.general ? (
@@ -480,6 +481,28 @@ await auth.signUp(payload);
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Login / Register tab bar - a normal flex sibling (not absolutely
+          positioned) so it always sits above Android's gesture/button nav
+          bar and never overlaps/steals touches from scrolled content. */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={styles.tab}
+          onPress={() => router.push('/sign-in')}
+          activeOpacity={0.7}
+        >
+          <LogIn color={Colors.neutral400} size={20} strokeWidth={2} />
+          <Text style={styles.tabLabel}>LOGIN</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, styles.tabActive]}
+          onPress={() => {}}
+          activeOpacity={0.9}
+        >
+          <UserPlus color={Colors.primary} size={20} strokeWidth={2} />
+          <Text style={styles.tabLabelActive}>REGISTER</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -494,12 +517,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.divider,
     backgroundColor: Colors.white,
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 8,
+    paddingBottom: 8,
   },
   tab: {
     flex: 1,
@@ -526,8 +544,33 @@ const styles = StyleSheet.create({
   },
   scroll: {
     paddingHorizontal: 20,
-    paddingBottom: 110,
+    paddingBottom: 24,
     paddingTop: 8,
+  },
+  heroGradient: {
+    borderRadius: 28,
+    marginBottom: 16,
+    paddingVertical: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  heroDecorCircleA: {
+    position: 'absolute', top: -30, right: -30,
+    width: 110, height: 110, borderRadius: 55,
+    backgroundColor: Colors.primaryAccent + '22',
+  },
+  heroDecorCircleB: {
+    position: 'absolute', bottom: -24, left: -20,
+    width: 90, height: 90, borderRadius: 45,
+    backgroundColor: Colors.warning + '1c',
+  },
+  heroBadge: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: Colors.white,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: Colors.neutral900, shadowOpacity: 0.1, shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 }, elevation: 4,
   },
   header: {
     flexDirection: 'row',
@@ -726,29 +769,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.text,
   },
-  heroImageContainer: {
-    borderRadius: 16,
+  motivationBanner: {
+    borderRadius: 20,
     overflow: 'hidden',
-    height: 160,
+    padding: 20,
     marginBottom: 20,
     marginTop: 8,
+    shadowColor: Colors.primaryDark,
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 5,
   },
-  heroImage: {
-    width: '100%',
-    height: '100%',
-  },
-  heroOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 16,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  heroOverlayText: {
+  motivationText: {
     color: Colors.white,
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  motivationSubtext: {
+    color: Colors.white,
+    opacity: 0.85,
+    fontSize: 13,
+    fontWeight: '500',
   },
   fieldError: {
     color: Colors.error,

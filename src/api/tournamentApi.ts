@@ -7,7 +7,30 @@ import {
   CreateTournamentMatchPayload,
 } from '../types/api';
 
+// Normalizes the backend's PagedResponse<T> ({content, page, hasMore}) shape,
+// falling back gracefully if an older/unpaginated endpoint returns a raw array.
+function normalizePage(data: any): { content: any[]; hasMore: boolean } {
+  if (Array.isArray(data)) return { content: data, hasMore: false };
+  const content = Array.isArray(data?.content) ? data.content : [];
+  return { content, hasMore: !!data?.hasMore };
+}
+
 export const tournamentApi = {
+  // GET /tournaments/filter — global cross-venue search backing the Explore
+  // screen's "Events" category (text, geo-radius, date), paginated.
+  filterTournaments: async (params: {
+    query?: string;
+    lat?: number;
+    lng?: number;
+    radiusKm?: number;
+    date?: string;
+    page?: number;
+    size?: number;
+  }): Promise<{ content: any[]; hasMore: boolean }> => {
+    const { data } = await axiosInstance.get(ENDPOINTS.TOURNAMENTS_GLOBAL.FILTER, { params });
+    return normalizePage(data);
+  },
+
   createTournament: async (futsalId: string | number, payload: CreateTournamentPayload) => {
     const { data } = await axiosInstance.post(ENDPOINTS.TOURNAMENTS.CREATE(futsalId), payload);
     return data;

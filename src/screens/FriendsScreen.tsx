@@ -35,6 +35,7 @@ import {
   AllCaughtUpIllustration,
   NoSuggestionsIllustration,
 } from '../components/illustrations/FriendsIllustrations';
+import { resolveAvatarUri } from '../utils/mediaUrl';
 
 const PAGE_SIZE = 10;
 
@@ -47,13 +48,8 @@ const SKILL_COLOR: Record<string, string> = {
   PRO: Colors.liveRed,
 };
 
-const DEFAULT_AVATAR = {
-  uri: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=400',
-};
-
-function avatarSource(url?: string) {
-  if (!url) return DEFAULT_AVATAR;
-  return { uri: url.startsWith('http') ? url : `data:image/jpeg;base64,${url}` };
+function avatarSource(url?: string, displayName?: string) {
+  return { uri: resolveAvatarUri(url, displayName) };
 }
 
 // ─── Animated press wrapper ──────────────────────────────────
@@ -352,7 +348,7 @@ export default function FriendsScreen() {
     const sport = item.sports?.[0] ?? '';
     return (
       <TouchableOpacity key={uid} style={styles.userCard} activeOpacity={0.88} onPress={() => goToProfile(uid)}>
-        <Image source={avatarSource(item.profileImageUrl)} style={styles.userAvatar} />
+        <Image source={avatarSource(item.profileImageUrl, item.displayName)} style={styles.userAvatar} />
         <View style={styles.userInfo}>
           <Text style={styles.userName}>{item.displayName}</Text>
           <Text style={styles.userMeta}>{[sport, item.skillLevel].filter(Boolean).join(' · ')}</Text>
@@ -373,7 +369,7 @@ export default function FriendsScreen() {
     return (
       <TouchableOpacity key={uid} style={styles.userCard} activeOpacity={0.88} onPress={() => goToProfile(uid)}>
         <View style={styles.nearbyAvatarWrap}>
-          <Image source={avatarSource(item.profileImageUrl)} style={styles.userAvatar} />
+          <Image source={avatarSource(item.profileImageUrl, item.displayName)} style={styles.userAvatar} />
           {typeof item.distanceKm === 'number' && (
             <View style={styles.nearbyDistanceBadge}>
               <Text style={styles.nearbyDistanceText}>
@@ -409,7 +405,7 @@ export default function FriendsScreen() {
     return (
       <View key={uid} style={styles.requestCard}>
         <TouchableOpacity onPress={() => goToProfile(uid)} activeOpacity={0.85}>
-          <Image source={avatarSource(item.profileImageUrl)} style={styles.requestAvatar} />
+          <Image source={avatarSource(item.profileImageUrl, item.displayName)} style={styles.requestAvatar} />
         </TouchableOpacity>
         <View style={styles.requestInfo}>
           <Text style={styles.userName}>{item.displayName}</Text>

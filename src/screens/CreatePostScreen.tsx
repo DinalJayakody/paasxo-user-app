@@ -19,6 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Colors } from '../styles/colors';
+import { resolveAvatarUri } from '../utils/mediaUrl';
 
 import {
   Image as ImageIcon,
@@ -570,11 +571,7 @@ const fetchUsers = async () => {
               }}
             >
               <Image
-                source={{
-                  uri:
-                    item.profileImage ||
-                    `https://i.pravatar.cc/100?img=${item.id}`,
-                }}
+                source={{ uri: resolveAvatarUri(item.profileImageUrl, item.displayName) }}
                 style={styles.tagPopupAvatar}
               />
 

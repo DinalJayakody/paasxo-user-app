@@ -21,10 +21,11 @@ const firebaseConfig = {
   authDomain:        'paasxo-a3769.firebaseapp.com',
   projectId:         'paasxo-a3769',
   storageBucket:     'paasxo-a3769.appspot.com',
-  // Still need these two — Firebase Console → Project Settings → General →
-  // Your apps → (any) Web app → SDK setup and configuration.
-  messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
-  appId:             'YOUR_APP_ID',
+  // messagingSenderId is the project number, shared across every app in the
+  // project regardless of platform — same value for iOS/Android/Web.
+  messagingSenderId: '135107198325',
+  // Web app's App ID (from the "paasxo" Web App in Firebase Console → Your apps).
+  appId:             '1:135107198325:web:62dfa6e9e006d1d339273c',
 };
 
 export const FIREBASE_CONFIGURED = !firebaseConfig.apiKey.startsWith('YOUR_');

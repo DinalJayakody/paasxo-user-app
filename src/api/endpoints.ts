@@ -13,8 +13,13 @@ import Constants from 'expo-constants';
 // ↓ Update this URL each time you run: bash start-tunnel.sh
 const TUNNEL_URL = 'https://centres-station-chicago-dot.trycloudflare.com/api';
 
-// Production (update after deploying to Hostinger):
-// const PRODUCTION_URL = 'https://api.paasxo.com/api';
+// Hostinger VPS — production backend. Tried first on every app launch; the
+// device falls back to the local URL below (unchanged) if it doesn't answer
+// within HOSTINGER_PROBE_TIMEOUT_MS. See axios.ts's resolvePreferredBaseUrl().
+// Plain http:// (no TLS yet) — Android needs an explicit cleartext exception
+// for this exact host, see android/app/src/main/res/xml/network_security_config.xml.
+export const HOSTINGER_URL = 'http://187.77.150.248/api';
+export const HOSTINGER_PROBE_TIMEOUT_MS = 3000;
 
 function resolveBaseUrl(): string {
   if (Platform.OS === 'web') return TUNNEL_URL;
@@ -29,13 +34,23 @@ function resolveBaseUrl(): string {
   if (isLanIp) return `http://${lanHost}:8080/api`;
 
   if (Platform.OS === 'ios') return 'http://localhost:8080/api';        // iOS Simulator → user backend
-  return 'http://10.0.2.2:8080/api';                                    // Android Emulator → user backend
+  return 'http://10.0.2.2:8080/api';
+
+  // Android Emulator → user backend
 }
+
+// Local dev fallback — used as-is whenever Hostinger doesn't answer.
+export const LOCAL_FALLBACK_URL = resolveBaseUrl();
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const ENDPOINTS = {
-  BASE_URL: resolveBaseUrl(),
+  // Starts as the local URL; axios.ts's resolvePreferredBaseUrl() overwrites
+  // this in place (mutating the object, not reassigning ENDPOINTS itself) the
+  // moment it confirms whichever host is actually reachable, so every file
+  // that reads ENDPOINTS.BASE_URL at call-time (mediaUrl.ts, ProfileScreen,
+  // axios.ts) automatically stays in sync with the same choice.
+  BASE_URL: LOCAL_FALLBACK_URL,
   AUTH: {
     LOGIN: '/auth/login',
     REGISTER: '/auth/register',
@@ -48,9 +63,8 @@ export const ENDPOINTS = {
     COMPLETE_PROFILE: '/auth/complete-profile',
   },
   // com.pasxo.controller.AuthController exposes profile under /auth, not /user.
-  // NOTE: the real PUT /auth/profile is multipart (UpdateProfileRequest +
-  // optional profileImage part), not the plain JSON body userApi.updateProfile
-  // currently sends - profile editing still needs backend-shape alignment.
+  // PUT /auth/profile is multipart (UpdateProfileRequest bound via
+  // @ModelAttribute + an optional profileImage file part) - see userApi.updateProfile.
   USER: {
     PROFILE: '/auth/profile',
     UPDATE_PROFILE: '/auth/profile',
@@ -68,6 +82,18 @@ export const ENDPOINTS = {
     CANCEL: (id: string | number) => `/bookings/${id}/cancel`,
     ADD_PLAYERS: (id: string | number) => `/bookings/${id}/players`,
     JOIN: (id: string | number) => `/bookings/${id}/join`,
+  },
+
+  // Live score + timer for a booking/match. Viewing (GET) is open to any
+  // authenticated user; every mutation is organizer + active-subscriber only,
+  // enforced server-side in MatchScoreController/MatchScoreService.
+  MATCH_SCORE: {
+    GET: (bookingId: string | number) => `/bookings/${bookingId}/score`,
+    START: (bookingId: string | number) => `/bookings/${bookingId}/score/start`,
+    PAUSE: (bookingId: string | number) => `/bookings/${bookingId}/score/pause`,
+    RESUME: (bookingId: string | number) => `/bookings/${bookingId}/score/resume`,
+    END: (bookingId: string | number) => `/bookings/${bookingId}/score/end`,
+    UPDATE_STATE: (bookingId: string | number) => `/bookings/${bookingId}/score/state`,
   },
 
   // Matches com.pasxo.controller.FutsalController exactly. There is no

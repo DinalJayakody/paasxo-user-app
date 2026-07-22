@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,9 +9,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   ArrowLeft,
   AtSign,
@@ -23,7 +25,7 @@ import {
 } from 'lucide-react-native';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
-import { GoogleAuthProvider, signInWithCredential, signInWithPopup } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithCredential, signInWithRedirect } from 'firebase/auth';
 import { Colors } from '../styles/colors';
 import { Button } from '../components/Button';
 import { InputField } from '../components/InputField';
@@ -114,17 +116,19 @@ export default function SignInScreen() {
     setGoogleLoading(true);
 
     if (Platform.OS === 'web') {
-      // Web: Firebase popup — opens a proper browser popup, no redirect needed.
+      // Web: full-page redirect through Google, not a popup — signInWithPopup
+      // is unreliable (Chrome's default Cross-Origin-Opener-Policy blocks the
+      // popup/opener handshake it needs, so it silently closes with nothing
+      // happening). The redirect navigates away and back; AuthContext picks
+      // up the result via getRedirectResult() once the page reloads.
       try {
         if (!FIREBASE_CONFIGURED) throw new Error('Firebase config is not set up yet.');
         const firebaseAuth = getFirebaseAuth()!;
         const provider = new GoogleAuthProvider();
         provider.addScope('profile');
         provider.addScope('email');
-        const result = await signInWithPopup(firebaseAuth, provider);
-        const firebaseIdToken = await result.user.getIdToken();
-        await signInWithGoogle(firebaseIdToken);
-        router.replace('/home');
+        await signInWithRedirect(firebaseAuth, provider);
+        // Page navigates away here — nothing after this line runs.
       } catch (err: any) {
         setErrors({ general: err?.message ?? 'Google sign-in failed. Please try again.' });
         setGoogleLoading(false);
@@ -164,24 +168,34 @@ export default function SignInScreen() {
     }
   };
 
+  const heroFade = useRef(new Animated.Value(0)).current;
+  const heroSlide = useRef(new Animated.Value(16)).current;
+  const cardFade = useRef(new Animated.Value(0)).current;
+  const cardSlide = useRef(new Animated.Value(24)).current;
+  const logoPulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.stagger(120, [
+      Animated.parallel([
+        Animated.timing(heroFade, { toValue: 1, duration: 450, useNativeDriver: true }),
+        Animated.spring(heroSlide, { toValue: 0, friction: 8, useNativeDriver: true }),
+      ]),
+      Animated.parallel([
+        Animated.timing(cardFade, { toValue: 1, duration: 450, useNativeDriver: true }),
+        Animated.spring(cardSlide, { toValue: 0, friction: 8, useNativeDriver: true }),
+      ]),
+    ]).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(logoPulse, { toValue: 1.05, duration: 1400, useNativeDriver: true }),
+        Animated.timing(logoPulse, { toValue: 1, duration: 1400, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Login / Register tab bar */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity style={[styles.tab, styles.tabActive]} activeOpacity={0.9}>
-          <LogIn color={Colors.primary} size={20} strokeWidth={2} />
-          <Text style={styles.tabLabelActive}>LOGIN</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.tab}
-          onPress={() => router.push('/sign-up')}
-          activeOpacity={0.7}
-        >
-          <UserPlus color={Colors.neutral400} size={20} strokeWidth={2} />
-          <Text style={styles.tabLabel}>REGISTER</Text>
-        </TouchableOpacity>
-      </View>
-
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -204,14 +218,25 @@ export default function SignInScreen() {
             <View style={{ width: 40 }} />
           </View>
 
-          {/* Logo hero (replaces the pexels hero image) */}
-          <View style={styles.heroContainer}>
-            <Image
-              source={require('../../assets/logo.jpeg')}
-              style={styles.heroLogo}
-              resizeMode="contain"
-            />
-          </View>
+          {/* Colorful gradient hero with logo */}
+          <Animated.View style={{ opacity: heroFade, transform: [{ translateY: heroSlide }] }}>
+            <LinearGradient
+              colors={[Colors.primaryLight, Colors.background]}
+              style={styles.heroGradient}
+            >
+              <View style={styles.heroDecorCircleA} />
+              <View style={styles.heroDecorCircleB} />
+              <View style={styles.heroContainer}>
+                <Animated.View style={[styles.heroLogoWrap, { transform: [{ scale: logoPulse }] }]}>
+                  <Image
+                    source={require('../../assets/logo.jpeg')}
+                    style={styles.heroLogo}
+                    resizeMode="contain"
+                  />
+                </Animated.View>
+              </View>
+            </LinearGradient>
+          </Animated.View>
 
           <Text style={styles.title}>Welcome Back</Text>
           <Text style={styles.subtitle}>
@@ -254,7 +279,7 @@ export default function SignInScreen() {
           </View>
 
           {/* Form card */}
-          <View style={styles.card}>
+          <Animated.View style={[styles.card, { opacity: cardFade, transform: [{ translateY: cardSlide }] }]}>
             <Text style={styles.fieldLabel}>ACCOUNT IDENTITY</Text>
             <InputField
               placeholder="Email or Username"
@@ -306,7 +331,7 @@ export default function SignInScreen() {
               loading={loading}
               style={styles.signInButton}
             />
-          </View>
+          </Animated.View>
 
           {/* Footer */}
           <View style={styles.footer}>
@@ -317,6 +342,24 @@ export default function SignInScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Login / Register tab bar - a normal flex sibling (not absolutely
+          positioned) so it always sits above Android's gesture/button nav
+          bar and never overlaps/steals touches from scrolled content. */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity style={[styles.tab, styles.tabActive]} activeOpacity={0.9}>
+          <LogIn color={Colors.primary} size={20} strokeWidth={2} />
+          <Text style={styles.tabLabelActive}>LOGIN</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.tab}
+          onPress={() => router.push('/sign-up')}
+          activeOpacity={0.7}
+        >
+          <UserPlus color={Colors.neutral400} size={20} strokeWidth={2} />
+          <Text style={styles.tabLabel}>REGISTER</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -331,12 +374,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.divider,
     backgroundColor: Colors.white,
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 8,
+    paddingBottom: 8,
   },
   tab: {
     flex: 1,
@@ -361,8 +399,29 @@ const styles = StyleSheet.create({
   },
   scroll: {
     paddingHorizontal: 20,
-    paddingBottom: 100,
+    paddingBottom: 24,
     paddingTop: 8,
+  },
+  heroGradient: {
+    borderRadius: 28,
+    marginBottom: 20,
+    overflow: 'hidden',
+    paddingVertical: 16,
+  },
+  heroDecorCircleA: {
+    position: 'absolute', top: -30, right: -30,
+    width: 110, height: 110, borderRadius: 55,
+    backgroundColor: Colors.primaryAccent + '22',
+  },
+  heroDecorCircleB: {
+    position: 'absolute', bottom: -24, left: -20,
+    width: 90, height: 90, borderRadius: 45,
+    backgroundColor: Colors.warning + '1c',
+  },
+  heroLogoWrap: {
+    shadowColor: Colors.neutral900, shadowOpacity: 0.1, shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 }, elevation: 4,
+    borderRadius: 26, marginBottom: 4,
   },
   header: {
     flexDirection: 'row',
@@ -379,7 +438,7 @@ const styles = StyleSheet.create({
   headerLogo: { width: 40, height: 40 },
   heroContainer: {
     alignItems: 'center',
-    marginBottom: 20,
+    justifyContent: 'center',
   },
   heroLogo: {
     width: 110,

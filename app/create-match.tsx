@@ -647,6 +647,7 @@ export default function CreateMatch() {
         slotId: selectedSlotIds[0],
         slotIds: selectedSlotIds,
         title: eventTitle.trim() || undefined,
+        sport: selectedSport,
         maxPlayers: maxP,
         minPlayers: minP,
         players: directPlayers.length > 0

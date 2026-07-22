@@ -37,6 +37,13 @@ import {
   ChevronLeft,
   Check,
   Minus,
+  Landmark,
+  Dumbbell,
+  Goal,
+  Target,
+  Volleyball,
+  LayoutGrid,
+  type LucideIcon,
 } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import Svg, { Path } from 'react-native-svg';
@@ -45,7 +52,6 @@ import { BottomNavbar } from '../components/BottomNavbar';
 import { futsalApi } from '../api/futsalApi';
 import { bookingApi } from '../api/bookingApi';
 import { tournamentApi } from '../api/tournamentApi';
-import axiosInstance from '../api/axios';
 import { useSubscription } from '../hooks/useSubscription';
 
 // ─── Platform-safe maps ──────────────────────────────────────────────────────
@@ -96,12 +102,19 @@ interface EventResult {
 type AnyResult = VenueResult | GameResult | TrainerResult | EventResult;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const SPORTS: { id: SportFilter; label: string; emoji: string }[] = [
-  { id: 'ALL', label: 'All', emoji: '🏆' },
-  { id: 'FUTSAL', label: 'Futsal', emoji: '⚽' },
-  { id: 'CRICKET', label: 'Cricket', emoji: '🏏' },
-  { id: 'PICKLEBALL', label: 'Pickleball', emoji: '🏓' },
+const SPORTS: { id: SportFilter; label: string; Icon: LucideIcon }[] = [
+  { id: 'ALL', label: 'All', Icon: LayoutGrid },
+  { id: 'FUTSAL', label: 'Futsal', Icon: Goal },
+  { id: 'CRICKET', label: 'Cricket', Icon: Target },
+  { id: 'PICKLEBALL', label: 'Pickleball', Icon: Volleyball },
 ];
+
+// Same sport->icon mapping used for result-card badges (games/events).
+function sportIconFor(sport?: string): LucideIcon {
+  if (sport === 'CRICKET') return Target;
+  if (sport === 'PICKLEBALL') return Volleyball;
+  return Goal;
+}
 
 const RADIUS_PRESETS = [5, 10, 20, 50];
 const DAY_LABELS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
@@ -150,11 +163,11 @@ const PIE_OUTER = 120;
 const PIE_INNER = 44;
 const PIE_ITEM_R = 83;
 
-const CATS: { id: Category; label: string; emoji: string; color: string; startDeg: number; endDeg: number; midDeg: number }[] = [
-  { id: 'VENUES',   label: 'Venues',   emoji: '🏟️', color: '#2977C2', startDeg: -86, endDeg: -4,  midDeg: -45  },
-  { id: 'TRAINERS', label: 'Trainers', emoji: '💪', color: '#EA580C', startDeg: 4,   endDeg: 86,  midDeg: 45   },
-  { id: 'GAMES',    label: 'Games',    emoji: '⚽', color: '#059669', startDeg: 94,  endDeg: 176, midDeg: 135  },
-  { id: 'EVENTS',   label: 'Events',   emoji: '🏆', color: '#7C3AED', startDeg: 184, endDeg: 266, midDeg: 225  },
+const CATS: { id: Category; label: string; Icon: LucideIcon; color: string; startDeg: number; endDeg: number; midDeg: number }[] = [
+  { id: 'VENUES',   label: 'Venues',   Icon: Landmark, color: '#2977C2', startDeg: -86, endDeg: -4,  midDeg: -45  },
+  { id: 'TRAINERS', label: 'Trainers', Icon: Dumbbell, color: '#EA580C', startDeg: 4,   endDeg: 86,  midDeg: 45   },
+  { id: 'GAMES',    label: 'Games',    Icon: Goal,     color: '#059669', startDeg: 94,  endDeg: 176, midDeg: 135  },
+  { id: 'EVENTS',   label: 'Events',   Icon: Trophy,   color: '#7C3AED', startDeg: 184, endDeg: 266, midDeg: 225  },
 ];
 
 function piePath(s: number, e: number): string {
@@ -279,7 +292,7 @@ function RadialCategoryMenu({
                   ],
                 }}
               >
-                <Text style={{ fontSize: isSel ? 26 : 21 }}>{cat.emoji}</Text>
+                <cat.Icon color={Colors.white} size={isSel ? 26 : 21} strokeWidth={2.2} />
                 <Text
                   style={[
                     pieStyles.itemLabel,
@@ -292,12 +305,12 @@ function RadialCategoryMenu({
             );
           })}
 
-          {/* Center circle — close button + current emoji */}
+          {/* Center circle — close button + current category icon */}
           <TouchableOpacity
             onPress={onClose}
             style={[pieStyles.centerBtn, { left: PIE_CX - 36, top: PIE_CY - 36 }]}
           >
-            <Text style={{ fontSize: 18 }}>{selectedCat?.emoji ?? '×'}</Text>
+            {selectedCat && <selectedCat.Icon color={selectedCat.color} size={18} strokeWidth={2.2} />}
             <X color={Colors.neutral600} size={13} strokeWidth={2.5} />
           </TouchableOpacity>
         </Animated.View>
@@ -485,9 +498,13 @@ export default function ExploreScreen() {
   const [userLat, setUserLat] = useState<number | null>(null);
   const [userLng, setUserLng] = useState<number | null>(null);
 
-  // Results
+  // Results — paginated 10 at a time, loaded further via infinite scroll
+  const PAGE_SIZE = 10;
   const [results, setResults] = useState<AnyResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
 
   // Map bottom sheet
   const [selectedItem, setSelectedItem] = useState<AnyResult | null>(null);
@@ -535,18 +552,26 @@ export default function ExploreScreen() {
     [userLat, userLng]
   );
 
+  // targetPage/append let one function serve both "new search" (page 0, replace)
+  // and "scrolled to the bottom" (page N, append) — the only difference is
+  // whether the mapped page of results replaces or extends the current list.
   const fetchResults = useCallback(
-    async (cat: Category) => {
-      setLoading(true);
+    async (cat: Category, targetPage: number = 0, append: boolean = false) => {
+      if (append) setLoadingMore(true); else setLoading(true);
       try {
         const filterDate = getFilterDate();
         const q = searchText.trim() || undefined;
         const lat2 = userLat ?? undefined;
         const lng2 = userLng ?? undefined;
+        const pageParams = { page: targetPage, size: PAGE_SIZE };
+        let more = false;
 
         if (cat === 'VENUES') {
-          const raw = await futsalApi.filterVenues({ query: q, lat: lat2, lng: lng2, radiusKm, freeOnly: freeOnly || undefined });
-          setResults(raw.map((v: any): VenueResult => ({
+          const { content, hasMore: m } = await futsalApi.filterVenues({
+            query: q, lat: lat2, lng: lng2, radiusKm, freeOnly: freeOnly || undefined, ...pageParams,
+          });
+          more = m;
+          const mapped = content.map((v: any): VenueResult => ({
             id: String(v.id ?? v._id),
             name: v.name ?? 'Venue',
             location: v.location ?? v.locationName ?? '',
@@ -554,11 +579,15 @@ export default function ExploreScreen() {
             imageBase64: v.imageBase64, imageUrl: v.imageUrl,
             latitude: v.latitude ?? 51.5074, longitude: v.longitude ?? -0.1278,
             distance: mapDist(v.latitude, v.longitude),
-          })));
+          }));
+          setResults((prev) => (append ? [...prev, ...mapped] : mapped));
 
         } else if (cat === 'TRAINERS') {
-          const raw = await futsalApi.filterVenues({ query: q, lat: lat2, lng: lng2, radiusKm, sport: 'TRAINER_GYM' });
-          setResults(raw.map((v: any): TrainerResult => ({
+          const { content, hasMore: m } = await futsalApi.filterVenues({
+            query: q, lat: lat2, lng: lng2, radiusKm, sport: 'TRAINER_GYM', ...pageParams,
+          });
+          more = m;
+          const mapped = content.map((v: any): TrainerResult => ({
             id: String(v.id ?? v._id),
             name: v.name ?? 'Trainer',
             location: v.location ?? v.locationName ?? '',
@@ -568,21 +597,23 @@ export default function ExploreScreen() {
             rating: v.rating,
             latitude: v.latitude ?? 51.5074, longitude: v.longitude ?? -0.1278,
             distance: mapDist(v.latitude, v.longitude),
-          })));
+          }));
+          setResults((prev) => (append ? [...prev, ...mapped] : mapped));
 
         } else if (cat === 'GAMES') {
-          const raw = await bookingApi.filterBookings({
+          const { content, hasMore: m } = await bookingApi.filterBookings({
             query: q, lat: lat2, lng: lng2, radiusKm,
             sport: sportFilter !== 'ALL' ? sportFilter : undefined,
-            date: filterDate, freeOnly: freeOnly || undefined,
+            date: filterDate, freeOnly: freeOnly || undefined, ...pageParams,
           });
+          more = m;
           // Defensive: never show a match still awaiting vendor approval as joinable,
           // even though the backend already excludes it — mirrors HomeScreen's filtering.
-          const liveOnly = raw.filter((b: any) => {
+          const liveOnly = content.filter((b: any) => {
             const s = b.status ?? b.vendorStatus;
             return s !== 'PENDING_VENDOR' && s !== 'PENDING';
           });
-          setResults(liveOnly.map((b: any): GameResult => ({
+          const mapped = liveOnly.map((b: any): GameResult => ({
             id: String(b.id ?? b._id),
             title: b.title ?? 'Match',
             sport: b.sport ?? 'FUTSAL',
@@ -594,28 +625,16 @@ export default function ExploreScreen() {
             pricePerPlayer: b.pricePerPlayer != null ? Number(b.pricePerPlayer) : null,
             latitude: b.latitude ?? 51.5074, longitude: b.longitude ?? -0.1278,
             distance: mapDist(b.latitude, b.longitude),
-          })));
+          }));
+          setResults((prev) => (append ? [...prev, ...mapped] : mapped));
 
         } else {
-          // EVENTS — try global /tournaments first, fall back to per-venue fetch
-          let rawEvents: any[] = [];
-          try {
-            const { data } = await axiosInstance.get('/tournaments', { params: { lat: lat2, lng: lng2, query: q } });
-            rawEvents = Array.isArray(data) ? data : (data?.content ?? []);
-          } catch {
-            // Backend doesn't expose a global /tournaments list yet — aggregate from venues
-            const venues = await futsalApi.listVenues();
-            const chunks = await Promise.all(
-              venues.slice(0, 8).map(async (v: any) => {
-                try {
-                  const ts = await tournamentApi.listForFutsal(v.id ?? v._id);
-                  return ts.map((t: any) => ({ ...t, latitude: v.latitude, longitude: v.longitude, futsalName: v.name }));
-                } catch { return []; }
-              })
-            );
-            rawEvents = chunks.flat();
-          }
-          setResults(rawEvents.map((t: any): EventResult => ({
+          // EVENTS — global cross-venue tournament search (text/date/radius), paginated.
+          const { content, hasMore: m } = await tournamentApi.filterTournaments({
+            query: q, lat: lat2, lng: lng2, radiusKm, date: filterDate, ...pageParams,
+          });
+          more = m;
+          const mapped = content.map((t: any): EventResult => ({
             id: String(t.id ?? t._id),
             name: t.name ?? t.title ?? 'Tournament',
             sport: t.sport ?? 'FUTSAL',
@@ -626,13 +645,18 @@ export default function ExploreScreen() {
             status: t.status,
             latitude: t.latitude ?? 51.5074, longitude: t.longitude ?? -0.1278,
             distance: mapDist(t.latitude, t.longitude),
-          })));
+          }));
+          setResults((prev) => (append ? [...prev, ...mapped] : mapped));
         }
+
+        setPage(targetPage);
+        setHasMore(more);
       } catch (err) {
         console.warn('ExploreScreen fetchResults error', err);
-        setResults([]);
+        if (!append) setResults([]);
+        setHasMore(false);
       } finally {
-        setLoading(false);
+        if (append) setLoadingMore(false); else setLoading(false);
       }
     },
     [searchText, sportFilter, dateQuick, customDate, radiusKm, freeOnly, userLat, userLng, mapDist]
@@ -640,12 +664,17 @@ export default function ExploreScreen() {
 
   const handleShowResults = () => {
     setStep('RESULTS');
-    fetchResults(category);
+    fetchResults(category, 0, false);
   };
 
   const handleSwitchCategory = (cat: Category) => {
     setCategory(cat);
-    fetchResults(cat);
+    fetchResults(cat, 0, false);
+  };
+
+  const loadMoreResults = () => {
+    if (loading || loadingMore || !hasMore) return;
+    fetchResults(category, page + 1, true);
   };
 
   // ─── Map region for radius preview ────────────────────────────────────────
@@ -724,7 +753,7 @@ export default function ExploreScreen() {
   };
 
   const renderGameCard = (game: GameResult) => {
-    const sportEmoji = game.sport === 'CRICKET' ? '🏏' : game.sport === 'PICKLEBALL' ? '🏓' : '⚽';
+    const GameSportIcon = sportIconFor(game.sport);
     const filled = game.maxSpots > 0 ? Math.min((game.joinedPlayersCount / game.maxSpots) * 100, 100) : 0;
     const dateLabel = game.slotDate
       ? new Date(game.slotDate + 'T00:00:00').toLocaleDateString(undefined, {
@@ -749,7 +778,7 @@ export default function ExploreScreen() {
       >
         <View style={styles.gameCardHeader}>
           <View style={styles.sportBadge}>
-            <Text style={styles.sportEmoji}>{sportEmoji}</Text>
+            <GameSportIcon color={Colors.text} size={13} strokeWidth={2.2} />
             <Text style={styles.sportBadgeText}>{game.sport}</Text>
           </View>
           <View style={[styles.feeBadge, game.totalPrice == null && styles.feeBadgeFree]}>
@@ -814,7 +843,7 @@ export default function ExploreScreen() {
           <Image source={{ uri: imageUri }} style={styles.cardImage} resizeMode="cover" />
         ) : (
           <LinearGradient colors={['#EA580C40', '#C2410C25']} style={[styles.cardImage, styles.cardImagePlaceholder]}>
-            <Text style={{ fontSize: 40 }}>💪</Text>
+            <Dumbbell color="#EA580C" size={32} strokeWidth={1.5} />
             <Text style={[styles.cardImagePlaceholderText, { color: '#EA580C' }]}>{trainer.name}</Text>
           </LinearGradient>
         )}
@@ -852,7 +881,7 @@ export default function ExploreScreen() {
   };
 
   const renderEventCard = (event: EventResult) => {
-    const sportEmoji = event.sport === 'CRICKET' ? '🏏' : event.sport === 'PICKLEBALL' ? '🏓' : '⚽';
+    const EventSportIcon = sportIconFor(event.sport);
     const statusColor = event.status === 'ACTIVE' ? Colors.success : event.status === 'UPCOMING' ? '#7C3AED' : Colors.neutral400;
     const statusLabel = event.status ?? 'OPEN';
     const dateLabel = event.startDate
@@ -867,7 +896,9 @@ export default function ExploreScreen() {
       >
         <LinearGradient colors={['#7C3AED20', '#6D28D920']} style={styles.eventCardHeader}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={{ fontSize: 22 }}>{sportEmoji}</Text>
+            <View style={styles.eventSportIconWrap}>
+              <EventSportIcon color="#7C3AED" size={18} strokeWidth={2.2} />
+            </View>
             <View>
               <Text style={styles.eventCardTitle}>{event.name}</Text>
               {!!event.futsalName && <Text style={styles.eventCardVenue}>{event.futsalName}</Text>}
@@ -969,7 +1000,7 @@ export default function ExploreScreen() {
               activeOpacity={0.82}
             >
               <View style={[styles.catTriggerIcon, { backgroundColor: cat.color + '22' }]}>
-                <Text style={{ fontSize: 22 }}>{cat.emoji}</Text>
+                <cat.Icon color={cat.color} size={22} strokeWidth={2.2} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.catTriggerHint}>Searching for</Text>
@@ -1001,7 +1032,7 @@ export default function ExploreScreen() {
                   onPress={() => setSportFilter(s.id)}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.chipEmoji}>{s.emoji}</Text>
+                  <s.Icon color={sportFilter === s.id ? Colors.primary : Colors.textSecondary} size={14} strokeWidth={2.2} />
                   <Text style={[styles.chipText, sportFilter === s.id && styles.chipTextActive]}>{s.label}</Text>
                 </TouchableOpacity>
               ))}
@@ -1198,7 +1229,9 @@ export default function ExploreScreen() {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.resultsCount}>
-            {loading ? 'Searching…' : `${results.length} ${CATS.find(c => c.id === category)?.label ?? ''} found`}
+            {loading
+              ? 'Searching…'
+              : `${results.length}${hasMore ? '+' : ''} ${CATS.find(c => c.id === category)?.label ?? ''} found`}
           </Text>
           <Text style={styles.resultsSubtitle}>
             {userLat != null ? `Within ${radiusKm} km of you` : 'All locations'}
@@ -1227,8 +1260,8 @@ export default function ExploreScreen() {
               onPress={() => handleSwitchCategory(cat.id)}
               activeOpacity={0.8}
             >
-              <Text style={{ fontSize: 13 }}>{cat.emoji}</Text>
-              <Text style={[styles.catSwitchText, active && styles.catSwitchTextActive]}>{cat.label}</Text>
+              <cat.Icon color={active ? Colors.white : cat.color} size={14} strokeWidth={2.2} />
+              <Text numberOfLines={1} style={[styles.catSwitchText, active && styles.catSwitchTextActive]}>{cat.label}</Text>
             </TouchableOpacity>
           );
         })}
@@ -1243,14 +1276,19 @@ export default function ExploreScreen() {
         </View>
       ) : (
         <FlatList
+          style={{ flex: 1 }}
           data={results}
           keyExtractor={(item: any) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.resultsList}
           showsVerticalScrollIndicator={false}
+          onEndReached={loadMoreResults}
+          onEndReachedThreshold={0.4}
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
-              <Text style={styles.emptyEmoji}>🔍</Text>
+              <View style={styles.emptyIconWrap}>
+                <Search color={Colors.neutral400} size={30} strokeWidth={1.8} />
+              </View>
               <Text style={styles.emptyTitle}>No {category === 'VENUES' ? 'venues' : 'games'} found</Text>
               <Text style={styles.emptySub}>Try a wider radius or fewer filters</Text>
               <TouchableOpacity
@@ -1261,6 +1299,14 @@ export default function ExploreScreen() {
                 <Text style={styles.emptyBtnText}>Adjust Filters</Text>
               </TouchableOpacity>
             </View>
+          }
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={styles.loadMoreFooter}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={styles.loadMoreText}>Loading more…</Text>
+              </View>
+            ) : null
           }
         />
       )}
@@ -1499,18 +1545,26 @@ const styles = StyleSheet.create({
   mapToggleBtnText: { fontSize: 13, fontWeight: '700', color: Colors.white },
 
   // ── Category switcher (results)
-  catSwitchRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
-  catSwitchChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 7, backgroundColor: Colors.neutral100, borderRadius: 20 },
-  catSwitchChipActive: { backgroundColor: Colors.primary },
-  catSwitchText: { fontSize: 13, fontWeight: '600', color: Colors.neutral500 },
-  catSwitchTextActive: { color: Colors.white, fontWeight: '700' },
+  catSwitchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12 },
+  catSwitchChip: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingHorizontal: 14, height: 36, backgroundColor: Colors.neutral100,
+    borderRadius: 18, borderWidth: 1.5, borderColor: 'transparent',
+  },
+  catSwitchText: { fontSize: 12.5, fontWeight: '700', color: Colors.neutral600 },
+  catSwitchTextActive: { color: Colors.white, fontWeight: '800' },
 
   // ── Loading / empty
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { fontSize: 14, color: Colors.textSecondary },
   resultsList: { padding: 16, paddingBottom: 100, gap: 14 },
+  loadMoreFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 20 },
+  loadMoreText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
   emptyWrap: { alignItems: 'center', paddingTop: 60, gap: 12 },
-  emptyEmoji: { fontSize: 48 },
+  emptyIconWrap: {
+    width: 72, height: 72, borderRadius: 36, backgroundColor: Colors.neutral100,
+    alignItems: 'center', justifyContent: 'center',
+  },
   emptyTitle: { fontSize: 17, fontWeight: '800', color: Colors.text },
   emptySub: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center' },
   emptyBtn: { marginTop: 4, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: Colors.primary, borderRadius: 14 },
@@ -1535,7 +1589,6 @@ const styles = StyleSheet.create({
   // ── Game card extras
   gameCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14, paddingBottom: 4 },
   sportBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.primaryLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
-  sportEmoji: { fontSize: 13 },
   sportBadgeText: { fontSize: 10, fontWeight: '800', color: Colors.primary },
   feeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: Colors.primaryLight },
   feeBadgeFree: { backgroundColor: Colors.success + '20' },
@@ -1603,7 +1656,10 @@ const styles = StyleSheet.create({
   catTriggerBadgeText: { fontSize: 11, fontWeight: '800', color: Colors.white },
 
   // ── Category switcher scroll in results bar
-  catSwitchScroll: { backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.neutral100 },
+  catSwitchScroll: {
+    backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.neutral100,
+    flexGrow: 0, flexShrink: 0,
+  },
 
   // ── Trainer card extras
   trainerBadge: {
@@ -1619,6 +1675,10 @@ const styles = StyleSheet.create({
   },
   eventCardTitle: { fontSize: 15, fontWeight: '800', color: Colors.text },
   eventCardVenue: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+  eventSportIconWrap: {
+    width: 34, height: 34, borderRadius: 10, backgroundColor: '#7C3AED1c',
+    alignItems: 'center', justifyContent: 'center',
+  },
   eventStatusBadge: {
     paddingHorizontal: 10, paddingVertical: 4,
     borderRadius: 20, borderWidth: 1,

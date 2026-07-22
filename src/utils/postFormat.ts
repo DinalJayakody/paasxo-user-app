@@ -1,11 +1,11 @@
-// Shared by every place a post/comment/avatar renders (PostCard, ProfileScreen,
-// FriendProfileScreen, CommentSheet) - previously duplicated near-identically
-// in PostCard.tsx and ProfileScreen.tsx.
+import { resolveMediaUrl } from './mediaUrl';
 
+// Shared by every place a post/comment/avatar renders (PostCard, ReelGrid,
+// PostGrid, ReelPlayer, CommentSheet). Thin re-export of resolveMediaUrl so
+// relative backend paths (locally-stored uploads) resolve correctly too,
+// not just absolute/data URIs - this used to mishandle those as raw base64.
 export function parseMediaUrl(url?: string): string | undefined {
-  if (!url) return undefined;
-  if (url.startsWith('http') || url.startsWith('file') || url.startsWith('data:')) return url;
-  return `data:image/jpeg;base64,${url}`;
+  return resolveMediaUrl(url);
 }
 
 export function formatTimeAgo(dateString?: string): string {

@@ -582,20 +582,20 @@ export default function HomeScreen() {
           <View style={styles.tabBar}>
             <Animated.View style={[styles.tabIndicator, styles.tabIndicator4, { left: tabIndicatorLeft }]} />
             <TouchableOpacity style={styles.tabBtn} onPress={() => switchTab('MATCHES')} activeOpacity={0.8}>
-              <Trophy color={activeTab === 'MATCHES' ? Colors.primary : Colors.neutral400} size={13} strokeWidth={2.5} />
-              <Text style={[styles.tabLabel, activeTab === 'MATCHES' && styles.tabLabelActive]}>Matches</Text>
+              <Trophy color={activeTab === 'MATCHES' ? Colors.primary : Colors.neutral400} size={16} strokeWidth={2.5} />
+              <Text numberOfLines={1} style={[styles.tabLabel, activeTab === 'MATCHES' && styles.tabLabelActive]}>Matches</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.tabBtn} onPress={() => switchTab('TOURNAMENTS')} activeOpacity={0.8}>
-              <Activity color={activeTab === 'TOURNAMENTS' ? Colors.primary : Colors.neutral400} size={13} strokeWidth={2.5} />
-              <Text style={[styles.tabLabel, activeTab === 'TOURNAMENTS' && styles.tabLabelActive]}>Tournaments</Text>
+              <Activity color={activeTab === 'TOURNAMENTS' ? Colors.primary : Colors.neutral400} size={16} strokeWidth={2.5} />
+              <Text numberOfLines={1} style={[styles.tabLabel, activeTab === 'TOURNAMENTS' && styles.tabLabelActive]}>Tournaments</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.tabBtn} onPress={() => switchTab('TRAINER_SESSIONS')} activeOpacity={0.8}>
-              <Dumbbell color={activeTab === 'TRAINER_SESSIONS' ? Colors.trainer : Colors.neutral400} size={13} strokeWidth={2.5} />
-              <Text style={[styles.tabLabel, activeTab === 'TRAINER_SESSIONS' && styles.tabLabelTrainer]}>Trainer</Text>
+              <Dumbbell color={activeTab === 'TRAINER_SESSIONS' ? Colors.trainer : Colors.neutral400} size={16} strokeWidth={2.5} />
+              <Text numberOfLines={1} style={[styles.tabLabel, activeTab === 'TRAINER_SESSIONS' && styles.tabLabelTrainer]}>Trainer</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.tabBtn} onPress={() => switchTab('WALKING_RUNNING')} activeOpacity={0.8}>
-              <PersonStanding color={activeTab === 'WALKING_RUNNING' ? Colors.walkRun : Colors.neutral400} size={13} strokeWidth={2.5} />
-              <Text style={[styles.tabLabel, activeTab === 'WALKING_RUNNING' && styles.tabLabelWalk]}>Walk/Run</Text>
+              <PersonStanding color={activeTab === 'WALKING_RUNNING' ? Colors.walkRun : Colors.neutral400} size={16} strokeWidth={2.5} />
+              <Text numberOfLines={1} style={[styles.tabLabel, activeTab === 'WALKING_RUNNING' && styles.tabLabelWalk]}>Walk/Run</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -979,8 +979,8 @@ const styles = StyleSheet.create({
   tabBar: {
     flexDirection: 'row',
     backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: 4,
+    borderRadius: 18,
+    padding: 5,
     position: 'relative',
     shadowColor: '#000',
     shadowOpacity: 0.06,
@@ -990,26 +990,26 @@ const styles = StyleSheet.create({
   },
   tabIndicator: {
     position: 'absolute',
-    top: 4,
-    bottom: 4,
+    top: 5,
+    bottom: 5,
     width: '50%',
     backgroundColor: Colors.primaryLight,
-    borderRadius: 12,
+    borderRadius: 14,
   },
   tabIndicator4: { width: '25%' },
   tabLabelTrainer: { color: Colors.trainer },
   tabLabelWalk: { color: Colors.walkRun },
   tabBtn: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 12,
+    gap: 5,
+    paddingVertical: 11,
+    paddingHorizontal: 2,
+    borderRadius: 14,
     zIndex: 1,
   },
-  tabLabel: { fontSize: 13, fontWeight: '700', color: Colors.neutral400 },
+  tabLabel: { fontSize: 10.5, fontWeight: '700', color: Colors.neutral400, letterSpacing: 0.1 },
   tabLabelActive: { color: Colors.primary },
 
   proBanner: {

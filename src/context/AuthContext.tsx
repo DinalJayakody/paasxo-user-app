@@ -1,12 +1,14 @@
 import React, { createContext, useEffect, useState, useCallback, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DeviceEventEmitter } from 'react-native';
+import { DeviceEventEmitter, Platform } from 'react-native';
+import { getRedirectResult } from 'firebase/auth';
 import { authApi } from '../api/authApi';
 import { socialApi } from '../api/socialApi';
 import { AUTH_LOGOUT_EVENT } from '../api/axios';
 import { AuthResponse, LoginPayload, RegisterPayload, UserProfile } from '../types/api';
 import axiosInstance from '../api/axios';
 import { CompleteProfileModal } from '../components/CompleteProfileModal';
+import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
 
 type AuthContextShape = {
   user: UserProfile | null;
@@ -24,6 +26,10 @@ type AuthContextShape = {
   completeSocialSignIn: (provider: 'google' | 'apple', token: string, appleUser?: any) => Promise<void>;
   // Saves the activity + referral code collected by CompleteProfileModal.
   completeProfile: (sports: string[], referralCode?: string) => Promise<void>;
+  // Applies a fresh profile object (e.g. the response from an avatar upload
+  // or an Edit Profile save) to both in-memory state and cached storage,
+  // without a full network refetch.
+  updateUser: (profile: UserProfile) => Promise<void>;
 };
 
 export const AuthContext = createContext<AuthContextShape>({} as AuthContextShape);
@@ -138,6 +144,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // ─── Web: complete a signInWithRedirect() Google sign-in ─────────────────────
+  // signInWithPopup is unreliable across browsers (Chrome's default
+  // Cross-Origin-Opener-Policy blocks the popup/opener communication it needs,
+  // so the popup silently closes without the promise ever resolving). The web
+  // screens use signInWithRedirect instead, which navigates the whole tab away
+  // and back - so completion has to happen here, once, after the page reloads.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !FIREBASE_CONFIGURED) return;
+    const auth = getFirebaseAuth();
+    if (!auth) return;
+
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (!result?.user) return;
+        const firebaseIdToken = await result.user.getIdToken();
+        await signInWithGoogle(firebaseIdToken);
+      })
+      .catch((err) => {
+        console.warn('Google redirect sign-in failed:', err?.message ?? err);
+      });
+    // Intentionally run once on mount only - getRedirectResult reads a
+    // one-time pending result left by the just-completed browser redirect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ─── Generic social sign-in (Apple / future providers) ───────────────────────
 
   const completeSocialSignIn = async (
@@ -170,6 +201,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await AsyncStorage.setItem('user', JSON.stringify(updated));
   };
 
+  const updateUser = async (profile: UserProfile): Promise<void> => {
+    setUser(profile);
+    await AsyncStorage.setItem('user', JSON.stringify(profile));
+  };
+
   const needsProfileCompletion = !!user && user.profileCompleted === false;
 
   return (
@@ -184,6 +220,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signInWithGoogle,
         completeSocialSignIn,
         completeProfile,
+        updateUser,
       }}
     >
       {children}

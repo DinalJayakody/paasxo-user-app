@@ -1,74 +1,97 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Image,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, MoreVertical, Share2, CheckCircle2 } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ArrowLeft, MoreVertical, Share2, MessageCircle, Lock } from 'lucide-react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { BottomNavbar } from '../components/BottomNavbar';
 import { Colors } from '../styles/colors';
 import { socialMediaApi } from '../api/socialMediaApi';
+import { reelApi } from '../api/reelApi';
+import { resolveAvatarUri } from '../utils/mediaUrl';
 import { PostGrid } from '../components/PostGrid';
-import { PostSummary } from '../types/api';
+import { ReelGrid } from '../components/ReelGrid';
+import { PostSummary, ReelSummary } from '../types/api';
+import { FullScreenImageViewer } from '../components/FullScreenImageViewer';
 
+const FRIEND_TABS = ['Moments', 'Stats', 'Reels', 'Tagged'] as const;
+type FriendTab = (typeof FRIEND_TABS)[number];
 
-const profileUsers = {
-  alex: {
-    name: 'Alex “Thunder” Ray',
-    role: 'Pro Futsal Player • 2h ago',
-    bio: 'Incredible team effort tonight! That final volley was something else. See you all in the semifinals!',
-    avatar: 'https://images.pexels.com/photos/3991871/pexels-photo-3991871.jpeg?auto=compress&cs=tinysrgb&w=400',
-    stats: { posts: '142', followers: '12.4k', following: '852' },
-    highlights: [
-      { id: 'matches', title: 'Matches Played', value: '156' },
-      { id: 'rate', title: 'Strike Rate', value: '138.4' },
-      { id: 'mvp', title: 'MVP Awards', value: '12' },
-      { id: 'skill', title: 'Elite Skill', value: 'CRICKET PRO' },
-    ],
-  },
-  marcus: {
-    name: 'Marcus Chen',
-    role: 'Futsal Specialist • Forward',
-    bio: 'Driven to score every match. Training hard, playing harder. Let’s build the next winning squad.',
-    avatar: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=400',
-    stats: { posts: '98', followers: '9.8k', following: '710' },
-    highlights: [
-      { id: 'matches', title: 'Matches Played', value: '142' },
-      { id: 'rate', title: 'Strike Rate', value: '132.8' },
-      { id: 'mvp', title: 'MVP Awards', value: '9' },
-      { id: 'skill', title: 'Elite Skill', value: 'FUTSAL PRO' },
-    ],
-  },
+const AnimatedPressable = ({
+  onPress,
+  children,
+  style,
+  disabled,
+}: {
+  onPress?: () => void;
+  children: React.ReactNode;
+  style?: any;
+  disabled?: boolean;
+}) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const animate = (toValue: number) => {
+    Animated.spring(scaleAnim, { toValue, useNativeDriver: true, friction: 12, tension: 160 }).start();
+  };
+  return (
+    <Animated.View style={[{ transform: [{ scale: scaleAnim }] }, style]}>
+      <Pressable
+        onPressIn={() => animate(0.96)}
+        onPressOut={() => animate(1)}
+        onPress={onPress}
+        disabled={disabled}
+      >
+        {children}
+      </Pressable>
+    </Animated.View>
+  );
 };
 
-const tabs = ['Moments', 'Videos', 'Tagged', 'Stats'];
-
+// Same visual language as ProfileScreen (own profile) - hero gradient banner,
+// avatar treatment, stat row, tab row - so the two screens read as one
+// consistent design. Differs only where the context genuinely differs:
+// Follow/Message instead of Edit/Share, and no avatar-change options.
 export default function FriendProfileScreen() {
   const router = useRouter();
   const { user } = useLocalSearchParams();
-  const profile = useMemo(() => {
-    const userId = Array.isArray(user) ? user[0] : user;
-    return profileUsers[userId as keyof typeof profileUsers] || profileUsers.alex;
-  }, [user]);
-
-  const [profileData, setProfileData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
   const userId = Array.isArray(user) ? user[0] : user;
 
-  // FOLLOW / FOLLOW-REQUEST LOGIC — 'ACCEPTED' means you follow them, 'PENDING'
-  // means you've sent a request to a private account that hasn't accepted yet.
+  const [selectedTab, setSelectedTab] = useState<FriendTab>('Moments');
+  const [profileData, setProfileData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
   const [relationshipStatus, setRelationshipStatus] = useState<'NONE' | 'PENDING' | 'ACCEPTED'>('NONE');
   const [actionLoading, setActionLoading] = useState(false);
 
   const [posts, setPosts] = useState<PostSummary[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+
+  const [reels, setReels] = useState<ReelSummary[]>([]);
+  const [reelsLoading, setReelsLoading] = useState(false);
+  const [reelsLoaded, setReelsLoaded] = useState(false);
+
+  const [avatarViewerVisible, setAvatarViewerVisible] = useState(false);
+
+  const headerSlide = useRef(new Animated.Value(-20)).current;
+  const headerFade = useRef(new Animated.Value(0)).current;
+  const avatarScale = useRef(new Animated.Value(0.8)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(avatarScale, { toValue: 1, friction: 6, useNativeDriver: true }),
+      Animated.timing(headerFade, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.spring(headerSlide, { toValue: 0, friction: 8, useNativeDriver: true }),
+    ]).start();
+  }, []);
 
   useEffect(() => {
     if (!userId) return;
@@ -81,12 +104,9 @@ export default function FriendProfileScreen() {
 
   useEffect(() => {
     const fetchProfile = async () => {
-      console.log('Fetching profile for user ID:', userId);
       try {
         setLoading(true);
-
         const res = await socialMediaApi.getUserProfile(userId as string);
-
         setProfileData(res);
         // Jackson strips the "is"/"has" prefix from boolean getters, so these
         // come back as `following`/`private`/`hasPendingRequestFromMe` on the
@@ -102,10 +122,22 @@ export default function FriendProfileScreen() {
     if (userId) fetchProfile();
   }, [userId]);
 
+  // Reels tab is fetched lazily, the first time it's opened - same pattern as ProfileScreen.
+  useEffect(() => {
+    if (selectedTab !== 'Reels' || reelsLoaded || !userId) return;
+    setReelsLoading(true);
+    reelApi.getUserReels(userId as string)
+      .then((res) => setReels(res.content))
+      .catch(() => setReels([]))
+      .finally(() => {
+        setReelsLoading(false);
+        setReelsLoaded(true);
+      });
+  }, [selectedTab, reelsLoaded, userId]);
+
   const handleFollowToggle = async () => {
     try {
       setActionLoading(true);
-
       if (relationshipStatus === 'NONE') {
         const res = await socialMediaApi.followUser(userId as string);
         setRelationshipStatus(res?.status === 'PENDING' ? 'PENDING' : 'ACCEPTED');
@@ -121,370 +153,289 @@ export default function FriendProfileScreen() {
     }
   };
 
+  const profile = profileData?.profile;
+
+  const sport = useMemo<string>(() => {
+    const s = Array.isArray(profile?.sports) ? profile.sports[0] : profile?.sport;
+    return (s || 'FUTSAL').toString().toUpperCase();
+  }, [profile]);
+
+  const sportEmoji = { CRICKET: '🏏', FUTSAL: '⚽', PICKLEBALL: '🏓' }[sport] || '🏅';
+  const sportColor = { CRICKET: Colors.cricket, FUTSAL: Colors.futsal, PICKLEBALL: Colors.pickleball }[sport] || Colors.primary;
+
+  const profileImageUri = useMemo(
+    () => resolveAvatarUri(profile?.profileImageUrl, profile?.displayName),
+    [profile]
+  );
+
+  const displayName = profile?.displayName || 'Sports Player';
+  const sportsText = Array.isArray(profile?.sports) ? profile.sports.join(' • ').toUpperCase() : sport;
+  const skillLevel = profile?.skillLevel ? ` • ${String(profile.skillLevel).toUpperCase()}` : '';
+  const bioText = profile?.bio || `Passionate ${sport.toLowerCase()} player striving for excellence in every match.`;
+  const isPrivateAndLocked = !!profileData?.isRestricted;
+
   if (loading || !profileData) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <Text>Loading profile...</Text>
-      </View>
+      <SafeAreaView style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.loadingText}>Loading profile...</Text>
+      </SafeAreaView>
     );
   }
 
+  const renderMomentsTab = () => {
+    if (isPrivateAndLocked) {
+      return (
+        <View style={styles.emptyTabContent}>
+          <Lock color={Colors.neutral400} size={36} strokeWidth={1.8} />
+          <Text style={styles.emptyTabTitle}>This account is private</Text>
+          <Text style={styles.emptyTabSubtitle}>Follow {displayName.split(' ')[0]} to see their moments.</Text>
+        </View>
+      );
+    }
+    if (postsLoading) {
+      return (
+        <View style={styles.emptyTabContent}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.emptyTabSubtitle}>Loading moments...</Text>
+        </View>
+      );
+    }
+    if (posts.length === 0) {
+      return (
+        <View style={styles.emptyTabContent}>
+          <Text style={styles.emptyTabEmoji}>📸</Text>
+          <Text style={styles.emptyTabTitle}>No moments yet</Text>
+        </View>
+      );
+    }
+    return (
+      <PostGrid
+        posts={posts}
+        selectedPostId={selectedPostId}
+        onSelectPost={(post) => setSelectedPostId(post.id)}
+        onCloseDetail={() => setSelectedPostId(null)}
+      />
+    );
+  };
 
+  const renderReelsTab = () => {
+    if (reelsLoading) {
+      return (
+        <View style={styles.emptyTabContent}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.emptyTabSubtitle}>Loading reels...</Text>
+        </View>
+      );
+    }
+    if (reels.length === 0) {
+      return (
+        <View style={styles.emptyTabContent}>
+          <Text style={styles.emptyTabEmoji}>🎬</Text>
+          <Text style={styles.emptyTabTitle}>No reels yet</Text>
+        </View>
+      );
+    }
+    return <ReelGrid reels={reels} />;
+  };
+
+  const renderStatsTab = () => (
+    <View style={styles.statsSportBadge}>
+      <Text style={styles.statsSportEmoji}>{sportEmoji}</Text>
+      <Text style={[styles.statsSportLabel, { color: sportColor }]}>{sport} STATISTICS</Text>
+    </View>
+  );
+
+  const renderEmptyTab = (label: string) => (
+    <View style={styles.emptyTabContent}>
+      <Text style={styles.emptyTabEmoji}>🏷️</Text>
+      <Text style={styles.emptyTabTitle}>No {label} yet</Text>
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.headerRow}>
-          <Pressable onPress={() => router.back()} style={styles.iconButton}>
-            <ArrowLeft color={Colors.neutral900} size={22} strokeWidth={2.5} />
+        {/* Header */}
+        <Animated.View style={[styles.profileCardHeader, { opacity: headerFade, transform: [{ translateY: headerSlide }] }]}>
+          <AnimatedPressable onPress={() => router.back()} style={styles.topIconButton}>
+            <ArrowLeft color={Colors.neutral900} size={18} strokeWidth={2} />
+          </AnimatedPressable>
+          <AnimatedPressable onPress={() => {}} style={styles.topIconButton}>
+            <MoreVertical color={Colors.neutral900} size={18} strokeWidth={2} />
+          </AnimatedPressable>
+        </Animated.View>
+
+        {/* Hero gradient banner */}
+        <LinearGradient colors={[sportColor + '28', Colors.background]} style={styles.heroBanner}>
+          <Pressable onPress={() => setAvatarViewerVisible(true)}>
+            <Animated.View style={[styles.avatarContainer, { transform: [{ scale: avatarScale }] }]}>
+              <Image source={{ uri: profileImageUri }} style={styles.avatar} />
+              <View style={[styles.sportBadgeOnAvatar, { backgroundColor: sportColor }]}>
+                <Text style={styles.sportBadgeEmoji}>{sportEmoji}</Text>
+              </View>
+            </Animated.View>
           </Pressable>
-          <Text style={styles.brandHeading}>Paasxo</Text>
-          <View style={styles.headerActions}>
-            <Pressable style={styles.iconButton}>
-              <Share2 color={Colors.neutral900} size={22} strokeWidth={2.5} />
-            </Pressable>
-            <Pressable style={[styles.iconButton, styles.iconButtonSmall]}>
-              <MoreVertical color={Colors.neutral900} size={22} strokeWidth={2.5} />
-            </Pressable>
-          </View>
-        </View>
 
-        <View style={styles.profileCard}>
-          <View style={styles.avatarWrapper}>
-            <Image                       source={{
-                        uri: profileData.profile.profileImageUrl
-                          ? profileData.profile.profileImageUrl?.startsWith('http') || profileData.profile.profileImageUrl?.startsWith('file')
-                            ? profileData.profile.profileImageUrl
-                            : `data:image/jpeg;base64,${profileData.profile.profileImageUrl}`
-                          : undefined,
-                      }} style={styles.avatar} />
-            <View style={styles.verifiedBadge}>
-              <CheckCircle2 color={Colors.white} size={16} strokeWidth={2} />
-            </View>
-          </View>
-          <Text style={styles.profileName}>{profileData.profile.displayName}</Text>
-          <Text style={styles.profileRole}>{profileData.profile.sport}</Text>
-          <Text style={styles.profileBio}>{profile.bio}</Text>
+          <Text style={styles.profileName}>{displayName}</Text>
+          <Text style={styles.profileRole}>{sportsText}{skillLevel}</Text>
+          <Text style={styles.profileBio}>{bioText}</Text>
 
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{postsLoading ? '…' : posts.length}</Text>
-              <Text style={styles.statLabel}>POSTS</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{profileData.followersCount}</Text>
-              <Text style={styles.statLabel}>FOLLOWERS</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{profileData.followingCount}</Text>
-              <Text style={styles.statLabel}>FOLLOWING</Text>
-            </View>
+          <View style={styles.socialStatsRow}>
+            {[
+              { value: postsLoading ? '…' : String(posts.length), label: 'POSTS' },
+              { value: String(profileData?.followersCount ?? 0), label: 'FOLLOWERS' },
+              { value: String(profileData?.followingCount ?? 0), label: 'FOLLOWING' },
+            ].map((s, i) => (
+              <View key={i} style={styles.socialStatItem}>
+                <Text style={styles.socialStatValue}>{s.value}</Text>
+                <Text style={styles.socialStatLabel}>{s.label}</Text>
+              </View>
+            ))}
           </View>
 
-          <View style={styles.actionRow}>
-            <Pressable
+          <View style={styles.buttonsRow}>
+            <AnimatedPressable
               onPress={handleFollowToggle}
               disabled={actionLoading}
               style={[
                 styles.followButton,
-                relationshipStatus !== 'NONE' && { backgroundColor: Colors.neutral900 }
+                styles.buttonShadow,
+                relationshipStatus !== 'NONE' && styles.followButtonActive,
               ]}
             >
-              <Text style={styles.followButtonText}>
+              <Text style={[styles.followButtonText, relationshipStatus !== 'NONE' && styles.followButtonTextActive]}>
                 {actionLoading
                   ? 'Loading...'
                   : relationshipStatus === 'ACCEPTED'
-                    ? 'Unfollow'
+                    ? 'Following'
                     : relationshipStatus === 'PENDING'
                       ? 'Requested'
                       : 'Follow'}
               </Text>
-            </Pressable>
-            <Pressable style={styles.messageButton}>
+            </AnimatedPressable>
+            <AnimatedPressable onPress={() => {}} style={[styles.messageButton, styles.buttonShadow]}>
+              <MessageCircle color={Colors.white} size={16} strokeWidth={2} />
               <Text style={styles.messageButtonText}>Message</Text>
-            </Pressable>
+            </AnimatedPressable>
           </View>
+        </LinearGradient>
+
+        {/* Tabs */}
+        <View style={styles.tabRow}>
+          {FRIEND_TABS.map((tab) => {
+            const active = tab === selectedTab;
+            return (
+              <Pressable key={tab} onPress={() => setSelectedTab(tab)} style={styles.tabItem}>
+                <Text style={[styles.tabText, active && { color: sportColor }]}>{tab}</Text>
+                {active && <View style={[styles.tabUnderline, { backgroundColor: sportColor }]} />}
+              </Pressable>
+            );
+          })}
         </View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Performance Highlights</Text>
-          <Text style={styles.sectionBadge}>SEASON 2024</Text>
-        </View>
-
-        <View style={styles.performanceGrid}>
-          {profile.highlights.map((item) => (
-            <View key={item.id} style={styles.performanceCard}>
-              <Text style={styles.performanceLabel}>{item.title}</Text>
-              <Text style={styles.performanceValue}>{item.value}</Text>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.tabsRow}>
-          {tabs.map((tab) => (
-            <View key={tab} style={[styles.tabItem, tab === 'Moments' && styles.tabItemActive]}>
-              <Text style={[styles.tabText, tab === 'Moments' && styles.tabTextActive]}>{tab}</Text>
-            </View>
-          ))}
-        </View>
-
-        {postsLoading ? (
-          <ActivityIndicator color={Colors.primary} style={{ marginTop: 20 }} />
-        ) : posts.length === 0 ? (
-          <View style={styles.emptyPosts}>
-            <Text style={styles.emptyPostsText}>No posts yet</Text>
-          </View>
-        ) : (
-          <PostGrid
-            posts={posts}
-            selectedPostId={selectedPostId}
-            onSelectPost={(post) => setSelectedPostId(post.id)}
-            onCloseDetail={() => setSelectedPostId(null)}
-          />
-        )}
+        {selectedTab === 'Moments' && renderMomentsTab()}
+        {selectedTab === 'Stats' && renderStatsTab()}
+        {selectedTab === 'Reels' && renderReelsTab()}
+        {selectedTab === 'Tagged' && renderEmptyTab('tags')}
       </ScrollView>
 
       <BottomNavbar activeTab="FRIENDS" showCreateButton={false} />
+
+      <FullScreenImageViewer
+        visible={avatarViewerVisible}
+        imageUri={profileImageUri}
+        onClose={() => setAvatarViewerVisible(false)}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Colors.background,
+  safeArea: { flex: 1, backgroundColor: Colors.background },
+  loadingScreen: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background, gap: 12 },
+  loadingText: { fontSize: 14, color: Colors.textSecondary, fontWeight: '500' },
+  content: { paddingBottom: 120 },
+
+  profileCardHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8,
   },
-  content: {
-    paddingHorizontal: 18,
-    paddingBottom: 110,
+  topIconButton: {
+    width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.neutral200,
+    shadowColor: Colors.neutral900, shadowOpacity: 0.06, shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 }, elevation: 4,
   },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 10,
-    marginBottom: 24,
+
+  heroBanner: {
+    marginHorizontal: 16, borderRadius: 24, paddingTop: 20, paddingBottom: 24,
+    paddingHorizontal: 20, alignItems: 'center', marginBottom: 4,
+    borderWidth: 1, borderColor: Colors.neutral200 + '60',
   },
-  iconButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: Colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: Colors.neutral900,
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
+
+  avatarContainer: {
+    width: 120, height: 120, borderRadius: 60,
+    borderWidth: 4, borderColor: Colors.white, backgroundColor: Colors.neutral100,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 14, overflow: 'visible',
+    shadowColor: Colors.primary, shadowOpacity: 0.25, shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 }, elevation: 8,
   },
-  iconButtonSmall: {
-    marginLeft: 10,
+  avatar: { width: 112, height: 112, borderRadius: 56 },
+  sportBadgeOnAvatar: {
+    position: 'absolute', bottom: -2, right: -2,
+    width: 30, height: 30, borderRadius: 15,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: Colors.white,
   },
-  brandHeading: {
-    color: Colors.neutral900,
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  profileCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 32,
-    padding: 22,
-    alignItems: 'center',
-    shadowColor: Colors.neutral900,
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 4,
-    marginBottom: 22,
-  },
-  avatarWrapper: {
-    width: 120,
-    height: 120,
-    borderRadius: 100,
-    backgroundColor: Colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 18,
-  },
-  avatar: {
-    width: 112,
-    height: 112,
-    borderRadius: 100,
-  },
-  verifiedBadge: {
-    position: 'absolute',
-    bottom: 6,
-    right: 6,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  profileName: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: Colors.neutral900,
-    marginBottom: 6,
-  },
-  profileRole: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
-    color: Colors.neutral500,
-    marginBottom: 16,
-  },
-  profileBio: {
-    fontSize: 13,
-    color: Colors.neutral700,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 22,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginBottom: 22,
-  },
-  statItem: {
-    width: '30%',
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: Colors.neutral900,
-    marginBottom: 6,
-  },
-  statLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.neutral500,
-    letterSpacing: 1,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    width: '100%',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
+  sportBadgeEmoji: { fontSize: 14 },
+
+  profileName: { fontSize: 24, fontWeight: '900', color: Colors.neutral900, marginBottom: 6, textAlign: 'center' },
+  profileRole: { fontSize: 11, fontWeight: '800', color: Colors.neutral500, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12, textAlign: 'center' },
+  profileBio: { fontSize: 13, lineHeight: 20, textAlign: 'center', color: Colors.textSecondary, marginBottom: 18, paddingHorizontal: 8 },
+
+  socialStatsRow: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginBottom: 20, paddingHorizontal: 8 },
+  socialStatItem: { flex: 1, alignItems: 'center' },
+  socialStatValue: { fontSize: 20, fontWeight: '800', color: Colors.primary, marginBottom: 4 },
+  socialStatLabel: { fontSize: 10, fontWeight: '700', color: Colors.neutral500, letterSpacing: 1.1, textTransform: 'uppercase' },
+
+  buttonsRow: { flexDirection: 'row', width: '100%', gap: 12 },
   followButton: {
-    flex: 1,
-    backgroundColor: Colors.primary,
-    borderRadius: 18,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
+    flex: 1, height: 46, borderRadius: 23, backgroundColor: Colors.primary,
+    alignItems: 'center', justifyContent: 'center',
   },
-  followButtonText: {
-    color: Colors.white,
-    fontSize: 14,
-    fontWeight: '900',
-  },
+  followButtonActive: { backgroundColor: Colors.white, borderWidth: 1.5, borderColor: Colors.neutral200 },
+  followButtonText: { color: Colors.white, fontSize: 14, fontWeight: '700' },
+  followButtonTextActive: { color: Colors.neutral900 },
   messageButton: {
-    flex: 1,
-    backgroundColor: Colors.neutral200,
-    borderRadius: 18,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingHorizontal: 20, height: 46, borderRadius: 23, backgroundColor: Colors.neutral900,
   },
-  messageButtonText: {
-    color: Colors.neutral900,
-    fontSize: 14,
-    fontWeight: '900',
+  messageButtonText: { color: Colors.white, fontSize: 14, fontWeight: '700' },
+  buttonShadow: { shadowColor: Colors.neutral900, shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
+
+  tabRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginHorizontal: 16, marginVertical: 16, backgroundColor: Colors.white,
+    borderRadius: 16, padding: 4,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 18,
+  tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 10 },
+  tabText: { fontSize: 13, fontWeight: '700', color: Colors.neutral400 },
+  tabUnderline: { marginTop: 4, width: 20, height: 3, borderRadius: 2 },
+
+  statsSportBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: 16, marginBottom: 16, backgroundColor: Colors.white,
+    borderRadius: 12, padding: 12,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: Colors.neutral900,
-  },
-  sectionBadge: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: Colors.logoBlue,
-    textTransform: 'uppercase',
-  },
-  performanceGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  performanceCard: {
-    width: '48%',
-    backgroundColor: Colors.white,
-    borderRadius: 22,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: Colors.neutral900,
-    shadowOpacity: 0.05,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 3,
-  },
-  performanceLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.neutral500,
-    marginBottom: 6,
-  },
-  performanceValue: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: Colors.neutral900,
-  },
-  tabsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  tabItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 18,
-    backgroundColor: Colors.neutral200,
-    marginHorizontal: 4,
-  },
-  tabItemActive: {
-    backgroundColor: Colors.white,
-    shadowColor: Colors.neutral900,
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
-  },
-  tabText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.neutral700,
-  },
-  tabTextActive: {
-    color: Colors.logoBlue,
-  },
-  emptyPosts: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  emptyPostsText: {
-    fontSize: 13,
-    color: Colors.neutral500,
-    fontWeight: '600',
-  },
+  statsSportEmoji: { fontSize: 22 },
+  statsSportLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 1.2 },
+
+  emptyTabContent: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 32, gap: 8 },
+  emptyTabEmoji: { fontSize: 48, marginBottom: 8 },
+  emptyTabTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
+  emptyTabSubtitle: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
 });

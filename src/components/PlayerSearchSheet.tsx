@@ -14,6 +14,7 @@ import { AlertCircle, Check, Search, UserCheck, UserPlus, X } from 'lucide-react
 import { socialMediaApi } from '../api/socialMediaApi';
 import { Colors } from '../styles/colors';
 import { extractApiError } from '../utils/apiError';
+import { resolveMediaUrl } from '../utils/mediaUrl';
 
 export interface SearchedPlayer {
   firebaseUid: string;
@@ -33,12 +34,6 @@ interface PlayerSearchSheetProps {
   onDirectAdd?: (player: SearchedPlayer) => Promise<void> | void;
   excludeUids?: string[];
   title?: string;
-}
-
-function resolveUri(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('data:') || url.startsWith('http')) return url;
-  return `data:image/jpeg;base64,${url}`;
 }
 
 export function PlayerSearchSheet({
@@ -171,7 +166,7 @@ export function PlayerSearchSheet({
             {results.map((player) => {
               const state = actionStates[player.firebaseUid];
               const errorMsg = playerErrors[player.firebaseUid];
-              const uri = resolveUri(player.profileImageUrl);
+              const uri = resolveMediaUrl(player.profileImageUrl) ?? null;
               return (
                 <View key={player.firebaseUid}>
                   <View style={styles.playerRow}>

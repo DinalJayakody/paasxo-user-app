@@ -34,8 +34,9 @@ export const parseMatchDetails = (raw: any): MatchDetails => {
     slotId,
     title: data.title
       || (venueName !== 'Venue TBD' ? `Match at ${venueName}` : 'Match'),
-    // backend is futsal-only right now - no sportType field exists yet on Booking/Futsal
-    sportType: data.sportType || 'Futsal',
+    // Booking.sport is the real field now (create-match.tsx sends it); sportType
+    // is a legacy/placeholder fallback kept in case an older booking never set it.
+    sportType: data.sport || data.sportType || 'FUTSAL',
     level: data.level,
     images: Array.isArray(data.images) && data.images.length > 0
       ? data.images

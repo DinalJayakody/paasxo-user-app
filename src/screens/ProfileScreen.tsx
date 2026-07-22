@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Image,
   Pressable,
@@ -10,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 import {
   ArrowLeft,
   Settings,
@@ -31,11 +33,14 @@ import { Colors } from '../styles/colors';
 import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
 import { socialMediaApi } from '../api/socialMediaApi';
-import { ENDPOINTS } from '../api/endpoints';
+import { userApi } from '../api/userApi';
+import { resolveAvatarUri } from '../utils/mediaUrl';
 import { PostGrid } from '../components/PostGrid';
 import { ReelGrid } from '../components/ReelGrid';
 import { PostSummary, ReelSummary } from '../types/api';
 import { reelApi } from '../api/reelApi';
+import { FullScreenImageViewer } from '../components/FullScreenImageViewer';
+import { AvatarActionSheet } from '../components/AvatarActionSheet';
 
 const SPORT_STATS: Record<string, { icon: any; value: string; label: string; color: string }[]> = {
   CRICKET: [
@@ -121,11 +126,16 @@ const StatCard = ({ icon: Icon, value, label, color, index }: any) => {
 export default function ProfileScreen() {
   const router = useRouter();
   const { openPostId, openReelId, tab } = useLocalSearchParams<{ openPostId?: string; openReelId?: string; tab?: string }>();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, updateUser } = useAuth();
   const { active: isPro } = useSubscription();
   const [selectedTab, setSelectedTab] = useState<ProfileTab>('Moments');
   const [profileData, setProfileData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // Avatar viewing / changing
+  const [avatarSheetVisible, setAvatarSheetVisible] = useState(false);
+  const [avatarViewerVisible, setAvatarViewerVisible] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   // Posts
   const [userPosts, setUserPosts] = useState<PostSummary[]>([]);
@@ -258,29 +268,76 @@ export default function ProfileScreen() {
       u?.photoURL ??   // Firebase default field name
       u?.photo ??
       null;
-
-    const fallback = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user?.displayName || 'P')}&backgroundColor=2977c2&textColor=ffffff`;
-
-    if (!raw) return fallback;
-
-    // Object shape { uri: string } (from ImagePicker or EditProfile)
-    if (typeof raw === 'object' && 'uri' in raw) return (raw as { uri: string }).uri || fallback;
-
-    if (typeof raw !== 'string') return fallback;
-
-    // Already an absolute URL or data URI
-    if (raw.startsWith('http') || raw.startsWith('data:') || raw.startsWith('file:')) return raw;
-
-    // Relative path from backend (e.g. "/media/profiles/abc.jpg")
-    // Prepend the backend host by stripping the "/api" suffix from BASE_URL.
-    if (raw.startsWith('/')) {
-      const backendHost = ENDPOINTS.BASE_URL.replace(/\/api\/?$/, '');
-      return `${backendHost}${raw}`;
-    }
-
-    // Assume raw base64 string
-    return `data:image/jpeg;base64,${raw}`;
+    return resolveAvatarUri(raw, user?.displayName);
   }, [user]);
+
+  const applyNewAvatar = async (asset: ImagePicker.ImagePickerAsset) => {
+    setAvatarUploading(true);
+    try {
+      const updated = await userApi.uploadAvatar({
+        uri: asset.uri,
+        name: asset.fileName || 'avatar.jpg',
+        type: asset.mimeType || 'image/jpeg',
+      });
+      await updateUser(updated);
+    } catch {
+      Alert.alert('Upload failed', 'Could not update your profile picture. Please try again.');
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  const handleChooseFromLibrary = () => {
+    setAvatarSheetVisible(false);
+    (async () => {
+      try {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert('Permission needed', 'Allow photo library access to change your profile picture.');
+          return;
+        }
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.85,
+        });
+        if (!result.canceled && result.assets[0]) {
+          applyNewAvatar(result.assets[0]);
+        }
+      } catch (err: any) {
+        Alert.alert('Could not open photo library', err?.message || 'Please try again.');
+      }
+    })();
+  };
+
+  const handleTakePhoto = () => {
+    setAvatarSheetVisible(false);
+    (async () => {
+      try {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert('Permission needed', 'Allow camera access to take a new profile picture.');
+          return;
+        }
+        const result = await ImagePicker.launchCameraAsync({
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.85,
+        });
+        if (!result.canceled && result.assets[0]) {
+          applyNewAvatar(result.assets[0]);
+        }
+      } catch (err: any) {
+        Alert.alert('Could not open camera', err?.message || 'Please try again.');
+      }
+    })();
+  };
+
+  const handleViewPhoto = () => {
+    setAvatarSheetVisible(false);
+    setAvatarViewerVisible(true);
+  };
 
   const displayName = user?.displayName || 'Sports Player';
   const sportsText = Array.isArray(user?.sport) ? user.sport.join(' • ').toUpperCase() : (user?.sport || 'SPORT PLAYER').toUpperCase();
@@ -423,6 +480,7 @@ export default function ProfileScreen() {
   // ── Main render ──────────────────────────────────────────────────────────
 
   return (
+    <>
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Header */}
@@ -441,17 +499,24 @@ export default function ProfileScreen() {
           style={styles.heroBanner}
         >
           {/* Avatar */}
-          <Animated.View style={[styles.avatarContainer, { transform: [{ scale: avatarScale }] }]}>
-            <Image source={{ uri: profileImageUri }} style={styles.avatar} />
-            <View style={[styles.sportBadgeOnAvatar, { backgroundColor: sportColor }]}>
-              <Text style={styles.sportBadgeEmoji}>{sportEmoji}</Text>
-            </View>
-            {isPro && (
-              <View style={styles.proAvatarBadge}>
-                <Zap color={Colors.white} size={12} strokeWidth={2.5} fill={Colors.white} />
+          <Pressable onPress={() => setAvatarSheetVisible(true)} disabled={avatarUploading}>
+            <Animated.View style={[styles.avatarContainer, { transform: [{ scale: avatarScale }] }]}>
+              <Image source={{ uri: profileImageUri }} style={styles.avatar} />
+              {avatarUploading && (
+                <View style={styles.avatarUploadingOverlay}>
+                  <ActivityIndicator color={Colors.white} size="small" />
+                </View>
+              )}
+              <View style={[styles.sportBadgeOnAvatar, { backgroundColor: sportColor }]}>
+                <Text style={styles.sportBadgeEmoji}>{sportEmoji}</Text>
               </View>
-            )}
-          </Animated.View>
+              {isPro && (
+                <View style={styles.proAvatarBadge}>
+                  <Zap color={Colors.white} size={12} strokeWidth={2.5} fill={Colors.white} />
+                </View>
+              )}
+            </Animated.View>
+          </Pressable>
 
           <Text style={styles.profileName}>{displayName}</Text>
           <Text style={styles.profileRole}>{sportsText}{skillLevel}</Text>
@@ -505,6 +570,22 @@ export default function ProfileScreen() {
 
       <BottomNavbar activeTab="PROFILE" showCreateButton={false} />
     </SafeAreaView>
+
+    {/* Rendered outside the SafeAreaView so its own inset handling isn't
+        double-applied on top of the screen's already-inset safe area. */}
+    <AvatarActionSheet
+      visible={avatarSheetVisible}
+      onClose={() => setAvatarSheetVisible(false)}
+      onViewPhoto={handleViewPhoto}
+      onChooseLibrary={handleChooseFromLibrary}
+      onTakePhoto={handleTakePhoto}
+    />
+    <FullScreenImageViewer
+      visible={avatarViewerVisible}
+      imageUri={profileImageUri}
+      onClose={() => setAvatarViewerVisible(false)}
+    />
+    </>
   );
 }
 
@@ -540,6 +621,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 }, elevation: 8,
   },
   avatar: { width: 112, height: 112, borderRadius: 56 },
+  avatarUploadingOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    borderRadius: 56, backgroundColor: 'rgba(15,23,42,0.45)',
+    alignItems: 'center', justifyContent: 'center',
+  },
   sportBadgeOnAvatar: {
     position: 'absolute', bottom: -2, right: -2,
     width: 30, height: 30, borderRadius: 15,
