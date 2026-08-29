@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,26 +12,34 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
   BellOff,
+  Bell,
+  Calendar,
   Check,
   CheckCheck,
   ChevronRight,
   CircleCheckBig,
   CircleX,
+  Clock,
   CreditCard,
+  Dumbbell,
   Heart,
   MapPin,
   MessageCircle,
+  Sparkles,
   Trophy,
   UserCheck,
   UserMinus,
   UserPlus,
   Users,
 } from 'lucide-react-native';
-import { notificationApi, NotificationResponse } from '../api/notificationApi';
+import { notificationApi, NotificationCategory, NotificationResponse } from '../api/notificationApi';
 import { invitationApi } from '../api/invitationApi';
 import { Colors } from '../styles/colors';
 import { AuthContext } from '../context/AuthContext';
 import { extractApiError } from '../utils/apiError';
+import { LoadingScreen } from '../components/LoadingScreen';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -69,7 +76,14 @@ function NotificationIcon({ type }: { type: string }) {
     case 'WALK_RUN_INVITE_RECEIVED': return <UserPlus color={Colors.primary} size={size} strokeWidth={sw} />;
     case 'WALK_RUN_INVITE_ACCEPTED': return <UserCheck color={Colors.success} size={size} strokeWidth={sw} />;
     case 'WALK_RUN_INVITE_DECLINED': return <UserMinus color={Colors.error} size={size} strokeWidth={sw} />;
-    default:                      return <Users color={Colors.textMuted} size={size} strokeWidth={sw} />;
+    case 'TRAINER_NEW_SESSION':   return <Dumbbell color={Colors.trainer} size={size} strokeWidth={sw} />;
+    case 'NEARBY_SUGGESTION':     return <Sparkles color="#F59E0B" size={size} strokeWidth={sw} />;
+    case 'SESSION_REMINDER':      return <Clock color={Colors.trainer} size={size} strokeWidth={sw} />;
+    case 'MATCH_REMINDER':        return <Clock color={Colors.primary} size={size} strokeWidth={sw} />;
+    case 'TOURNAMENT_REMINDER':   return <Calendar color={Colors.primary} size={size} strokeWidth={sw} />;
+    case 'VENUE_CLOSED':          return <MapPin color="#F59E0B" size={size} strokeWidth={sw} />;
+    case 'BOOKING_PENDING_VENDOR_APPROVAL': return <Clock color="#F59E0B" size={size} strokeWidth={sw} />;
+    default:                      return <Bell color={Colors.textMuted} size={size} strokeWidth={sw} />;
   }
 }
 
@@ -173,17 +187,37 @@ function NotificationCard({
   );
 }
 
-export default function NotificationScreen() {
+interface NotificationScreenProps {
+  /** SOCIAL = Feed's bell (likes, comments, follows). GENERAL = Explore's bell
+   *  (everything about matches, bookings, tournaments, trainers, venues). */
+  category?: NotificationCategory;
+}
+
+const CATEGORY_COPY: Record<NotificationCategory, { title: string; emptyTitle: string; emptyBody: string }> = {
+  SOCIAL: {
+    title: 'Social',
+    emptyTitle: 'No activity yet',
+    emptyBody: 'Likes, comments, and new followers will show up here.',
+  },
+  GENERAL: {
+    title: 'Activity',
+    emptyTitle: 'No updates yet',
+    emptyBody: 'Match invites, booking updates, and reminders will show up here.',
+  },
+};
+
+export default function NotificationScreen({ category }: NotificationScreenProps) {
   const { user } = useContext(AuthContext);
   const router = useRouter();
   const [notifications, setNotifications] = useState<NotificationResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
+  const copy = category ? CATEGORY_COPY[category] : null;
 
   const load = useCallback(async () => {
     try {
-      const data = await notificationApi.getAll();
+      const data = await notificationApi.getAll(category);
       setNotifications(data);
     } catch {
       // silently fail on background refresh
@@ -191,7 +225,7 @@ export default function NotificationScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [category]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -257,9 +291,13 @@ export default function NotificationScreen() {
 
     if (n.bookingId && n.invitationStatus === 'JOIN_COMPLETED') {
       router.push(`/match/${n.bookingId}` as any);
-    } else if (n.bookingId && (n.type === 'BOOKING_CONFIRMED' || n.type === 'BOOKING_REJECTED' || n.type === 'MATCH_CANCELLED_NOTIFY')) {
-      // MatchDetailsScreen already branches on ACTIVE_MATCH/CANCELLED, so it's the
-      // right landing page for a vendor acceptance, rejection, or cancellation.
+    } else if (
+      n.bookingId &&
+      (n.type === 'BOOKING_CONFIRMED' || n.type === 'BOOKING_REJECTED' || n.type === 'MATCH_CANCELLED_NOTIFY' ||
+        n.type === 'MATCH_REMINDER' || n.type === 'VENUE_CLOSED' || n.type === 'BOOKING_PENDING_VENDOR_APPROVAL')
+    ) {
+      // MatchDetailsScreen already branches on PENDING_VENDOR/ACTIVE_MATCH/CANCELLED,
+      // so it's the right landing page for every one of these booking-lifecycle events.
       router.push(`/match/${n.bookingId}` as any);
     } else if (
       (n.type === 'FOLLOW_REQUEST_RECEIVED' || n.type === 'FOLLOW_REQUEST_ACCEPTED' || n.type === 'NEW_FOLLOWER')
@@ -272,8 +310,14 @@ export default function NotificationScreen() {
       router.push(`/profile?openPostId=${snap.postId}` as any);
     } else if (n.type === 'REEL_LIKED' && snap.reelId) {
       router.push(`/profile?openReelId=${snap.reelId}&tab=Reels` as any);
-    } else if (n.type === 'TOURNAMENT_PLAYER_ADDED' && snap.tournamentId) {
+    } else if ((n.type === 'TOURNAMENT_PLAYER_ADDED' || n.type === 'TOURNAMENT_REMINDER') && snap.tournamentId) {
       router.push(`/tournament/${snap.tournamentId}` as any);
+    } else if (n.type === 'TRAINER_NEW_SESSION' && snap.sessionId) {
+      router.push(`/trainer-session/${snap.sessionId}` as any);
+    } else if (n.type === 'SESSION_REMINDER' && snap.sessionId) {
+      router.push(`/trainer-session/${snap.sessionId}` as any);
+    } else if (n.type === 'NEARBY_SUGGESTION' && snap.venueId) {
+      router.push('/explore?category=VENUES' as any);
     }
     // WALK_RUN_INVITE_* has no dedicated viewer screen yet - falls through to mark-read only.
   };
@@ -286,13 +330,7 @@ export default function NotificationScreen() {
   };
 
   if (loading) {
-    return (
-      <SafeAreaView style={styles.screen} edges={['top']}>
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-        </View>
-      </SafeAreaView>
-    );
+    return <LoadingScreen message="Loading notifications…" />;
   }
 
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -300,7 +338,7 @@ export default function NotificationScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       <View style={styles.topBar}>
-        <Text style={styles.screenTitle}>Notifications</Text>
+        <Text style={styles.screenTitle}>{copy ? copy.title : 'Notifications'}</Text>
         {unreadCount > 0 && (
           <Pressable style={styles.markAllBtn} onPress={handleMarkAllRead}>
             <CheckCheck color={Colors.primary} size={16} strokeWidth={2} />
@@ -309,13 +347,13 @@ export default function NotificationScreen() {
         )}
       </View>
 
+      <PaasxoRefreshLogo refreshing={refreshing} />
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl
+          <PaasxoRefreshControl
             refreshing={refreshing}
             onRefresh={() => { setRefreshing(true); load(); }}
-            tintColor={Colors.primary}
           />
         }
         contentContainerStyle={{ paddingBottom: 32 }}
@@ -323,9 +361,9 @@ export default function NotificationScreen() {
         {notifications.length === 0 && (
           <View style={styles.emptyWrap}>
             <BellOff color={Colors.textMuted} size={48} strokeWidth={1.5} />
-            <Text style={styles.emptyTitle}>No notifications yet</Text>
+            <Text style={styles.emptyTitle}>{copy ? copy.emptyTitle : 'No notifications yet'}</Text>
             <Text style={styles.emptyBody}>
-              When players invite you or join your matches, you'll see it here.
+              {copy ? copy.emptyBody : 'When players invite you or join your matches, you\'ll see it here.'}
             </Text>
           </View>
         )}

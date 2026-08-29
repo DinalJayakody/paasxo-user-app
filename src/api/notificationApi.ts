@@ -2,9 +2,12 @@ import axiosInstance from './axios';
 import { ENDPOINTS } from './endpoints';
 import { InvitationStatus } from './invitationApi';
 
+export type NotificationCategory = 'SOCIAL' | 'GENERAL';
+
 export interface NotificationResponse {
   id: string;
   type: string;
+  category: NotificationCategory;
   invitationId?: string;
   bookingId?: number;
   title: string;
@@ -25,6 +28,7 @@ export type NotificationType =
   | 'PLAYER_ADDED_DIRECTLY'
   | 'INVITATION_EXPIRED'
   | 'MATCH_CANCELLED_NOTIFY'
+  | 'BOOKING_PENDING_VENDOR_APPROVAL'
   | 'BOOKING_CONFIRMED'
   | 'BOOKING_REJECTED'
   | 'FOLLOW_REQUEST_RECEIVED'
@@ -32,19 +36,26 @@ export type NotificationType =
   | 'NEW_FOLLOWER'
   | 'POST_LIKED'
   | 'POST_COMMENTED'
+  | 'REEL_LIKED'
   | 'TOURNAMENT_PLAYER_ADDED'
   | 'WALK_RUN_INVITE_RECEIVED'
   | 'WALK_RUN_INVITE_ACCEPTED'
-  | 'WALK_RUN_INVITE_DECLINED';
+  | 'WALK_RUN_INVITE_DECLINED'
+  | 'TRAINER_NEW_SESSION'
+  | 'NEARBY_SUGGESTION'
+  | 'SESSION_REMINDER'
+  | 'MATCH_REMINDER'
+  | 'TOURNAMENT_REMINDER'
+  | 'VENUE_CLOSED';
 
 export const notificationApi = {
-  getAll: async (): Promise<NotificationResponse[]> => {
-    const { data } = await axiosInstance.get(ENDPOINTS.NOTIFICATIONS.ALL);
+  getAll: async (category?: NotificationCategory): Promise<NotificationResponse[]> => {
+    const { data } = await axiosInstance.get(ENDPOINTS.NOTIFICATIONS.ALL, { params: { category } });
     return Array.isArray(data) ? data : [];
   },
 
-  getUnreadCount: async (): Promise<number> => {
-    const { data } = await axiosInstance.get(ENDPOINTS.NOTIFICATIONS.UNREAD_COUNT);
+  getUnreadCount: async (category?: NotificationCategory): Promise<number> => {
+    const { data } = await axiosInstance.get(ENDPOINTS.NOTIFICATIONS.UNREAD_COUNT, { params: { category } });
     return data?.count ?? 0;
   },
 

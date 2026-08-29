@@ -32,6 +32,7 @@ import { InputField } from '../components/InputField';
 import { AuthContext, useAuth } from '../context/AuthContext';
 import { GOOGLE_CLIENT_IDS, GOOGLE_CONFIGURED } from '../config/googleAuth';
 import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
+import { APPLE_SIGN_IN_AVAILABLE, performAppleSignIn } from '../utils/appleSignIn';
 
 // Required by expo-auth-session on web to close the auth popup and
 // return the result to the app. Must be called at module level.
@@ -42,7 +43,7 @@ const isValidEmail = (val: string) =>
 
 export default function SignInScreen() {
   const auth = useContext(AuthContext);
-  const { signInWithGoogle } = useAuth();
+  const { signInWithGoogle, signInWithApple } = useAuth();
   const router = useRouter();
 
   const [email, setEmail] = useState('');
@@ -50,6 +51,7 @@ export default function SignInScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
   const [errors, setErrors] = useState<{
     email?: string;
     password?: string;
@@ -140,6 +142,24 @@ export default function SignInScreen() {
     }
   };
 
+  // ─── Apple button handler (iOS only) ──────────────────────────────────────
+  const handleAppleLogin = async () => {
+    setErrors({});
+    setAppleLoading(true);
+    try {
+      const firebaseIdToken = await performAppleSignIn();
+      await signInWithApple(firebaseIdToken);
+      router.replace('/home');
+    } catch (err: any) {
+      // User cancelling the native sheet is not an error worth surfacing.
+      if (err?.code !== '1001') {
+        setErrors({ general: err?.message ?? 'Apple sign-in failed. Please try again.' });
+      }
+    } finally {
+      setAppleLoading(false);
+    }
+  };
+
   // ─── Email/password sign-in ───────────────────────────────────────────────
   const validate = () => {
     const errs: typeof errors = {};
@@ -224,8 +244,6 @@ export default function SignInScreen() {
               colors={[Colors.primaryLight, Colors.background]}
               style={styles.heroGradient}
             >
-              <View style={styles.heroDecorCircleA} />
-              <View style={styles.heroDecorCircleB} />
               <View style={styles.heroContainer}>
                 <Animated.View style={[styles.heroLogoWrap, { transform: [{ scale: logoPulse }] }]}>
                   <Image
@@ -263,19 +281,24 @@ export default function SignInScreen() {
               disabled={googleLoading}
             />
 
-            <Button
-              title="Continue with Apple"
-              variant="secondary"
-              icon={
-                <Image
-                  source={{ uri: 'https://img.icons8.com/ios-filled/50/000000/mac-os.png' }}
-                  style={styles.socialIcon}
-                />
-              }
-              onPress={async () => {
-                await auth.completeSocialSignIn('apple', '');
-              }}
-            />
+            {APPLE_SIGN_IN_AVAILABLE && (
+              <Button
+                title={appleLoading ? 'Signing in…' : 'Continue with Apple'}
+                variant="secondary"
+                icon={
+                  appleLoading ? (
+                    <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 8 }} />
+                  ) : (
+                    <Image
+                      source={{ uri: 'https://img.icons8.com/ios-filled/50/000000/mac-os.png' }}
+                      style={styles.socialIcon}
+                    />
+                  )
+                }
+                onPress={handleAppleLogin}
+                disabled={appleLoading}
+              />
+            )}
           </View>
 
           {/* Form card */}
@@ -407,16 +430,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     overflow: 'hidden',
     paddingVertical: 16,
-  },
-  heroDecorCircleA: {
-    position: 'absolute', top: -30, right: -30,
-    width: 110, height: 110, borderRadius: 55,
-    backgroundColor: Colors.primaryAccent + '22',
-  },
-  heroDecorCircleB: {
-    position: 'absolute', bottom: -24, left: -20,
-    width: 90, height: 90, borderRadius: 45,
-    backgroundColor: Colors.warning + '1c',
   },
   heroLogoWrap: {
     shadowColor: Colors.neutral900, shadowOpacity: 0.1, shadowRadius: 14,

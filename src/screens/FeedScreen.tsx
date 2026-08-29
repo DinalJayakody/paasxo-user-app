@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   ArrowLeft,
   Bell,
@@ -26,9 +27,11 @@ import {
   Zap,
 } from 'lucide-react-native';
 import { useSubscription } from '../hooks/useSubscription';
-import { BottomNavbar } from '../components/BottomNavbar';
+import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
 import { SearchBar } from '../components/SearchBar';
 import { Colors } from '../styles/colors';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import { socialMediaApi } from '../api/socialMediaApi';
 import { PostCard } from '../components/PostCard';
 import { TournamentFeedCard, TournamentFeedItem } from '../components/TournamentFeedCard';
@@ -36,6 +39,7 @@ import { futsalApi } from '../api/futsalApi';
 import { tournamentApi } from '../api/tournamentApi';
 import { StoryReel } from '../components/StoryReel';
 import { resolveAvatarUri } from '../utils/mediaUrl';
+import { notificationApi } from '../api/notificationApi';
 
 const communityCards = [
   {
@@ -84,6 +88,7 @@ const getTournamentLifecycle = (t: any): 'UPCOMING' | 'LIVE' | 'COMPLETED' => {
 };
 
 const FeedScreen = () => {
+  const navBarHeight = useBottomNavBarHeight();
   const router = useRouter();
   const { active: isPro } = useSubscription();
   const [searchOpen, setSearchOpen] = useState(false);
@@ -94,6 +99,13 @@ const FeedScreen = () => {
 
   // Tournament ads injected between posts
   const [tournamentAds, setTournamentAds] = useState<TournamentFeedItem[]>([]);
+
+  const [unreadSocial, setUnreadSocial] = useState(0);
+  useFocusEffect(
+    React.useCallback(() => {
+      notificationApi.getUnreadCount('SOCIAL').then(setUnreadSocial).catch(() => {});
+    }, [])
+  );
 
   //Pagination for Feed
   const onEndReachedCalledDuringMomentum = React.useRef(false);
@@ -178,6 +190,16 @@ const FeedScreen = () => {
   const loadMore = () => {
     if (!hasMore || loading) return;
     fetchPosts(page + 1);
+  };
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await fetchPosts(0);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
 
@@ -298,8 +320,16 @@ const FeedScreen = () => {
             >
               <Search color={Colors.white} size={20} />
             </Pressable>
-            <Pressable style={[styles.iconButton, styles.topBarActionButton]}>
+            <Pressable
+              style={[styles.iconButton, styles.topBarActionButton]}
+              onPress={() => router.push('/notifications?category=SOCIAL' as any)}
+            >
               <Bell color={Colors.white} size={20} />
+              {unreadSocial > 0 && (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>{unreadSocial > 9 ? '9+' : unreadSocial}</Text>
+                </View>
+              )}
             </Pressable>
           </View>
         </View>
@@ -370,8 +400,11 @@ const FeedScreen = () => {
         )} */}
       </View>
 
+      <View style={styles.refreshableArea}>
+      <PaasxoRefreshLogo refreshing={refreshing} />
       <FlatList
         data={feedItems}
+        refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         keyExtractor={(item, index) =>
           item.kind === 'post' ? `post-${item.data.id}-${index}` : `ad-${item.data.id}-${index}`
         }
@@ -393,7 +426,7 @@ const FeedScreen = () => {
           return <PostCard post={item.data} />;
         }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: navBarHeight + 48 }]}
 
         onEndReached={() => {
           if (!onEndReachedCalledDuringMomentum.current) {
@@ -582,12 +615,14 @@ const FeedScreen = () => {
           </>
         }
       />
+      </View>
       <BottomNavbar activeTab="FEED" showCreateButton={true} />
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  refreshableArea: { flex: 1, position: 'relative' },
   safeArea: {
     flex: 1,
     backgroundColor: Colors.background,
@@ -639,6 +674,23 @@ const styles = StyleSheet.create({
   },
   topBarActionButton: {
     marginLeft: 12,
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: Colors.error,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  bellBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: Colors.white,
   },
   searchWrapper: {
     marginTop: 14,

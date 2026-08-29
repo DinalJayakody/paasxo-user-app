@@ -6,15 +6,15 @@ import {
   ScrollView,
   Image,
   Pressable,
-  ActivityIndicator,
   Share,
   Linking,
   Platform,
   Alert,
   Modal,
   TouchableOpacity,
+  Animated,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import MapView, { Marker } from 'react-native-maps';
 import {
@@ -38,6 +38,7 @@ import {
   X,
   ShieldCheck,
   AlertCircle,
+  Navigation,
 } from 'lucide-react-native';
 import { PlayerSearchSheet } from '../components/PlayerSearchSheet';
 import { invitationApi } from '../api/invitationApi';
@@ -53,6 +54,9 @@ import { useSubscription } from '../hooks/useSubscription';
 import { resolveMediaUrl, resolveAvatarUri } from '../utils/mediaUrl';
 import { useLiveMatchScore } from '../hooks/useLiveMatchScore';
 import { LiveScoreboard } from '../components/scoring/LiveScoreboard';
+import { LoadingScreen } from '../components/LoadingScreen';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 
 const SCOREABLE_SPORTS = new Set(['FUTSAL', 'CRICKET', 'PICKLEBALL', 'PADDLEBALL']);
 
@@ -101,12 +105,17 @@ function formatTimeRange(start?: string, end?: string) {
   return e ? `${s} - ${e}` : s;
 }
 
+// Opens Google Maps directions (not just a pin search) via the free web deep
+// link — no API key, no paid Maps Platform usage — so tapping the venue map
+// goes straight into turn-by-turn "Start" driving directions. Same URL
+// scheme used for trainer sessions, kept consistent everywhere a location is
+// shown, for pending and approved matches alike.
 function openInGoogleMaps(match: MatchDetails) {
   const { latitude, longitude, name, address } = match.venue;
   const url =
     latitude != null && longitude != null
-      ? `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`
-      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address || name)}`;
+      ? `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}&travelmode=driving`
+      : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address || name)}&travelmode=driving`;
   Linking.openURL(url).catch(() => {});
 }
 
@@ -130,9 +139,15 @@ function shareMatch(match: MatchDetails) {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
+// Default map center when a venue has no coordinates yet — Colombo, since
+// that's this app's home city (was previously London, left over from the
+// starter template).
+const DEFAULT_VENUE_LAT = 6.9271;
+const DEFAULT_VENUE_LNG = 79.8612;
+
 function MapPreview({ match, height = 130 }: { match: MatchDetails; height?: number }) {
-  const latitude = match.venue.latitude ?? 51.5074;
-  const longitude = match.venue.longitude ?? -0.1278;
+  const latitude = match.venue.latitude ?? DEFAULT_VENUE_LAT;
+  const longitude = match.venue.longitude ?? DEFAULT_VENUE_LNG;
   return (
     <Pressable onPress={() => openInGoogleMaps(match)} style={[styles.mapWrap, { height }]}>
       <MapView
@@ -142,6 +157,10 @@ function MapPreview({ match, height = 130 }: { match: MatchDetails; height?: num
       >
         <Marker coordinate={{ latitude, longitude }} />
       </MapView>
+      <View style={styles.mapNavBadge}>
+        <Navigation color={Colors.white} size={13} strokeWidth={2.4} />
+        <Text style={styles.mapNavBadgeText}>Tap to navigate</Text>
+      </View>
     </Pressable>
   );
 }
@@ -281,6 +300,16 @@ export default function MatchDetailsScreen({ matchId }: MatchDetailsScreenProps)
   const [playerProfiles, setPlayerProfiles] = useState<PlayerProfile[]>([]);
   const [showModal, setShowModal] = useState(false);
 
+  // Smooths the jump from the loading spinner to the full Owner/Joiner view —
+  // without this the content just pops in the instant the fetch resolves,
+  // which if that lands mid-way through the screen's push transition reads
+  // as a jarring "combined with the previous screen" glitch rather than a
+  // clean slide-in. Only fires once, on first load — not on every refetch
+  // triggered by onChanged (e.g. after inviting a player), which should just
+  // update in place.
+  const contentFade = React.useRef(new Animated.Value(0)).current;
+  const hasAnimatedIn = React.useRef(false);
+
   const loadMatch = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -296,6 +325,12 @@ export default function MatchDetailsScreen({ matchId }: MatchDetailsScreenProps)
   }, [matchId]);
 
   useEffect(() => { loadMatch(); }, [loadMatch]);
+
+  useEffect(() => {
+    if (loading || hasAnimatedIn.current) return;
+    hasAnimatedIn.current = true;
+    Animated.timing(contentFade, { toValue: 1, duration: 280, useNativeDriver: true }).start();
+  }, [loading, contentFade]);
 
   // Build player profiles from participants.
   // The booking API now returns enriched objects (displayName + profileImageUrl),
@@ -358,11 +393,7 @@ export default function MatchDetailsScreen({ matchId }: MatchDetailsScreenProps)
   }, [match]);
 
   if (loading) {
-    return (
-      <SafeAreaView style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-      </SafeAreaView>
-    );
+    return <LoadingScreen message="Loading match details…" />;
   }
 
   if (error || !match) {
@@ -391,27 +422,29 @@ export default function MatchDetailsScreen({ matchId }: MatchDetailsScreenProps)
 
   return (
     <>
-      {isOwner ? (
-        <OwnerView
-          match={match}
-          matchId={matchId}
-          router={router}
-          onChanged={loadMatch}
-          playerProfiles={playerProfiles}
-          onViewPlayers={() => setShowModal(true)}
-          isPro={isPro}
-        />
-      ) : (
-        <JoinerView
-          match={match}
-          matchId={matchId}
-          hasJoined={hasJoined}
-          router={router}
-          onChanged={loadMatch}
-          playerProfiles={playerProfiles}
-          onViewPlayers={() => setShowModal(true)}
-        />
-      )}
+      <Animated.View style={{ flex: 1, opacity: contentFade }}>
+        {isOwner ? (
+          <OwnerView
+            match={match}
+            matchId={matchId}
+            router={router}
+            onChanged={loadMatch}
+            playerProfiles={playerProfiles}
+            onViewPlayers={() => setShowModal(true)}
+            isPro={isPro}
+          />
+        ) : (
+          <JoinerView
+            match={match}
+            matchId={matchId}
+            hasJoined={hasJoined}
+            router={router}
+            onChanged={loadMatch}
+            playerProfiles={playerProfiles}
+            onViewPlayers={() => setShowModal(true)}
+          />
+        )}
+      </Animated.View>
       <ParticipantsModal
         visible={showModal}
         players={playerProfiles}
@@ -441,8 +474,18 @@ function JoinerView({
   playerProfiles: PlayerProfile[];
   onViewPlayers: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const [showInviteSheet, setShowInviteSheet] = useState(false);
   const { score, displaySeconds } = useLiveMatchScore(matchId);
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await onChanged();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const joinedCount = playerProfiles.length || match.participants?.length || 0;
   const spotsLeftKnown = match.spotsLeft != null;
@@ -456,7 +499,12 @@ function JoinerView({
 
   return (
     <View style={styles.flex1}>
-      <ScrollView style={styles.flex1} bounces={false} showsVerticalScrollIndicator={false}>
+      <PaasxoRefreshLogo refreshing={refreshing} />
+      <ScrollView
+        style={styles.flex1}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         <View style={styles.heroWrap}>
           {match.images && match.images.length > 0 ? (
             <Image source={{ uri: match.images[0] }} style={styles.heroImage} resizeMode="cover" />
@@ -632,7 +680,7 @@ function JoinerView({
         </View>
       </ScrollView>
 
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, { paddingBottom: (Platform.OS === 'ios' ? 24 : 16) + insets.bottom }]}>
         <View>
           <Text style={styles.bottomBarLabel}>TOTAL PRICE</Text>
           <Text style={styles.bottomBarPrice}>
@@ -706,6 +754,15 @@ function OwnerView({
   const [cancelling, setCancelling] = useState(false);
   const [showInviteSheet, setShowInviteSheet] = useState(false);
   const { score, displaySeconds } = useLiveMatchScore(matchId);
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await onChanged();
+    } finally {
+      setRefreshing(false);
+    }
+  };
   const capacityKnown = match.maxSpots != null;
   const totalSpots = match.maxSpots ?? 0;
   const joinedCount = playerProfiles.length || match.participants?.length || 0;
@@ -749,7 +806,13 @@ function OwnerView({
         <View style={{ width: 22 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.ownerScrollContent} showsVerticalScrollIndicator={false}>
+      <View style={styles.refreshableArea}>
+      <PaasxoRefreshLogo refreshing={refreshing} />
+      <ScrollView
+        contentContainerStyle={styles.ownerScrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
 
         {/* Vendor approval banner */}
         {isPendingVendor && (
@@ -779,24 +842,14 @@ function OwnerView({
           </View>
         )}
 
-        <View style={styles.pitchPreviewWrap}>
-          {match.images && match.images.length > 0 ? (
-            <Image source={{ uri: match.images[0] }} style={styles.pitchPreviewImage} resizeMode="cover" />
-          ) : (
-            <View style={[styles.pitchPreviewImage, styles.pitchPreviewFallback]} />
-          )}
-          <Pressable style={styles.mapPill} onPress={() => openInGoogleMaps(match)}>
-            <MapPin color={Colors.text} size={12} strokeWidth={2.5} />
-            <Text style={styles.mapPillText}>MAP</Text>
-          </Pressable>
-        </View>
-
         <Text style={styles.ownerSportLabel}>{match.sportType.toUpperCase()}</Text>
         <Text style={styles.ownerTitle}>{match.title}</Text>
         <View style={styles.ownerLocationRow}>
           <MapPin color={Colors.textSecondary} size={14} strokeWidth={2} />
           <Text style={styles.ownerLocationText}>{match.venue.name}</Text>
         </View>
+
+        <MapPreview match={match} height={140} />
 
         {score && SCOREABLE_SPORTS.has((match.sportType || '').toUpperCase()) && (
           <View style={styles.scoreboardWrap}>
@@ -963,11 +1016,19 @@ function OwnerView({
           </Pressable>
         )}
 
-        {/* Scoring — organizer + Pro subscribers only (also enforced server-side) */}
+        {/* Scoring — organizer + Pro subscribers only, and only once the venue
+            has approved the match (also enforced server-side) */}
         {SCOREABLE_SPORTS.has((match.sportType || '').toUpperCase()) && (
           <Pressable
-            style={[styles.scoringButton, !isPro && styles.scoringButtonLocked]}
+            style={[styles.scoringButton, (!isPro || isPendingVendor) && styles.scoringButtonLocked]}
             onPress={() => {
+              if (isPendingVendor) {
+                Alert.alert(
+                  'Awaiting Venue Approval',
+                  'Scoring unlocks once the venue accepts this match. You\'ll be able to start scoring as soon as it\'s confirmed.'
+                );
+                return;
+              }
               if (!isPro) {
                 Alert.alert(
                   'Pro Feature',
@@ -982,12 +1043,16 @@ function OwnerView({
               router.push(`/match/${matchId}/scoring` as any);
             }}
           >
-            {isPro
+            {isPendingVendor
+              ? <Clock color={Colors.white} size={18} strokeWidth={2.2} />
+              : isPro
               ? <Goal color={Colors.white} size={18} strokeWidth={2.2} />
               : <Lock color={Colors.white} size={18} strokeWidth={2.2} />
             }
             <Text style={styles.scoringButtonText}>
-              {!isPro
+              {isPendingVendor
+                ? 'Score Match  ·  Pending Approval'
+                : !isPro
                 ? 'Score Match  ·  Pro'
                 : score?.status === 'LIVE' || score?.status === 'PAUSED'
                 ? 'Manage Live Score'
@@ -1012,6 +1077,7 @@ function OwnerView({
           <Text style={styles.footerText}>Booking ID: #{matchId}</Text>
         </View>
       </ScrollView>
+      </View>
 
       <PlayerSearchSheet
         visible={showInviteSheet}
@@ -1034,6 +1100,7 @@ function OwnerView({
 
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
+  refreshableArea: { flex: 1, position: 'relative' },
   scoreboardWrap: { marginTop: 14, marginBottom: 4 },
   loadingScreen: {
     flex: 1,
@@ -1130,6 +1197,11 @@ const styles = StyleSheet.create({
 
   // ─── Map ────────────────────────────────────────────────────────────────────
   mapWrap: { borderRadius: 16, overflow: 'hidden', marginBottom: 16, backgroundColor: Colors.neutral200 },
+  mapNavBadge: {
+    position: 'absolute', right: 10, bottom: 10, flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(20,20,20,0.72)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6,
+  },
+  mapNavBadgeText: { color: Colors.white, fontSize: 11, fontWeight: '700' },
 
   // ─── Amenities ──────────────────────────────────────────────────────────────
   amenityRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
@@ -1188,18 +1260,6 @@ const styles = StyleSheet.create({
   },
   plainHeaderTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
   ownerScrollContent: { paddingHorizontal: 16, paddingBottom: 32 },
-
-  // ─── Owner pitch preview ─────────────────────────────────────────────────────
-  pitchPreviewWrap: { height: 160, borderRadius: 16, overflow: 'hidden', marginBottom: 14 },
-  pitchPreviewImage: { width: '100%', height: '100%' },
-  pitchPreviewFallback: { backgroundColor: '#2E8B57' },
-  mapPill: {
-    position: 'absolute', top: 10, left: 10,
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14,
-  },
-  mapPillText: { fontSize: 10, fontWeight: '700', color: Colors.text },
 
   // ─── Owner text ──────────────────────────────────────────────────────────────
   ownerSportLabel: { fontSize: 11, fontWeight: '700', color: Colors.primary, letterSpacing: 0.5, marginBottom: 4 },

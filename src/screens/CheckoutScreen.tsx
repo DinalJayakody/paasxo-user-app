@@ -1,12 +1,27 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Alert } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, CreditCard, Smartphone, Lock, ShieldCheck, Clock, Users } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
 import { bookingApi } from '../api/bookingApi';
-import { MatchDetails } from '../types/api';
+import { paymentApi } from '../api/paymentApi';
+import { MatchDetails, CheckoutInitiationResponse } from '../types/api';
 import { parseMatchDetails } from '../utils/parseMatch';
+import { LoadingScreen } from '../components/LoadingScreen';
+import { PayHereCheckoutWebView } from '../components/PayHereCheckoutWebView';
+import { extractApiError } from '../utils/apiError';
+
+// How long to keep polling GET /payments/status after PayHere's checkout UI
+// reports completion, waiting for the signed webhook to land server-side and
+// flip the transaction to CHARGED. The UI callback alone is never proof of
+// payment — see PayHereCheckoutWebView's onCompleted doc comment.
+const STATUS_POLL_ATTEMPTS = 10;
+const STATUS_POLL_INTERVAL_MS = 1500;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 type PaymentMethod = 'saved-card' | 'apple-pay' | 'new-card';
 
@@ -21,11 +36,14 @@ interface CheckoutScreenProps {
 }
 
 export default function CheckoutScreen({ matchId }: CheckoutScreenProps) {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const [match, setMatch] = useState<MatchDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('saved-card');
+  const [checkoutData, setCheckoutData] = useState<CheckoutInitiationResponse | null>(null);
+  const [webViewVisible, setWebViewVisible] = useState(false);
 
   const loadMatch = useCallback(async () => {
     setLoading(true);
@@ -44,22 +62,66 @@ export default function CheckoutScreen({ matchId }: CheckoutScreenProps) {
   const handlePayAndConfirm = async () => {
     setSubmitting(true);
     try {
-      await new Promise<void>((resolve) => setTimeout(resolve, 1200));
-      // Always pass pending=true — newly created matches require vendor approval before going active
-      router.push(`/booking-status/${matchId}?pending=true` as any);
-    } catch {
-      router.push(`/booking-status/${matchId}?pending=true` as any);
+      const initiation = await paymentApi.initiateCheckout('BOOKING', matchId);
+      if (initiation.dummyMode) {
+        // Backend has payment.dummy-mode on — PayHere bypassed, the
+        // transaction is already CHARGED. No WebView to show; just confirm
+        // via the same status poll a real payment would use.
+        await handleCheckoutCompleted();
+        return;
+      }
+      setCheckoutData(initiation);
+      setWebViewVisible(true);
+    } catch (err) {
+      Alert.alert('Payment Failed', extractApiError(err, 'Could not start checkout. Please try again.'));
     } finally {
       setSubmitting(false);
     }
   };
 
+  // The WebView's onCompleted only means the checkout UI finished — the
+  // actual charge is confirmed asynchronously via PayHere's signed webhook.
+  // Poll our own backend for a few seconds waiting for that to land instead
+  // of trusting the UI callback directly.
+  const handleCheckoutCompleted = async () => {
+    setWebViewVisible(false);
+    setSubmitting(true);
+    try {
+      for (let attempt = 0; attempt < STATUS_POLL_ATTEMPTS; attempt++) {
+        const status = await paymentApi.getStatus('BOOKING', matchId);
+        if (status.status === 'CHARGED' || status.status === 'CONFIRMED') {
+          // Always pass pending=true — newly created matches require vendor approval before going active
+          router.push(`/booking-status/${matchId}?pending=true` as any);
+          return;
+        }
+        if (status.status === 'FAILED' || status.status === 'EXPIRED') {
+          Alert.alert('Payment Failed', 'Your payment could not be confirmed. Please try again.');
+          return;
+        }
+        await sleep(STATUS_POLL_INTERVAL_MS);
+      }
+      Alert.alert(
+        'Still Processing',
+        "We're still confirming your payment. Check your booking status shortly — it'll update automatically once confirmed."
+      );
+    } catch (err) {
+      Alert.alert('Payment Failed', extractApiError(err, 'Could not confirm your payment status.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCheckoutDismissed = () => {
+    setWebViewVisible(false);
+  };
+
+  const handleCheckoutError = (message: string) => {
+    setWebViewVisible(false);
+    Alert.alert('Payment Failed', message || 'Something went wrong during payment. Please try again.');
+  };
+
   if (loading || !match) {
-    return (
-      <SafeAreaView style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-      </SafeAreaView>
-    );
+    return <LoadingScreen message="Preparing your checkout…" />;
   }
 
   const sym = match.currencySymbol ?? 'LKR ';
@@ -204,7 +266,7 @@ export default function CheckoutScreen({ matchId }: CheckoutScreenProps) {
       </ScrollView>
 
       {/* Pay button */}
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, { paddingBottom: (Platform.OS === 'ios' ? 24 : 16) + insets.bottom }]}>
         <Pressable style={styles.payButton} onPress={handlePayAndConfirm} disabled={submitting}>
           {submitting ? (
             <ActivityIndicator color={Colors.white} />
@@ -223,6 +285,15 @@ export default function CheckoutScreen({ matchId }: CheckoutScreenProps) {
           By confirming, you agree to the Paasxo Terms of Service and Privacy Policy.
         </Text>
       </View>
+
+      <PayHereCheckoutWebView
+        visible={webViewVisible}
+        checkout={checkoutData}
+        onCompleted={handleCheckoutCompleted}
+        onDismissed={handleCheckoutDismissed}
+        onError={handleCheckoutError}
+        onClose={handleCheckoutDismissed}
+      />
     </SafeAreaView>
   );
 }

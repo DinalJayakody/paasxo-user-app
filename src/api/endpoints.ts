@@ -13,12 +13,21 @@ import Constants from 'expo-constants';
 // ↓ Update this URL each time you run: bash start-tunnel.sh
 const TUNNEL_URL = 'https://centres-station-chicago-dot.trycloudflare.com/api';
 
-// Hostinger VPS — production backend. Tried first on every app launch; the
-// device falls back to the local URL below (unchanged) if it doesn't answer
-// within HOSTINGER_PROBE_TIMEOUT_MS. See axios.ts's resolvePreferredBaseUrl().
-// Plain http:// (no TLS yet) — Android needs an explicit cleartext exception
-// for this exact host, see android/app/src/main/res/xml/network_security_config.xml.
-export const HOSTINGER_URL = 'http://187.77.150.248/api';
+// Hostinger VPS — production backend, served over HTTPS via www.paasxo.com
+// (nginx + Let's Encrypt on the VPS, see mobile-app-paasxo/nginx.conf). Tried
+// first on every app launch; the device falls back to the local URL below if
+// it doesn't answer within HOSTINGER_PROBE_TIMEOUT_MS. See axios.ts's
+// resolvePreferredBaseUrl(). HTTPS is required here, not just recommended —
+// PayHere never calls notify_url over plain HTTP, so the payment webhook
+// silently never fires against an http:// backend (see
+// PAYHERE_NOTIFY_URL_BASE in the backend's .env — must match this exactly,
+// scheme and host, or the two halves of the payment flow point at different
+// places).
+// Set to undefined to disable the probe entirely (e.g. while testing a feature,
+// like Trainer, that only exists on the local backend and hasn't been deployed
+// to Hostinger yet) — axios.ts skips the probe and goes straight to local.
+export const HOSTINGER_URL: string | undefined = 'https://www.paasxo.com/api';
+
 export const HOSTINGER_PROBE_TIMEOUT_MS = 3000;
 
 function resolveBaseUrl(): string {
@@ -56,7 +65,7 @@ export const ENDPOINTS = {
     REGISTER: '/auth/register',
     REFRESH: '/auth/refresh-token',
     GOOGLE_LOGIN: '/auth/login-google',
-    APPLE_LOGIN: '/auth/social/apple',
+    APPLE_LOGIN: '/auth/login-apple',
     FORGOT_PASSWORD: '/auth/forgot-password',
     // Popup shown right after a first-time Google sign-in to collect the
     // activity + referral code the normal registration form would have.
@@ -82,6 +91,10 @@ export const ENDPOINTS = {
     CANCEL: (id: string | number) => `/bookings/${id}/cancel`,
     ADD_PLAYERS: (id: string | number) => `/bookings/${id}/players`,
     JOIN: (id: string | number) => `/bookings/${id}/join`,
+    // Server decides free vs. paid — see BookingService.createJoinOrder. Free matches
+    // join instantly (response.joined=true); paid ones return paymentOrderId to run
+    // through paymentApi.initiateCheckout('MATCH_JOIN', paymentOrderId) instead.
+    JOIN_ORDER: (id: string | number) => `/bookings/${id}/join-order`,
   },
 
   // Live score + timer for a booking/match. Viewing (GET) is open to any
@@ -93,6 +106,7 @@ export const ENDPOINTS = {
     PAUSE: (bookingId: string | number) => `/bookings/${bookingId}/score/pause`,
     RESUME: (bookingId: string | number) => `/bookings/${bookingId}/score/resume`,
     END: (bookingId: string | number) => `/bookings/${bookingId}/score/end`,
+    RESET: (bookingId: string | number) => `/bookings/${bookingId}/score/reset`,
     UPDATE_STATE: (bookingId: string | number) => `/bookings/${bookingId}/score/state`,
   },
 
@@ -157,7 +171,7 @@ export const ENDPOINTS = {
     DIRECT_ADD: '/match-invitations/direct-add',
     ACCEPT: (id: string) => `/match-invitations/${id}/accept`,
     DECLINE: (id: string) => `/match-invitations/${id}/decline`,
-    COMPLETE_PAYMENT: (id: string) => `/match-invitations/${id}/complete-payment`,
+    GET_BY_ID: (id: string) => `/match-invitations/${id}`,
     RECEIVED: '/match-invitations/received',
   },
 
@@ -183,6 +197,27 @@ export const ENDPOINTS = {
   // Vendor-only actions (accept/reject a booking request, vendor notifications feed) live
   // in the Vendor App (vendor-app/src/api/*), not here — this app is the customer-facing
   // surface only. See vendor-app's ENDPOINTS.bookings.acceptAsVendor/rejectAsVendor.
+
+  // Matches com.pasxo.controller.TrainerProfileController / TrainerSessionController /
+  // TrainerBookingController exactly.
+  TRAINER: {
+    FILTER: '/trainers',
+    DETAIL: (id: string | number) => `/trainers/${id}`,
+    SESSIONS_FOR_TRAINER: (trainerFirebaseUid: string) => `/trainers/${trainerFirebaseUid}/sessions`,
+    SESSION_DETAIL: (sessionId: string | number) => `/trainers/sessions/${sessionId}`,
+    SESSION_SLOTS: (sessionId: string | number) => `/trainers/sessions/${sessionId}/slots`,
+    JOIN_SLOT: (slotId: string | number) => `/trainers/slots/${slotId}/join`,
+    MY_BOOKINGS: '/trainers/bookings/my',
+    CANCEL_BOOKING: (bookingId: string | number) => `/trainers/bookings/${bookingId}/cancel`,
+  },
+
+  // Matches com.pasxo.controller.PaymentController / PayHereWebhookController.
+  // The webhook itself (POST /payments/payhere/webhook) is server-to-server —
+  // PayHere calls it directly, the app never does.
+  PAYMENTS: {
+    INITIATE: '/payments/checkout/initiate',
+    STATUS: (orderType: string, orderId: string | number) => `/payments/status/${orderType}/${orderId}`,
+  },
 
   SOCIAL: {
     CREATE_POST: '/social/posts',

@@ -5,12 +5,12 @@ import {
   StyleSheet,
   Image,
   Pressable,
-  ActivityIndicator,
+  ScrollView,
   Linking,
   Animated,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { CircleCheckBig, Clock, MapPin, CalendarPlus, ArrowRight, Trophy, ShieldCheck } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,6 +18,7 @@ import { Colors } from '../styles/colors';
 import { bookingApi } from '../api/bookingApi';
 import { MatchDetails } from '../types/api';
 import { parseMatchDetails } from '../utils/parseMatch';
+import { LoadingScreen } from '../components/LoadingScreen';
 
 interface BookingStatusScreenProps {
   matchId: string;
@@ -94,6 +95,7 @@ const CONFETTI = Array.from({ length: 12 }, (_, i) => ({
 
 export default function BookingStatusScreen({ matchId, forcePending = false }: BookingStatusScreenProps) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [match, setMatch] = useState<MatchDetails | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -102,6 +104,18 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
   const circleOpacity = useRef(new Animated.Value(0)).current;
   const contentSlide = useRef(new Animated.Value(40)).current;
   const contentOpacity = useRef(new Animated.Value(0)).current;
+  // Continuous "actively waiting" pulse for the pending-vendor state — confetti
+  // reads as "done", which is wrong while a request is still awaiting the
+  // venue's response, so this ring gives that state its own sense of motion.
+  const pulseScale = useRef(new Animated.Value(1)).current;
+  const pulseOpacity = useRef(new Animated.Value(0.5)).current;
+
+  // forcePending: freshly created match — always pending until vendor explicitly accepts
+  const isPendingVendor =
+    forcePending ||
+    match?.vendorStatus === 'PENDING_VENDOR' ||
+    match?.status === 'PENDING_VENDOR' ||
+    match?.status === 'PENDING';
 
   const loadMatch = useCallback(async () => {
     setLoading(true);
@@ -133,14 +147,25 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
     ]).start();
   }, [loading]);
 
+  useEffect(() => {
+    if (loading || !isPendingVendor) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(pulseScale, { toValue: 1.35, duration: 1100, useNativeDriver: true }),
+          Animated.timing(pulseOpacity, { toValue: 0, duration: 1100, useNativeDriver: true }),
+        ]),
+        Animated.timing(pulseScale, { toValue: 1, duration: 0, useNativeDriver: true }),
+        Animated.timing(pulseOpacity, { toValue: 0.5, duration: 0, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [loading, isPendingVendor]);
+
   if (loading) {
     return (
-      <SafeAreaView style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={forcePending ? '#EA580C' : Colors.primary} />
-        <Text style={styles.loadingText}>
-          {forcePending ? 'Sending your request...' : 'Loading booking details...'}
-        </Text>
-      </SafeAreaView>
+      <LoadingScreen message={forcePending ? 'Sending your request…' : 'Loading booking details…'} />
     );
   }
 
@@ -152,19 +177,12 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
     ? new Date(match.startDate).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
     : '';
 
-  // forcePending: freshly created match — always pending until vendor explicitly accepts
-  const isPendingVendor =
-    forcePending ||
-    match?.vendorStatus === 'PENDING_VENDOR' ||
-    match?.status === 'PENDING_VENDOR' ||
-    match?.status === 'PENDING';
-
   const gradColors: [string, string] = isPendingVendor
     ? ['#EA580C', '#C2410C']
     : [Colors.primary, Colors.primaryDark];
 
   return (
-    <SafeAreaView style={styles.flex1} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.flex1} edges={['top']}>
       {/* Confetti only shown for confirmed bookings */}
       {!isPendingVendor && (
         <View style={confettiStyles.container} pointerEvents="none">
@@ -181,6 +199,15 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
             { opacity: circleOpacity, transform: [{ scale: circleScale }] },
           ]}
         >
+          {isPendingVendor && (
+            <Animated.View
+              style={[
+                styles.pulseRing,
+                { opacity: pulseOpacity, transform: [{ scale: pulseScale }] },
+              ]}
+              pointerEvents="none"
+            />
+          )}
           <LinearGradient colors={['#ffffff30', '#ffffff10']} style={styles.checkCircleRing}>
             <View style={styles.checkCircle}>
               {isPendingVendor
@@ -208,6 +235,11 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
           styles.sheet,
           { opacity: contentOpacity, transform: [{ translateY: contentSlide }] },
         ]}
+      >
+      <ScrollView
+        style={styles.sheetScroll}
+        contentContainerStyle={styles.sheetScrollContent}
+        showsVerticalScrollIndicator={false}
       >
         {/* Booking ID badge */}
         <View style={[styles.bookingIdBadge, isPendingVendor && { backgroundColor: '#EA580C15' }]}>
@@ -316,7 +348,10 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
             <Text style={styles.calendarBtnText}>Add to Calendar</Text>
           </Pressable>
         )}
+      </ScrollView>
 
+      {/* Fixed so both actions stay reachable regardless of content height/device size */}
+      <View style={[styles.actionBar, { paddingBottom: (Platform.OS === 'ios' ? 22 : 16) + insets.bottom }]}>
         <Pressable
           style={styles.primaryButton}
           onPress={() => router.replace(`/match/${matchId}` as any)}
@@ -338,6 +373,7 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
         >
           <Text style={styles.homeBtnText}>Back to Home</Text>
         </Pressable>
+      </View>
       </Animated.View>
     </SafeAreaView>
   );
@@ -377,7 +413,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     gap: 14,
   },
-  checkCircleWrap: { marginBottom: 4 },
+  checkCircleWrap: {
+    marginBottom: 4, alignItems: 'center', justifyContent: 'center', position: 'relative',
+  },
+  pulseRing: {
+    position: 'absolute', width: 116, height: 116, borderRadius: 58,
+    borderWidth: 2, borderColor: Colors.white,
+  },
   checkCircleRing: {
     width: 116,
     height: 116,
@@ -416,9 +458,20 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     marginTop: -24,
+    overflow: 'hidden',
+  },
+  sheetScroll: { flex: 1 },
+  sheetScrollContent: {
     paddingHorizontal: 20,
     paddingTop: 28,
-    paddingBottom: Platform.OS === 'ios' ? 16 : 24,
+    paddingBottom: 24,
+  },
+  actionBar: {
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    backgroundColor: Colors.white,
+    borderTopWidth: 1,
+    borderTopColor: Colors.neutral200,
   },
 
   bookingIdBadge: {
@@ -429,7 +482,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   bookingIdLabel: { fontSize: 10, fontWeight: '800', color: Colors.primary, letterSpacing: 0.5 },
   bookingIdText: { fontSize: 13, fontWeight: '700', color: Colors.primaryDark },

@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { AuthProvider } from '@/src/context/AuthContext';
+import { Colors } from '@/src/styles/colors';
 
 export default function RootLayout() {
   useFrameworkReady();
@@ -14,7 +15,13 @@ export default function RootLayout() {
           screenOptions={{
             headerShown: false,
             animation: 'slide_from_right',
-            contentStyle: { backgroundColor: 'transparent' },
+            // An opaque background here matters: with a transparent content
+            // style, the outgoing screen can show through underneath the
+            // incoming one for the duration of the slide transition, which
+            // reads as a jarring "screens combining" glitch. Every screen in
+            // this app paints its own opaque background anyway, so this only
+            // ever shows for the transition's duration.
+            contentStyle: { backgroundColor: Colors.background },
           }}
         >
           <Stack.Screen name="index" />

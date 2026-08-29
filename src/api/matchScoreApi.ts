@@ -28,6 +28,11 @@ export const matchScoreApi = {
     return data;
   },
 
+  resetMatch: async (bookingId: string | number): Promise<MatchScoreState> => {
+    const { data } = await axiosInstance.post(ENDPOINTS.MATCH_SCORE.RESET(bookingId));
+    return data;
+  },
+
   updateState: async (
     bookingId: string | number,
     payload: { teamAScore?: number; teamBScore?: number; state?: Record<string, any> }

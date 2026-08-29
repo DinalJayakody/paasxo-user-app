@@ -13,8 +13,14 @@ export interface SubscriptionState {
   loading: boolean;
 }
 
-const CACHE_KEY = 'paasxo_subscription_cache';
+export const SUBSCRIPTION_CACHE_KEY = 'paasxo_subscription_cache';
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// Call on sign-out so the next account on this device doesn't briefly see a
+// stale subscription state cached from the previous account.
+export async function clearSubscriptionCache() {
+  await AsyncStorage.removeItem(SUBSCRIPTION_CACHE_KEY);
+}
 
 export function useSubscription() {
   const [state, setState] = useState<SubscriptionState>({
@@ -28,7 +34,7 @@ export function useSubscription() {
     try {
       // Return cached result unless forced
       if (!force) {
-        const cached = await AsyncStorage.getItem(CACHE_KEY);
+        const cached = await AsyncStorage.getItem(SUBSCRIPTION_CACHE_KEY);
         if (cached) {
           const parsed = JSON.parse(cached);
           if (Date.now() - parsed.ts < CACHE_TTL_MS) {
@@ -47,7 +53,7 @@ export function useSubscription() {
         loading: false,
       };
       setState(result);
-      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ data: result, ts: Date.now() }));
+      await AsyncStorage.setItem(SUBSCRIPTION_CACHE_KEY, JSON.stringify({ data: result, ts: Date.now() }));
     } catch {
       setState((prev) => ({ ...prev, active: false, loading: false }));
     }
@@ -55,25 +61,37 @@ export function useSubscription() {
 
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
-  const startTrial = async (): Promise<boolean> => {
+  // Both let the request error propagate (instead of swallowing it into a
+  // boolean) so the caller can show the *real* reason via extractApiError —
+  // e.g. an expired token, a network failure, or a genuine "already active"
+  // rejection all need different messages, and guessing one generic message
+  // for every failure actively misleads users about their own account state.
+  const startTrial = async (): Promise<void> => {
     try {
-      const { data } = await axiosInstance.post('/subscriptions/trial');
+      await axiosInstance.post('/subscriptions/trial');
+    } finally {
+      // Re-sync with the server whether this succeeded or failed — e.g. a
+      // "trial already active" rejection means the account really IS active,
+      // and the UI must reflect that instead of being stuck on a stale
+      // cached `active: false` for up to CACHE_TTL_MS.
       await fetchStatus(true);
-      return data.active ?? true;
-    } catch {
-      return false;
     }
   };
 
-  const activate = async (paymentReference: string): Promise<boolean> => {
+  const activate = async (paymentReference: string): Promise<void> => {
     try {
       await axiosInstance.post('/subscriptions/activate', { paymentReference });
+    } finally {
       await fetchStatus(true);
-      return true;
-    } catch {
-      return false;
     }
   };
 
-  return { ...state, refresh: () => fetchStatus(true), startTrial, activate };
+  // Memoized so callers can safely use it as a useCallback/useEffect/
+  // useFocusEffect dependency — an inline `() => fetchStatus(true)` here
+  // would get a new identity every render, and any screen that re-runs an
+  // effect when `refresh` changes (e.g. useFocusEffect on session details)
+  // would re-trigger that effect every render, causing an infinite render loop.
+  const refresh = useCallback(() => fetchStatus(true), [fetchStatus]);
+
+  return { ...state, refresh, startTrial, activate };
 }

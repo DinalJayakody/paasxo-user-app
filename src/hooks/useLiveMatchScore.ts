@@ -100,6 +100,7 @@ export function useLiveMatchScore(bookingId: string | number | undefined) {
     pauseTimer: () => runAction(() => matchScoreApi.pauseTimer(bookingId!)),
     resumeTimer: () => runAction(() => matchScoreApi.resumeTimer(bookingId!)),
     endMatch: () => runAction(() => matchScoreApi.endMatch(bookingId!)),
+    resetMatch: () => runAction(() => matchScoreApi.resetMatch(bookingId!)),
     updateState: (payload: { teamAScore?: number; teamBScore?: number; state?: Record<string, any> }) =>
       runAction(() => matchScoreApi.updateState(bookingId!, payload)),
   };

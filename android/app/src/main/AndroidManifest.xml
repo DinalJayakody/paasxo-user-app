@@ -31,6 +31,16 @@
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="paasxo"/>
       </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <!-- expo-auth-session's Google provider hardcodes the native redirect
+             URI as `${applicationId}:/oauthredirect`, ignoring the app's own
+             `paasxo` scheme - this intent-filter is what lets Android route
+             that redirect back into the app after Google approves sign-in. -->
+        <data android:scheme="com.paasxo.app"/>
+      </intent-filter>
     </activity>
   </application>
 </manifest>

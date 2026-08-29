@@ -25,13 +25,15 @@ async function resolvePreferredBaseUrl(): Promise<string> {
   if (Platform.OS === 'web') return ENDPOINTS.BASE_URL; // web keeps its own tunnel/local logic, untouched
 
   if (!baseUrlResolution) {
+    const hostingerUrl = HOSTINGER_URL;
     baseUrlResolution = (async () => {
+      if (!hostingerUrl) return LOCAL_FALLBACK_URL; // probe disabled — see endpoints.ts
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), HOSTINGER_PROBE_TIMEOUT_MS);
-        const response = await fetch(`${HOSTINGER_URL}/auth/health`, { signal: controller.signal });
+        const response = await fetch(`${hostingerUrl}/auth/health`, { signal: controller.signal });
         clearTimeout(timer);
-        if (response.ok) return HOSTINGER_URL;
+        if (response.ok) return hostingerUrl;
       } catch {
         // Not deployed yet / unreachable / timed out — fall back to local below.
       }

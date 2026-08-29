@@ -9,15 +9,18 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, CreditCard, Lock, ShieldCheck, Smartphone, Users } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
 import { bookingApi } from '../api/bookingApi';
 import { invitationApi } from '../api/invitationApi';
-import { MatchDetails } from '../types/api';
+import { paymentApi } from '../api/paymentApi';
+import { MatchDetails, CheckoutInitiationResponse } from '../types/api';
 import { parseMatchDetails } from '../utils/parseMatch';
 import { extractApiError } from '../utils/apiError';
+import { LoadingScreen } from '../components/LoadingScreen';
+import { PayHereCheckoutWebView } from '../components/PayHereCheckoutWebView';
 
 type PaymentMethod = 'saved-card' | 'apple-pay' | 'new-card';
 
@@ -27,6 +30,16 @@ const PAYMENT_OPTIONS: { id: PaymentMethod; label: string; subtitle?: string; ic
   { id: 'new-card', label: 'New Credit/Debit Card', icon: CreditCard },
 ];
 
+// How long to keep polling GET /payments/status after PayHere's checkout UI reports
+// completion — same rationale as CheckoutScreen.tsx: onCompleted alone is never proof
+// of payment, only the signed webhook landing server-side actually confirms it.
+const STATUS_POLL_ATTEMPTS = 10;
+const STATUS_POLL_INTERVAL_MS = 1500;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 interface JoinCheckoutScreenProps {
   matchId: string;
   additionalPlayerIds?: string[];
@@ -34,38 +47,106 @@ interface JoinCheckoutScreenProps {
 }
 
 export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], invitationId }: JoinCheckoutScreenProps) {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const [match, setMatch] = useState<MatchDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('saved-card');
+  const [paymentOrderId, setPaymentOrderId] = useState<number | null>(null);
+  const [checkoutData, setCheckoutData] = useState<CheckoutInitiationResponse | null>(null);
+  const [webViewVisible, setWebViewVisible] = useState(false);
 
-  const loadMatch = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const raw = await bookingApi.getById(matchId);
       setMatch(parseMatchDetails(raw));
+      // Invitation-based join: resolve the payment order created by accept() up front,
+      // so Pay & Join can start checkout immediately rather than round-tripping first.
+      if (invitationId) {
+        const inv = await invitationApi.getById(invitationId);
+        if (inv.paymentOrderId != null) setPaymentOrderId(inv.paymentOrderId);
+      }
     } catch (err) {
       console.warn('Failed to load join checkout', err);
     } finally {
       setLoading(false);
     }
-  }, [matchId]);
+  }, [matchId, invitationId]);
 
-  useEffect(() => { loadMatch(); }, [loadMatch]);
+  useEffect(() => { load(); }, [load]);
+
+  // The WebView's onCompleted only means the checkout UI finished — the actual charge
+  // is confirmed asynchronously via PayHere's signed webhook. Poll for a few seconds
+  // waiting for that to land instead of trusting the UI callback directly.
+  const handleCheckoutCompleted = async (orderId: number) => {
+    setWebViewVisible(false);
+    setSubmitting(true);
+    try {
+      for (let attempt = 0; attempt < STATUS_POLL_ATTEMPTS; attempt++) {
+        const status = await paymentApi.getStatus('MATCH_JOIN', orderId);
+        if (status.status === 'CHARGED' || status.status === 'CONFIRMED') {
+          router.replace(`/join-match/${matchId}` as any);
+          return;
+        }
+        if (status.status === 'FAILED' || status.status === 'EXPIRED') {
+          Alert.alert('Payment Failed', 'Your payment could not be confirmed. Please try again.');
+          return;
+        }
+        await sleep(STATUS_POLL_INTERVAL_MS);
+      }
+      Alert.alert(
+        'Still Processing',
+        "We're still confirming your payment. Check the match shortly — it'll update automatically once confirmed."
+      );
+    } catch (err) {
+      Alert.alert('Payment Failed', extractApiError(err, 'Could not confirm your payment status.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCheckoutDismissed = () => setWebViewVisible(false);
+
+  const handleCheckoutError = (message: string) => {
+    setWebViewVisible(false);
+    Alert.alert('Payment Failed', message || 'Something went wrong during payment. Please try again.');
+  };
+
+  const startCheckout = async (orderId: number) => {
+    setPaymentOrderId(orderId);
+    const initiation = await paymentApi.initiateCheckout('MATCH_JOIN', orderId);
+    if (initiation.dummyMode) {
+      // Backend has payment.dummy-mode on — PayHere bypassed, already CHARGED.
+      await handleCheckoutCompleted(orderId);
+      return;
+    }
+    setCheckoutData(initiation);
+    setWebViewVisible(true);
+  };
 
   const handlePayAndJoin = async () => {
     setSubmitting(true);
     try {
-      await new Promise<void>((resolve) => setTimeout(resolve, 800));
       if (invitationId) {
-        // Invitation-based join: complete payment for accepted invitation
-        await invitationApi.completePayment(invitationId, 'SIMULATED_PAYMENT_REF');
+        if (paymentOrderId == null) {
+          throw new Error('Payment could not be started — please go back and try again.');
+        }
+        await startCheckout(paymentOrderId);
       } else {
-        // Direct join (organiser-initiated or self-join from explore)
-        await bookingApi.joinMatch(matchId, additionalPlayerIds);
+        // Direct join (organiser-initiated or self-join from explore) — server decides
+        // free vs. paid, never the client.
+        const res = await bookingApi.createJoinOrder(matchId, additionalPlayerIds);
+        if (res.joined) {
+          router.replace(`/join-match/${matchId}` as any);
+          return;
+        }
+        if (res.paymentOrderId == null) {
+          throw new Error('Payment could not be started — please try again.');
+        }
+        await startCheckout(res.paymentOrderId);
       }
-      router.replace(`/join-match/${matchId}` as any);
     } catch (err) {
       Alert.alert('Join Failed', extractApiError(err));
     } finally {
@@ -74,11 +155,7 @@ export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], 
   };
 
   if (loading || !match) {
-    return (
-      <SafeAreaView style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-      </SafeAreaView>
-    );
+    return <LoadingScreen message="Preparing your checkout…" />;
   }
 
   const sym = match.currencySymbol ?? 'LKR ';
@@ -202,7 +279,7 @@ export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], 
         </View>
       </ScrollView>
 
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, { paddingBottom: (Platform.OS === 'ios' ? 24 : 16) + insets.bottom }]}>
         <Pressable style={styles.payButton} onPress={handlePayAndJoin} disabled={submitting}>
           {submitting
             ? <ActivityIndicator color={Colors.white} />
@@ -218,6 +295,15 @@ export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], 
           By confirming, you agree to the Paasxo Terms of Service and Privacy Policy.
         </Text>
       </View>
+
+      <PayHereCheckoutWebView
+        visible={webViewVisible}
+        checkout={checkoutData}
+        onCompleted={() => paymentOrderId != null && handleCheckoutCompleted(paymentOrderId)}
+        onDismissed={handleCheckoutDismissed}
+        onError={handleCheckoutError}
+        onClose={handleCheckoutDismissed}
+      />
     </SafeAreaView>
   );
 }

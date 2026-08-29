@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Image,
   Pressable,
@@ -13,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, MoreVertical, Share2, MessageCircle, Lock } from 'lucide-react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BottomNavbar } from '../components/BottomNavbar';
+import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
 import { Colors } from '../styles/colors';
 import { socialMediaApi } from '../api/socialMediaApi';
 import { reelApi } from '../api/reelApi';
@@ -22,6 +21,10 @@ import { PostGrid } from '../components/PostGrid';
 import { ReelGrid } from '../components/ReelGrid';
 import { PostSummary, ReelSummary } from '../types/api';
 import { FullScreenImageViewer } from '../components/FullScreenImageViewer';
+import { LoadingScreen } from '../components/LoadingScreen';
+import { PaasxoLogoLoader } from '../components/PaasxoLogoLoader';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 
 const FRIEND_TABS = ['Moments', 'Stats', 'Reels', 'Tagged'] as const;
 type FriendTab = (typeof FRIEND_TABS)[number];
@@ -60,6 +63,7 @@ const AnimatedPressable = ({
 // consistent design. Differs only where the context genuinely differs:
 // Follow/Message instead of Edit/Share, and no avatar-change options.
 export default function FriendProfileScreen() {
+  const navBarHeight = useBottomNavBarHeight();
   const router = useRouter();
   const { user } = useLocalSearchParams();
   const userId = Array.isArray(user) ? user[0] : user;
@@ -93,47 +97,71 @@ export default function FriendProfileScreen() {
     ]).start();
   }, []);
 
-  useEffect(() => {
+  const fetchPosts = React.useCallback(async () => {
     if (!userId) return;
     setPostsLoading(true);
-    socialMediaApi.getUserPosts(userId as string, 0, 30)
-      .then((res) => setPosts(res.content))
-      .catch(() => setPosts([]))
-      .finally(() => setPostsLoading(false));
+    try {
+      const res = await socialMediaApi.getUserPosts(userId as string, 0, 30);
+      setPosts(res.content);
+    } catch {
+      setPosts([]);
+    } finally {
+      setPostsLoading(false);
+    }
   }, [userId]);
 
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        setLoading(true);
-        const res = await socialMediaApi.getUserProfile(userId as string);
-        setProfileData(res);
-        // Jackson strips the "is"/"has" prefix from boolean getters, so these
-        // come back as `following`/`private`/`hasPendingRequestFromMe` on the
-        // wire even though the DTO fields are isFollowing/isPrivate/etc.
-        setRelationshipStatus(res.following ? 'ACCEPTED' : res.hasPendingRequestFromMe ? 'PENDING' : 'NONE');
-      } catch (err) {
-        console.log('PROFILE ERROR:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+  useEffect(() => { fetchPosts(); }, [fetchPosts]);
 
-    if (userId) fetchProfile();
+  const fetchProfile = React.useCallback(async () => {
+    if (!userId) return;
+    try {
+      setLoading(true);
+      const res = await socialMediaApi.getUserProfile(userId as string);
+      setProfileData(res);
+      // Jackson strips the "is"/"has" prefix from boolean getters, so these
+      // come back as `following`/`private`/`hasPendingRequestFromMe` on the
+      // wire even though the DTO fields are isFollowing/isPrivate/etc.
+      setRelationshipStatus(res.following ? 'ACCEPTED' : res.hasPendingRequestFromMe ? 'PENDING' : 'NONE');
+    } catch (err) {
+      console.log('PROFILE ERROR:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [userId]);
+
+  useEffect(() => { fetchProfile(); }, [fetchProfile]);
+
+  const fetchReels = React.useCallback(async () => {
+    if (!userId) return;
+    setReelsLoading(true);
+    try {
+      const res = await reelApi.getUserReels(userId as string);
+      setReels(res.content);
+    } catch {
+      setReels([]);
+    } finally {
+      setReelsLoading(false);
+      setReelsLoaded(true);
+    }
   }, [userId]);
 
   // Reels tab is fetched lazily, the first time it's opened - same pattern as ProfileScreen.
   useEffect(() => {
     if (selectedTab !== 'Reels' || reelsLoaded || !userId) return;
-    setReelsLoading(true);
-    reelApi.getUserReels(userId as string)
-      .then((res) => setReels(res.content))
-      .catch(() => setReels([]))
-      .finally(() => {
-        setReelsLoading(false);
-        setReelsLoaded(true);
-      });
-  }, [selectedTab, reelsLoaded, userId]);
+    fetchReels();
+  }, [selectedTab, reelsLoaded, userId, fetchReels]);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const tasks = [fetchProfile(), fetchPosts()];
+      if (selectedTab === 'Reels') tasks.push(fetchReels());
+      await Promise.all(tasks);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchProfile, fetchPosts, fetchReels, selectedTab]);
 
   const handleFollowToggle = async () => {
     try {
@@ -175,12 +203,7 @@ export default function FriendProfileScreen() {
   const isPrivateAndLocked = !!profileData?.isRestricted;
 
   if (loading || !profileData) {
-    return (
-      <SafeAreaView style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Loading profile...</Text>
-      </SafeAreaView>
-    );
+    return <LoadingScreen message="Loading profile…" />;
   }
 
   const renderMomentsTab = () => {
@@ -196,7 +219,7 @@ export default function FriendProfileScreen() {
     if (postsLoading) {
       return (
         <View style={styles.emptyTabContent}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <PaasxoLogoLoader size={44} elevated={false} />
           <Text style={styles.emptyTabSubtitle}>Loading moments...</Text>
         </View>
       );
@@ -223,7 +246,7 @@ export default function FriendProfileScreen() {
     if (reelsLoading) {
       return (
         <View style={styles.emptyTabContent}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <PaasxoLogoLoader size={44} elevated={false} />
           <Text style={styles.emptyTabSubtitle}>Loading reels...</Text>
         </View>
       );
@@ -255,7 +278,12 @@ export default function FriendProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <PaasxoRefreshLogo refreshing={refreshing} />
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: navBarHeight + 38 }]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         {/* Header */}
         <Animated.View style={[styles.profileCardHeader, { opacity: headerFade, transform: [{ translateY: headerSlide }] }]}>
           <AnimatedPressable onPress={() => router.back()} style={styles.topIconButton}>

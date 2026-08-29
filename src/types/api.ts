@@ -269,6 +269,75 @@ export interface CreateBookingPayload {
 }
 
 // ---------------------------------------------------------------------------
+// Payments (PayHere) — mirrors com.pasxo.dto.payment.* / dto.enums.PaymentOrderType
+// exactly. BOOKING and MATCH_JOIN are wired up on the backend so far.
+// ---------------------------------------------------------------------------
+
+export type PaymentOrderType =
+  | 'BOOKING'
+  // Paying to join someone else's match — orderId is a MatchJoinOrder id (see backend),
+  // NOT a MatchInvitation id and NOT a bookingId. Always obtained from either
+  // AcceptInvitationResponse.paymentOrderId or JoinOrderResponse.paymentOrderId.
+  | 'MATCH_JOIN'
+  | 'TRAINER_BOOKING'
+  | 'SUBSCRIPTION'
+  | 'ONE_TIME_CREATION'
+  | 'ANNOUNCEMENT';
+
+export type PaymentTransactionStatus =
+  | 'INITIATED'
+  | 'PENDING_GATEWAY'
+  | 'CHARGED'
+  | 'CONFIRMED'
+  | 'FAILED'
+  | 'EXPIRED'
+  | 'REFUND_REQUESTED'
+  | 'REFUNDED'
+  | 'REFUND_FAILED';
+
+// Everything the PayHere JS SDK's payhere.startPayment(...) call needs.
+// merchant_secret is never part of this — only the backend-computed hash is.
+export interface CheckoutInitiationResponse {
+  transactionId: number;
+  merchantId: string;
+  merchantOrderId: string;
+  amount: string; // "0.00" formatted — must be passed through unchanged, the hash was computed over this exact string
+  currency: string;
+  items: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  country: string;
+  notifyUrl: string;
+  returnUrl: string;
+  cancelUrl: string;
+  hash: string;
+  sandbox: boolean;
+  // Backend-rendered checkout page reachable through the tunnel/domain — the
+  // WebView loads this URL directly rather than building HTML inline, since
+  // PayHere's JS SDK checks the calling page's real origin against the
+  // domain/app the Merchant Secret was issued for.
+  checkoutPageUrl: string;
+  // True when the backend's payment.dummy-mode bypassed PayHere and already
+  // charged the transaction — the app must not open the checkout WebView in
+  // this case (see PayHereCheckoutPageController's doc comment on the backend).
+  dummyMode: boolean;
+}
+
+export interface PaymentStatusResponse {
+  transactionId: number;
+  orderType: PaymentOrderType;
+  orderId: number;
+  status: PaymentTransactionStatus;
+  amount: number;
+  currency: string;
+  updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
 // Tournaments
 // ---------------------------------------------------------------------------
 // Shapes below mirror com.pasxo.dto.booking.Tournament*Response exactly.
@@ -367,4 +436,90 @@ export interface TournamentUI extends TournamentRecord {
   // Derived client-side from match completion / date, not the backend's
   // static "ACTIVE" status.
   lifecycle: TournamentLifecycle;
+}
+
+// ─── Trainer domain — mirrors mobile-app-paasxo's dto.trainer.* responses exactly ──
+
+export type TrainerCategory =
+  | 'GYM' | 'CALISTHENICS' | 'DANCING' | 'YOGA' | 'CROSSFIT' | 'MARTIAL_ARTS' | 'PILATES' | 'OTHER';
+
+export interface TrainerProfile {
+  id: number;
+  trainerFirebaseUid: string;
+  trainerDisplayName?: string;
+  trainerAvatarUrl?: string;
+  categories: TrainerCategory[];
+  bio?: string;
+  certifications?: string;
+  experienceYears?: number;
+  hourlyRate?: number;
+  profileImageUrl?: string;
+  coverImageUrl?: string;
+  galleryImageUrls?: string[];
+  location?: string;
+  latitude?: number;
+  longitude?: number;
+  rating?: number;
+  active: boolean;
+  distanceKm?: number;
+  sessionCount?: number;
+}
+
+export type DayOfWeekName =
+  | 'MONDAY' | 'TUESDAY' | 'WEDNESDAY' | 'THURSDAY' | 'FRIDAY' | 'SATURDAY' | 'SUNDAY';
+
+export interface TrainerSession {
+  id: number;
+  trainerFirebaseUid: string;
+  trainerDisplayName?: string;
+  trainerAvatarUrl?: string;
+  title: string;
+  category: TrainerCategory;
+  description?: string;
+  location?: string;
+  isOnline: boolean;
+  latitude?: number;
+  longitude?: number;
+  price: number;
+  durationMinutes: number;
+  capacity: number;
+  daysOfWeek: DayOfWeekName[];
+  startTime: string; // "HH:mm:ss"
+  planDetails?: string;
+  imageUrl?: string;
+  active: boolean;
+}
+
+export type TrainerSessionSlotStatus = 'OPEN' | 'FULL' | 'CANCELLED';
+
+export interface TrainerSessionSlot {
+  id: number;
+  trainerSessionId: number;
+  slotDate: string; // "YYYY-MM-DD"
+  startTime: string;
+  endTime: string;
+  capacity: number;
+  bookedCount: number;
+  spotsLeft: number;
+  status: TrainerSessionSlotStatus;
+}
+
+export type TrainerBookingStatus = 'CONFIRMED' | 'CANCELLED';
+
+export interface TrainerBooking {
+  id: number;
+  userId: string;
+  userDisplayName?: string;
+  userAvatarUrl?: string;
+  slotId: number;
+  sessionId: number;
+  sessionTitle: string;
+  trainerFirebaseUid: string;
+  trainerDisplayName?: string;
+  slotDate: string;
+  startTime: string;
+  endTime: string;
+  status: TrainerBookingStatus;
+  pricePaid?: number;
+  bookedAt: string;
 }

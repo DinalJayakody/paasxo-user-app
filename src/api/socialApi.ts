@@ -23,18 +23,15 @@ export const socialApi = {
   },
 
   /**
-   * Exchange Apple ID token for app JWT tokens
-   * @param identityToken - Token received from Apple Sign-In SDK
-   * @param user - Apple user data (name, email) from first sign-in only
+   * Exchange a Firebase ID token (minted from Apple's native Sign In with
+   * Apple credential - see src/utils/appleSignIn.ts) for app JWT tokens
+   * @param idToken - Firebase ID token, same shape as loginWithGoogle
    * @returns AuthResponse with accessToken, refreshToken, and user profile
    */
-  loginWithApple: async (
-    identityToken: string,
-    user?: { email?: string; fullName?: { givenName?: string; familyName?: string } }
-  ): Promise<AuthResponse> => {
+  loginWithApple: async (idToken: string): Promise<AuthResponse> => {
     const { data } = await axiosInstance.post(
       ENDPOINTS.AUTH.APPLE_LOGIN,
-      { identityToken, user }
+      { idToken }
     );
     return data;
   },
@@ -43,23 +40,25 @@ export const socialApi = {
 /*
   Implementation Notes:
 
-  1. Google Sign-In Flow (see SignInScreen.tsx / SignUpScreen.tsx):
-     - Screen runs expo-auth-session's Google OAuth flow, exchanges the
-       result for a Firebase credential, and gets a Firebase ID token via
-       result.user.getIdToken().
-     - That Firebase ID token is the `idToken` sent here to
-       com.pasxo.controller.AuthController#loginWithGoogle (POST /auth/login-google).
-     - Backend verifies it with FirebaseAuth.verifyIdToken, then finds-or-creates
-       the Mongo user (com.pasxo.service.AuthService#loginWithGoogle).
-     - First-time Google users are created with profileCompleted=false (no
-       sports/referralCode yet) — AuthContext shows CompleteProfileModal
-       until authApi.completeProfile is called.
+  Both Google and Apple sign-in follow the same shape (see SignInScreen.tsx /
+  SignUpScreen.tsx and src/utils/appleSignIn.ts):
+    - The screen runs the provider's native/OAuth flow, exchanges the result
+      for a Firebase credential, and gets a Firebase ID token via
+      result.user.getIdToken().
+    - That Firebase ID token is the `idToken` sent here to
+      com.pasxo.controller.AuthController#loginWithGoogle / #loginWithApple
+      (POST /auth/login-google / POST /auth/login-apple).
+    - Backend verifies it with FirebaseAuth.verifyIdToken, then finds-or-creates
+      the Mongo user (com.pasxo.service.AuthService#loginWithGoogle / #loginWithApple).
+    - First-time social users are created with profileCompleted=false (no
+      sports/referralCode yet) — AuthContext shows CompleteProfileModal
+      until authApi.completeProfile is called.
 
-  2. Apple Sign-In Flow:
-     - Similar to Google but Apple ID tokens are JWTs themselves.
-     - Apple returns user data (email, name) ONLY on first sign-in.
-     - Must save this info because Apple won't send it again.
-     - Tokens are time-limited; refresh required.
-     - NOT yet implemented on the backend (no /auth/social/apple endpoint) -
-       loginWithApple below will 404 until that's added.
+  Apple only ever sends the user's full name on the FIRST authorization for a
+  given Apple ID, and never inside the identity token itself - appleSignIn.ts
+  pushes it onto the Firebase profile's displayName client-side before minting
+  the ID token, so the backend sees it the same way it sees a Google displayName.
+
+  Apple Sign In only has a native flow on iOS (see APPLE_SIGN_IN_AVAILABLE in
+  src/utils/appleSignIn.ts) - the button is hidden on Android/web.
 */

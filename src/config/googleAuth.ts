@@ -6,16 +6,19 @@
 //   - IOS is the client_type:2 entry under services.appinvite_service
 //     .other_platform_oauth_client, matched by ios_info.bundle_id.
 //
-// ANDROID is still a placeholder: google-services.json has no client_type:1
-// entry yet, which means no SHA-1 fingerprint has been added to the Android
-// app in Firebase Console (Project Settings → your Android app →
-// Add fingerprint). expo-auth-session uses androidClientId verbatim with no
-// fallback to WEB, so leaving this unset means the Android button will fail
-// until a real Android-type client ID is generated - Web/iOS work today.
+// ANDROID: genuine "Android" type OAuth client (Google Cloud Console confirms
+// Type: Android), auto-created after registering com.paasxo.app + its debug
+// keystore SHA-1 (5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25)
+// in Firebase Console → Project Settings → Your apps → Android → Add
+// fingerprint. This is what lets Google accept the native custom-scheme
+// redirect (`com.paasxo.app:/oauthredirect`, hardcoded by expo-auth-session's
+// Google provider) instead of blocking it with "doesn't comply with Google's
+// OAuth 2.0 policy" - that redirect also needs a matching intent-filter for
+// scheme "com.paasxo.app" in AndroidManifest.xml (already added).
 export const GOOGLE_CLIENT_IDS = {
   WEB:     '135107198325-5tnmhagcsu2frmbl5fduk0qtvr9lb0et.apps.googleusercontent.com',
   IOS:     '135107198325-co0uscvalek3rq7jfulnai1j8gffm4sb.apps.googleusercontent.com',
-  ANDROID: 'YOUR_ANDROID_CLIENT_ID.apps.googleusercontent.com',
+  ANDROID: '135107198325-qgd3nhhm7d6ts61mniq547uufsu98v43.apps.googleusercontent.com',
 } as const;
 
 export const GOOGLE_CONFIGURED =

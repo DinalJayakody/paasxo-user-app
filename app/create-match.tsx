@@ -52,7 +52,7 @@ const SPORTS = [
   { id: 'CRICKET',          label: 'Cricket',     emoji: '🏏', color: Colors.cricket,     grad: [Colors.cricket, '#1A5FA0'] as [string,string] },
   { id: 'PICKLEBALL',       label: 'Pickleball',  emoji: '🏓', color: Colors.pickleball,  grad: [Colors.pickleball, '#2977C2'] as [string,string] },
   { id: 'PADDLEBALL',       label: 'Paddleball',  emoji: '🎾', color: Colors.paddleball,  grad: [Colors.paddleball, '#6D28D9'] as [string,string] },
-  { id: 'TRAINER_GYM',      label: 'Trainer',     emoji: '💪', color: Colors.trainer,     grad: [Colors.trainer, '#C2410C'] as [string,string] },
+  { id: 'TRAINER_GYM',      label: 'Trainer',     emoji: '💪', color: Colors.trainer,     grad: [Colors.trainer, Colors.primaryDark] as [string,string] },
   { id: 'WALKING_RUNNING',  label: 'Walk / Run',  emoji: '🏃', color: (Colors as any).walkRun ?? '#059669', grad: ['#059669', '#047857'] as [string,string] },
 ];
 
@@ -530,6 +530,7 @@ export default function CreateMatch() {
   const [venueSearch, setVenueSearch] = useState('');
   const [venueOptions, setVenueOptions] = useState<any[]>([]);
   const [loadingVenues, setLoadingVenues] = useState(false);
+  const [venueError, setVenueError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState('');
   const [calendarVisible, setCalendarVisible] = useState(false);
   const [slots, setSlots] = useState<any[]>([]);
@@ -566,12 +567,22 @@ export default function CreateMatch() {
 
   const fetchVenueOptions = async () => {
     setLoadingVenues(true);
+    setVenueError(null);
     try {
       const data = await futsalApi.listVenues();
-      const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : Array.isArray(data?.venues) ? data.venues : [];
+      const list = Array.isArray(data) ? data
+        : Array.isArray(data?.content) ? data.content   // PagedResponse shape, in case this endpoint is ever paginated
+        : Array.isArray(data?.data) ? data.data
+        : Array.isArray(data?.venues) ? data.venues
+        : [];
       setVenueOptions(list);
-    } catch {
+    } catch (err) {
+      // Previously swallowed silently — "No venues found" looked identical whether the
+      // list was genuinely empty or the request failed (401/403/network/etc), making
+      // this undiagnosable from the UI alone.
+      console.warn('Failed to load venues', err);
       setVenueOptions([]);
+      setVenueError(extractApiError(err, 'Could not load venues. Pull down to retry.'));
     } finally {
       setLoadingVenues(false);
     }
@@ -1074,11 +1085,22 @@ export default function CreateMatch() {
               <ActivityIndicator color={Colors.primary} size="large" />
               <Text style={styles.modalLoadingText}>Finding venues...</Text>
             </View>
+          ) : venueError ? (
+            <View style={styles.modalEmpty}>
+              <AlertCircle color={Colors.neutral300} size={48} strokeWidth={1} />
+              <Text style={styles.modalEmptyText}>Couldn't load venues</Text>
+              <Text style={styles.modalEmptySubtext}>{venueError}</Text>
+              <Pressable onPress={fetchVenueOptions} style={styles.modalRetryBtn}>
+                <Text style={styles.modalRetryText}>Retry</Text>
+              </Pressable>
+            </View>
           ) : filteredVenues.length === 0 ? (
             <View style={styles.modalEmpty}>
               <MapPin color={Colors.neutral300} size={48} strokeWidth={1} />
               <Text style={styles.modalEmptyText}>No venues found</Text>
-              <Text style={styles.modalEmptySubtext}>Try a different search term</Text>
+              <Text style={styles.modalEmptySubtext}>
+                {venueOptions.length === 0 ? 'No venues have been added yet' : 'Try a different search term'}
+              </Text>
             </View>
           ) : (
             <FlatList
@@ -1439,9 +1461,14 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 14, color: Colors.text },
   modalLoading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   modalLoadingText: { fontSize: 14, color: Colors.textSecondary },
-  modalEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  modalEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 32 },
   modalEmptyText: { fontSize: 16, fontWeight: '700', color: Colors.text },
-  modalEmptySubtext: { fontSize: 13, color: Colors.textSecondary },
+  modalEmptySubtext: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center' },
+  modalRetryBtn: {
+    marginTop: 8, paddingHorizontal: 20, paddingVertical: 10,
+    borderRadius: 12, backgroundColor: Colors.primary,
+  },
+  modalRetryText: { fontSize: 14, fontWeight: '700', color: Colors.white },
 
   selectedBarWrap: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.neutral100 },
   selectedBar: { paddingHorizontal: 16, gap: 8 },

@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Lock, Pause, Play, Square, Zap } from 'lucide-react-native';
+import { ArrowLeft, Clock, Lock, Pause, Play, RotateCcw, Square, Zap } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
 import { Button } from '../components/Button';
 import { bookingApi } from '../api/bookingApi';
@@ -25,6 +25,7 @@ import { LiveScoreboard } from '../components/scoring/LiveScoreboard';
 import { FutsalScoringControls } from '../components/scoring/FutsalScoringControls';
 import { CricketScoringControls } from '../components/scoring/CricketScoringControls';
 import { RacketScoringControls } from '../components/scoring/RacketScoringControls';
+import { LoadingScreen } from '../components/LoadingScreen';
 
 const SPORT_ACCENT: Record<string, string> = {
   FUTSAL: Colors.futsal,
@@ -48,7 +49,7 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
   const [loadingMatch, setLoadingMatch] = useState(true);
   const [loadError, setLoadError] = useState<string | undefined>();
 
-  const { score, loading: scoreLoading, actionLoading, error, displaySeconds, startMatch, pauseTimer, resumeTimer, endMatch, updateState } =
+  const { score, loading: scoreLoading, actionLoading, error, displaySeconds, startMatch, pauseTimer, resumeTimer, endMatch, resetMatch, updateState } =
     useLiveMatchScore(matchId);
 
   useEffect(() => {
@@ -68,14 +69,17 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
   const isOwner = !!user?.firebaseUid && !!match?.creatorId && user.firebaseUid === match.creatorId;
   const sport = (match?.sportType || 'FUTSAL').toUpperCase();
   const accent = SPORT_ACCENT[sport] || Colors.primary;
+  // A freshly created match stays PENDING_VENDOR until the venue accepts it —
+  // scoring (and everything else about "the match is happening") only makes
+  // sense once that's confirmed. Enforced here too, not just on the button
+  // that links here, since this screen is reachable directly by URL/route.
+  const isPendingVendor =
+    match?.vendorStatus === 'PENDING_VENDOR' ||
+    match?.status === 'PENDING_VENDOR' ||
+    match?.status === 'PENDING';
 
   if (loadingMatch || subLoading || scoreLoading) {
-    return (
-      <SafeAreaView style={styles.centerScreen}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.centerText}>Loading scoreboard…</Text>
-      </SafeAreaView>
-    );
+    return <LoadingScreen message="Loading scoreboard…" />;
   }
 
   if (loadError || !match) {
@@ -93,6 +97,21 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
         <Lock color={Colors.neutral400} size={40} strokeWidth={1.6} />
         <Text style={styles.centerTitle}>Organizer Only</Text>
         <Text style={styles.centerText}>Only the player who created this match can score it.</Text>
+        <Button title="Go Back" onPress={() => router.back()} style={{ marginTop: 16 }} />
+      </SafeAreaView>
+    );
+  }
+
+  if (isPendingVendor) {
+    return (
+      <SafeAreaView style={styles.centerScreen}>
+        <View style={[styles.proLockIcon, { backgroundColor: '#EA580C' }]}>
+          <Clock color={Colors.white} size={26} strokeWidth={2.2} />
+        </View>
+        <Text style={styles.centerTitle}>Awaiting Venue Approval</Text>
+        <Text style={styles.centerText}>
+          Scoring unlocks once the venue accepts this match. You'll be able to start scoring as soon as it's confirmed.
+        </Text>
         <Button title="Go Back" onPress={() => router.back()} style={{ marginTop: 16 }} />
       </SafeAreaView>
     );
@@ -126,6 +145,17 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
       { text: 'Cancel', style: 'cancel' },
       { text: 'End Match', style: 'destructive', onPress: () => endMatch().catch(() => {}) },
     ]);
+  };
+
+  const handleReset = () => {
+    Alert.alert(
+      'Reset Scoring?',
+      'This discards the current score, timer, and match events, and puts scoring back to its starting point. This can\'t be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Reset', style: 'destructive', onPress: () => resetMatch().catch(() => {}) },
+      ]
+    );
   };
 
   return (
@@ -184,6 +214,13 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
                 <Text style={styles.controlBtnText}>End Match</Text>
               </Pressable>
             </View>
+          )}
+
+          {(isLive || isPaused) && (
+            <Pressable style={styles.resetLink} onPress={handleReset} disabled={actionLoading} hitSlop={6}>
+              <RotateCcw color={Colors.textMuted} size={13} strokeWidth={2.2} />
+              <Text style={styles.resetLinkText}>Reset scoring to initial state</Text>
+            </Pressable>
           )}
 
           {(isLive || isPaused) && score && SCOREABLE_SPORTS.has(sport) && (
@@ -267,6 +304,11 @@ const styles = StyleSheet.create({
   startBtnText: { color: Colors.white, fontSize: 15, fontWeight: '800' },
 
   controlBar: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  resetLink: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    marginTop: 12, paddingVertical: 6,
+  },
+  resetLinkText: { fontSize: 12.5, fontWeight: '600', color: Colors.textMuted },
   controlBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
     borderRadius: 14, paddingVertical: 12,

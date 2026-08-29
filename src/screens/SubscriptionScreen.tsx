@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -13,11 +13,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, Zap, CheckCircle, CreditCard, Shield, Star } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
 import { Button } from '../components/Button';
 import { useSubscription } from '../hooks/useSubscription';
+import { extractApiError } from '../utils/apiError';
 
 const FEATURES = [
   'Create unlimited matches & tournaments',
@@ -30,6 +32,15 @@ const FEATURES = [
 export default function SubscriptionScreen() {
   const router = useRouter();
   const { active, plan, endDate, startTrial, activate, refresh } = useSubscription();
+
+  // This screen shows a "Choose a plan" UI for inactive users, so a stale
+  // cached `active: false` would let someone try to subscribe again — always
+  // re-check against the server when the screen is opened/returned to.
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
 
   const [mode, setMode] = useState<'plans' | 'payment'>('plans');
   const [cardName, setCardName] = useState('');
@@ -48,14 +59,15 @@ export default function SubscriptionScreen() {
 
   const handleTrial = async () => {
     setLoading(true);
-    const ok = await startTrial();
-    setLoading(false);
-    if (ok) {
+    try {
+      await startTrial();
       Alert.alert('Free Trial Activated!', 'You now have 1 month of full access. Enjoy Paasxo!', [
         { text: 'Let\'s Go!', onPress: () => router.back() },
       ]);
-    } else {
-      Alert.alert('Already Subscribed', 'A subscription already exists on this account.');
+    } catch (err) {
+      Alert.alert('Could Not Start Trial', extractApiError(err));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -65,14 +77,15 @@ export default function SubscriptionScreen() {
       return;
     }
     setLoading(true);
-    const ok = await activate(`CARD_${cardNumber.slice(-4)}_${Date.now()}`);
-    setLoading(false);
-    if (ok) {
+    try {
+      await activate(`CARD_${cardNumber.slice(-4)}_${Date.now()}`);
       Alert.alert('Subscribed!', 'You are now a Paasxo Pro member!', [
         { text: 'Awesome!', onPress: () => router.back() },
       ]);
-    } else {
-      Alert.alert('Payment Failed', 'Unable to process your payment. Please try again.');
+    } catch (err) {
+      Alert.alert('Payment Failed', extractApiError(err, 'Unable to process your payment. Please try again.'));
+    } finally {
+      setLoading(false);
     }
   };
 

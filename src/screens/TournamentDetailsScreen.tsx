@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Animated,
   Share,
-  RefreshControl,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -36,6 +35,9 @@ import { futsalApi } from '../api/futsalApi';
 import { tournamentStorage } from '../utils/tournamentStorage';
 import { buildTeamUI, buildMatchUI, buildTournamentUI } from '../utils/parseTournament';
 import { TournamentUI, TournamentTeamUI } from '../types/api';
+import { LoadingScreen } from '../components/LoadingScreen';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 
 interface TournamentDetailsScreenProps {
   tournamentId: string;
@@ -173,11 +175,7 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
   };
 
   if (loading || !tournament) {
-    return (
-      <SafeAreaView style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-      </SafeAreaView>
-    );
+    return <LoadingScreen message="Loading tournament…" />;
   }
 
   const lifecycleConfig = {
@@ -225,18 +223,19 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
         </View>
       </LinearGradient>
 
+      <View style={styles.refreshableArea}>
+      <PaasxoRefreshLogo refreshing={refreshing} />
       <ScrollView
         style={styles.flex1}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl
+          <PaasxoRefreshControl
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
               load(true);
             }}
-            tintColor={Colors.primary}
           />
         }
       >
@@ -318,6 +317,7 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
           })
         )}
       </ScrollView>
+      </View>
 
       {/* Roster modal */}
       <Modal visible={!!rosterTeam} transparent animationType="fade" onRequestClose={() => setRosterTeam(null)}>
@@ -422,6 +422,7 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
 
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
+  refreshableArea: { flex: 1, position: 'relative' },
   loadingScreen: {
     flex: 1,
     backgroundColor: Colors.background,

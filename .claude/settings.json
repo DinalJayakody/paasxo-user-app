@@ -9,6 +9,14 @@
       "/Users/user/Documents/Paasxo Apps/mobile-app-paasxo/src/main/java/com/pasxo/dto/booking",
       "/Users/user/Documents/Paasxo Apps/mobile-app-paasxo/src/main/java/com/pasxo/controller",
       "/Users/user/Documents/Paasxo Apps/mobile-app-paasxo/src/main/java/com/pasxo/service/invitation"
+    ],
+    "allow": [
+      "Bash",
+      "Cd"
     ]
   }
 }
+
+
+
+

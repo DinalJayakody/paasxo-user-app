@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   Search,
@@ -35,15 +36,34 @@ import { notificationApi } from '../api/notificationApi';
 import * as Location from 'expo-location';
 import { Colors } from '../styles/colors';
 import { Button } from '../components/Button';
-import { BottomNavbar } from '../components/BottomNavbar';
+import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
+import { PaasxoLogoLoader } from '../components/PaasxoLogoLoader';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import { TournamentFeedCard, TournamentFeedItem } from '../components/TournamentFeedCard';
 import { bookingApi } from '../api/bookingApi';
 import { tournamentApi } from '../api/tournamentApi';
+import { trainerApi } from '../api/trainerApi';
 import { tournamentStorage } from '../utils/tournamentStorage';
 import { buildTournamentUI } from '../utils/parseTournament';
 import { AuthContext } from '../context/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
 import { activityStorage, StoredActivity } from '../api/activityApi';
+import { resolveMediaUrl } from '../utils/mediaUrl';
+
+const TRAINER_CATEGORY_LABELS: Record<string, string> = {
+  GYM: 'Gym', CALISTHENICS: 'Calisthenics', DANCING: 'Dancing', YOGA: 'Yoga',
+  CROSSFIT: 'CrossFit', MARTIAL_ARTS: 'Martial Arts', PILATES: 'Pilates', OTHER: 'Training',
+};
+
+interface TrainerCard {
+  id: string;
+  name: string;
+  specialty?: string;
+  location?: string;
+  hourlyRate: number | null;
+  imageUri?: string;
+}
 
 interface MatchCard {
   id: string;
@@ -104,6 +124,7 @@ const SPORT_MASCOTS = [
 ];
 
 export default function HomeScreen() {
+  const navBarHeight = useBottomNavBarHeight();
   const [searchText, setSearchText] = useState('');
   const [matches, setMatches] = useState<MatchCard[]>([]);
   const [myMatches, setMyMatches] = useState<MatchCard[]>([]);
@@ -120,6 +141,9 @@ export default function HomeScreen() {
   const [greeting, setGreeting] = useState('');
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [recentActivities, setRecentActivities] = useState<StoredActivity[]>([]);
+  const [nearbyTrainers, setNearbyTrainers] = useState<TrainerCard[]>([]);
+  const [loadingTrainers, setLoadingTrainers] = useState(false);
+  const [trainersLoaded, setTrainersLoaded] = useState(false);
   const router = useRouter();
   const { user } = useContext(AuthContext);
   const { active: isPro } = useSubscription();
@@ -132,11 +156,13 @@ export default function HomeScreen() {
     Animated.spring(headerScale, { toValue: 1, friction: 8, useNativeDriver: true }).start();
   }, []);
 
-  useEffect(() => {
-    notificationApi.getUnreadCount()
-      .then(setUnreadNotifications)
-      .catch(() => {});
-  }, []);
+  useFocusEffect(
+    React.useCallback(() => {
+      notificationApi.getUnreadCount('GENERAL')
+        .then(setUnreadNotifications)
+        .catch(() => {});
+    }, [])
+  );
 
   useEffect(() => {
     const compute = () => {
@@ -236,57 +262,94 @@ export default function HomeScreen() {
       };
     });
 
-  useEffect(() => {
-    const loadNearbyAndMine = async () => {
-      setLoadingMatches(true);
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        let nearbyRaw: any[];
-        if (status === 'granted') {
-          const coords = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          nearbyRaw = await bookingApi.getNearbyBookings(coords.coords.latitude, coords.coords.longitude, 20);
-        } else {
-          nearbyRaw = await bookingApi.getAllBookings();
-        }
-        setMatches(parseMatches(nearbyRaw));
-        const myRaw = await bookingApi.getMyBookings();
-        setMyMatches(parseMatches(myRaw));
-      } catch {
-        try {
-          const myRaw = await bookingApi.getMyBookings();
-          setMatches(parseMatches(myRaw));
-          setMyMatches(parseMatches(myRaw));
-        } catch { /* show empty */ }
-      } finally {
-        setLoadingMatches(false);
+  const loadNearbyAndMine = React.useCallback(async () => {
+    setLoadingMatches(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      let nearbyRaw: any[];
+      if (status === 'granted') {
+        const coords = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        nearbyRaw = await bookingApi.getNearbyBookings(coords.coords.latitude, coords.coords.longitude, 20);
+      } else {
+        nearbyRaw = await bookingApi.getAllBookings();
       }
-    };
-    loadNearbyAndMine();
+      setMatches(parseMatches(nearbyRaw));
+      const myRaw = await bookingApi.getMyBookings();
+      setMyMatches(parseMatches(myRaw));
+    } catch {
+      try {
+        const myRaw = await bookingApi.getMyBookings();
+        setMatches(parseMatches(myRaw));
+        setMyMatches(parseMatches(myRaw));
+      } catch { /* show empty */ }
+    } finally {
+      setLoadingMatches(false);
+    }
+  }, []);
+
+  useEffect(() => { loadNearbyAndMine(); }, [loadNearbyAndMine]);
+
+  const loadJoinedMatches = React.useCallback(async () => {
+    setLoadingJoined(true);
+    try {
+      const raw = await bookingApi.getJoinedBookings();
+      setJoinedMatches(parseMatches(raw));
+      setJoinedLoaded(true);
+    } catch {
+      setJoinedMatches([]);
+      setJoinedLoaded(true);
+    } finally {
+      setLoadingJoined(false);
+    }
   }, []);
 
   // Lazy-load joined matches when the user first switches to that view
   useEffect(() => {
     if (matchView !== 'JOINED' || joinedLoaded || loadingJoined) return;
-    const load = async () => {
-      setLoadingJoined(true);
-      try {
-        const raw = await bookingApi.getJoinedBookings();
-        setJoinedMatches(parseMatches(raw));
-        setJoinedLoaded(true);
-      } catch {
-        setJoinedMatches([]);
-        setJoinedLoaded(true);
-      } finally {
-        setLoadingJoined(false);
-      }
-    };
-    load();
-  }, [matchView]);
+    loadJoinedMatches();
+  }, [matchView, joinedLoaded, loadingJoined, loadJoinedMatches]);
 
+  const loadNearbyTrainers = React.useCallback(async () => {
+    setLoadingTrainers(true);
+    try {
+      let lat: number | undefined;
+      let lng: number | undefined;
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const coords = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        lat = coords.coords.latitude;
+        lng = coords.coords.longitude;
+      }
+      const { content } = await trainerApi.filterTrainers({ lat, lng, radiusKm: 50, page: 0, size: 10 });
+      const mapped: TrainerCard[] = content.map((t: any) => ({
+        id: String(t.id),
+        name: t.trainerDisplayName ?? 'Trainer',
+        specialty: Array.isArray(t.categories) && t.categories.length
+          ? t.categories.map((c: string) => TRAINER_CATEGORY_LABELS[c] ?? c).join(' · ')
+          : undefined,
+        location: t.location,
+        hourlyRate: t.hourlyRate != null ? Number(t.hourlyRate) : null,
+        imageUri: resolveMediaUrl(t.profileImageUrl),
+      }));
+      setNearbyTrainers(mapped);
+      setTrainersLoaded(true);
+    } catch {
+      setNearbyTrainers([]);
+      setTrainersLoaded(true);
+    } finally {
+      setLoadingTrainers(false);
+    }
+  }, []);
+
+  // Lazy-load nearby trainers when the user first switches to that tab.
   useEffect(() => {
-    const loadTournaments = async () => {
-      setLoadingTournaments(true);
-      try {
+    if (activeTab !== 'TRAINER_SESSIONS' || trainersLoaded || loadingTrainers) return;
+    loadNearbyTrainers();
+  }, [activeTab, trainersLoaded, loadingTrainers, loadNearbyTrainers]);
+
+  const loadTournaments = React.useCallback(async () => {
+    setLoadingTournaments(true);
+    try {
         const tracked = await tournamentStorage.getTracked();
         const items: TournamentFeedItem[] = [];
         for (const t of tracked.slice(0, 10)) {
@@ -322,15 +385,28 @@ export default function HomeScreen() {
             });
           } catch { /* skip failed */ }
         }
-        setTournaments(items);
-      } catch {
-        setTournaments([]);
-      } finally {
-        setLoadingTournaments(false);
-      }
-    };
-    loadTournaments();
+      setTournaments(items);
+    } catch {
+      setTournaments([]);
+    } finally {
+      setLoadingTournaments(false);
+    }
   }, [user]);
+
+  useEffect(() => { loadTournaments(); }, [loadTournaments]);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const tasks: Promise<any>[] = [loadNearbyAndMine(), loadTournaments()];
+      if (matchView === 'JOINED') tasks.push(loadJoinedMatches());
+      if (activeTab === 'TRAINER_SESSIONS') tasks.push(loadNearbyTrainers());
+      await Promise.all(tasks);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadNearbyAndMine, loadTournaments, loadJoinedMatches, loadNearbyTrainers, matchView, activeTab]);
 
   const renderMatchCard = (item: MatchCard) => {
     const spotsLabel = (() => {
@@ -510,7 +586,7 @@ export default function HomeScreen() {
         </View>
         <TouchableOpacity
           style={styles.notificationBell}
-          onPress={() => router.push('/notifications' as any)}
+          onPress={() => router.push('/notifications?category=GENERAL' as any)}
         >
           <Bell color={Colors.white} size={20} strokeWidth={2} />
           {unreadNotifications > 0 && (
@@ -527,10 +603,13 @@ export default function HomeScreen() {
         </View>
       </Animated.View>
 
+      <View style={styles.refreshableArea}>
+      <PaasxoRefreshLogo refreshing={refreshing} />
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: navBarHeight + 18 }]}
         showsVerticalScrollIndicator={false}
+        refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {/* Search + Filter */}
         <View style={styles.searchContainer}>
@@ -679,7 +758,7 @@ export default function HomeScreen() {
             {/* Match cards */}
             {isLoadingMatchView ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={Colors.primary} />
+                <PaasxoLogoLoader size={40} elevated={false} />
               </View>
             ) : filteredMatches.length > 0 ? (
               filteredMatches.map((match) => renderMatchCard(match))
@@ -770,23 +849,59 @@ export default function HomeScreen() {
                 <Text style={styles.sectionSubtitle}>Book 1-on-1 or group training</Text>
               </View>
               <TouchableOpacity activeOpacity={0.7} onPress={() => router.push('/explore' as any)}>
-                <Text style={styles.seeAllText}>Find →</Text>
+                <Text style={styles.seeAllText}>See all →</Text>
               </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={styles.createTournamentPrompt}
-              activeOpacity={0.88}
-              onPress={() => router.push('/explore' as any)}
-            >
-              <LinearGradient colors={[Colors.trainer, '#C2410C']} style={styles.createTournamentGrad}>
-                <Dumbbell color={Colors.white} size={28} strokeWidth={2} />
-                <View>
-                  <Text style={styles.createTournamentTitle}>Find a Trainer</Text>
-                  <Text style={styles.createTournamentSubtitle}>Personal &amp; group sessions available</Text>
-                </View>
-                <ChevronRight color={Colors.white} size={20} strokeWidth={2.5} />
-              </LinearGradient>
-            </TouchableOpacity>
+
+            {loadingTrainers ? (
+              <ActivityIndicator color={Colors.trainer} style={{ marginTop: 24 }} />
+            ) : nearbyTrainers.length === 0 ? (
+              <TouchableOpacity
+                style={styles.createTournamentPrompt}
+                activeOpacity={0.88}
+                onPress={() => router.push('/explore' as any)}
+              >
+                <LinearGradient colors={[Colors.trainer, Colors.primaryDark]} style={styles.createTournamentGrad}>
+                  <Dumbbell color={Colors.white} size={28} strokeWidth={2} />
+                  <View>
+                    <Text style={styles.createTournamentTitle}>Find a Trainer</Text>
+                    <Text style={styles.createTournamentSubtitle}>Personal &amp; group sessions available</Text>
+                  </View>
+                  <ChevronRight color={Colors.white} size={20} strokeWidth={2.5} />
+                </LinearGradient>
+              </TouchableOpacity>
+            ) : (
+              nearbyTrainers.map((t) => (
+                <TouchableOpacity
+                  key={t.id}
+                  style={styles.trainerCard}
+                  activeOpacity={0.88}
+                  onPress={() => router.push(`/trainer/${t.id}` as any)}
+                >
+                  {t.imageUri ? (
+                    <Image source={{ uri: t.imageUri }} style={styles.trainerCardImage} />
+                  ) : (
+                    <LinearGradient colors={[Colors.trainerLight, Colors.trainerLight]} style={styles.trainerCardImage}>
+                      <Dumbbell color={Colors.trainer} size={22} strokeWidth={2} />
+                    </LinearGradient>
+                  )}
+                  <View style={styles.trainerCardBody}>
+                    <Text style={styles.trainerCardName} numberOfLines={1}>{t.name}</Text>
+                    {!!t.specialty && <Text style={styles.trainerCardSpecialty} numberOfLines={1}>{t.specialty}</Text>}
+                    {!!t.location && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                        <MapPin color={Colors.textMuted} size={11} strokeWidth={2} />
+                        <Text style={styles.trainerCardMeta} numberOfLines={1}>{t.location}</Text>
+                      </View>
+                    )}
+                  </View>
+                  {t.hourlyRate != null && (
+                    <Text style={styles.trainerCardPrice}>LKR {t.hourlyRate}</Text>
+                  )}
+                  <ChevronRight color={Colors.trainer} size={16} strokeWidth={2.5} />
+                </TouchableOpacity>
+              ))
+            )}
           </>
         )}
 
@@ -894,6 +1009,7 @@ export default function HomeScreen() {
           </>
         )}
       </ScrollView>
+      </View>
 
       <BottomNavbar activeTab="EXPLORE" showCreateButton={false} />
     </SafeAreaView>
@@ -944,6 +1060,7 @@ const styles = StyleSheet.create({
   streakText: { fontSize: 14, fontWeight: '800', color: Colors.white },
 
   scroll: { flex: 1 },
+  refreshableArea: { flex: 1, position: 'relative' },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 100, paddingTop: 14 },
 
   searchContainer: {
@@ -1072,6 +1189,17 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.07, shadowRadius: 12, elevation: 3, overflow: 'hidden',
   },
+  trainerCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.white,
+    borderRadius: 16, padding: 10, marginBottom: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
+  },
+  trainerCardImage: { width: 52, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  trainerCardBody: { flex: 1 },
+  trainerCardName: { fontSize: 14.5, fontWeight: '700', color: Colors.text },
+  trainerCardSpecialty: { fontSize: 12, color: Colors.trainer, fontWeight: '600', marginTop: 1 },
+  trainerCardMeta: { fontSize: 11.5, color: Colors.textMuted },
+  trainerCardPrice: { fontSize: 13, fontWeight: '800', color: Colors.trainer, marginRight: 2 },
   matchCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14, paddingBottom: 10, gap: 8 },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1 },
   statusBadgeText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },

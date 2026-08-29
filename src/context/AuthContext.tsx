@@ -9,6 +9,7 @@ import { AuthResponse, LoginPayload, RegisterPayload, UserProfile } from '../typ
 import axiosInstance from '../api/axios';
 import { CompleteProfileModal } from '../components/CompleteProfileModal';
 import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
+import { clearSubscriptionCache } from '../hooks/useSubscription';
 
 type AuthContextShape = {
   user: UserProfile | null;
@@ -22,7 +23,11 @@ type AuthContextShape = {
   // signInWithGoogle receives the Firebase ID token obtained by the screen-level
   // OAuth flow (expo-auth-session + Firebase SignInWithCredential).
   signInWithGoogle: (firebaseIdToken: string) => Promise<void>;
-  // completeSocialSignIn is the lower-level helper kept for Apple and future providers.
+  // signInWithApple mirrors signInWithGoogle: the screen runs Apple's native
+  // Sign In with Apple flow (see src/utils/appleSignIn.ts), turns it into a
+  // Firebase ID token, and passes it here.
+  signInWithApple: (firebaseIdToken: string) => Promise<void>;
+  // completeSocialSignIn is the lower-level helper kept for future providers.
   completeSocialSignIn: (provider: 'google' | 'apple', token: string, appleUser?: any) => Promise<void>;
   // Saves the activity + referral code collected by CompleteProfileModal.
   completeProfile: (sports: string[], referralCode?: string) => Promise<void>;
@@ -120,6 +125,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = async (): Promise<void> => {
     try {
       await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'user']);
+      await clearSubscriptionCache();
     } catch { /* ignore */ }
     delete axiosInstance.defaults.headers.common['Authorization'];
     setUser(null);
@@ -135,6 +141,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setLoading(true);
       const response = await socialApi.loginWithGoogle(firebaseIdToken);
+      await persistTokens(response);
+      setUser(response.user ?? null);
+    } catch (error) {
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── Apple Sign-In ───────────────────────────────────────────────────────────
+  // iOS only. The screen (SignInScreen/SignUpScreen) obtains the Firebase ID
+  // token via src/utils/appleSignIn.ts (Apple native flow → Firebase credential
+  // → result.user.getIdToken()) and passes it here, mirroring signInWithGoogle.
+
+  const signInWithApple = async (firebaseIdToken: string): Promise<void> => {
+    try {
+      setLoading(true);
+      const response = await socialApi.loginWithApple(firebaseIdToken);
       await persistTokens(response);
       setUser(response.user ?? null);
     } catch (error) {
@@ -182,7 +206,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (provider === 'google') {
         authResponse = await socialApi.loginWithGoogle(token);
       } else {
-        authResponse = await socialApi.loginWithApple(token, appleUser);
+        authResponse = await socialApi.loginWithApple(token);
       }
       await persistTokens(authResponse);
       if (authResponse.user) setUser(authResponse.user);
@@ -218,6 +242,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signUp,
         signOut,
         signInWithGoogle,
+        signInWithApple,
         completeSocialSignIn,
         completeProfile,
         updateUser,

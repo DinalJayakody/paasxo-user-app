@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, Dimensions, Animated,
+  Dimensions, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -12,6 +12,8 @@ import {
 } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
 import { activityStorage, activityApi, StoredActivity, ActivityType } from '../api/activityApi';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -141,8 +143,10 @@ export default function ActivityHistoryScreen() {
         </TouchableOpacity>
       </LinearGradient>
 
+      <View style={styles.refreshableArea}>
+      <PaasxoRefreshLogo refreshing={refreshing} />
       <ScrollView
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.neutral400} />}
+        refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}
       >
@@ -216,6 +220,7 @@ export default function ActivityHistoryScreen() {
           </View>
         ))}
       </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -272,6 +277,7 @@ function MiniStat({ icon, value }: { icon: React.ReactNode; value: string }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0F172A' },
+  refreshableArea: { flex: 1, position: 'relative' },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16 },
   backBtn: {
     width: 36, height: 36, borderRadius: 12,

@@ -41,8 +41,8 @@ export const Colors = {
   pickleballLight: '#E0F0FA',
   paddleball: '#7C3AED',
   paddleballLight: '#EDE9FE',
-  trainer: '#EA580C',
-  trainerLight: '#FFF0E6',
+  trainer: '#2977C2',
+  trainerLight: '#DDEAF7',
   walkRun: '#059669',
   walkRunLight: '#D1FAE5',
   // Tournament gradient colors (blue theme)

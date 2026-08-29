@@ -16,7 +16,7 @@ import {
   PanResponder,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   Search,
@@ -43,16 +43,24 @@ import {
   Target,
   Volleyball,
   LayoutGrid,
+  Bell,
   type LucideIcon,
 } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import Svg, { Path } from 'react-native-svg';
+import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../styles/colors';
-import { BottomNavbar } from '../components/BottomNavbar';
+import { notificationApi } from '../api/notificationApi';
+import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
 import { futsalApi } from '../api/futsalApi';
 import { bookingApi } from '../api/bookingApi';
 import { tournamentApi } from '../api/tournamentApi';
+import { trainerApi } from '../api/trainerApi';
+import { LoadingScreen } from '../components/LoadingScreen';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import { useSubscription } from '../hooks/useSubscription';
+import { resolveMediaUrl } from '../utils/mediaUrl';
 
 // ─── Platform-safe maps ──────────────────────────────────────────────────────
 let MapViewComponent: any = null;
@@ -68,6 +76,11 @@ if (Platform.OS !== 'web') {
 }
 
 const { width: W } = Dimensions.get('window');
+
+// Default map center when a result or the user's own location has no
+// coordinates yet — Colombo, since that's this app's home city.
+const DEFAULT_LAT = 6.9271;
+const DEFAULT_LNG = 79.8612;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Category = 'VENUES' | 'TRAINERS' | 'GAMES' | 'EVENTS';
@@ -93,6 +106,10 @@ interface TrainerResult {
   imageBase64?: string; imageUrl?: string; rating?: number;
   latitude: number; longitude: number; distance?: number;
 }
+const CATEGORY_LABELS: Record<string, string> = {
+  GYM: 'Gym', CALISTHENICS: 'Calisthenics', DANCING: 'Dancing', YOGA: 'Yoga',
+  CROSSFIT: 'CrossFit', MARTIAL_ARTS: 'Martial Arts', PILATES: 'Pilates', OTHER: 'Training',
+};
 interface EventResult {
   id: string; name: string; sport: string;
   futsalName: string; startDate?: string;
@@ -165,7 +182,7 @@ const PIE_ITEM_R = 83;
 
 const CATS: { id: Category; label: string; Icon: LucideIcon; color: string; startDeg: number; endDeg: number; midDeg: number }[] = [
   { id: 'VENUES',   label: 'Venues',   Icon: Landmark, color: '#2977C2', startDeg: -86, endDeg: -4,  midDeg: -45  },
-  { id: 'TRAINERS', label: 'Trainers', Icon: Dumbbell, color: '#EA580C', startDeg: 4,   endDeg: 86,  midDeg: 45   },
+  { id: 'TRAINERS', label: 'Trainers', Icon: Dumbbell, color: Colors.trainer, startDeg: 4,   endDeg: 86,  midDeg: 45   },
   { id: 'GAMES',    label: 'Games',    Icon: Goal,     color: '#059669', startDeg: 94,  endDeg: 176, midDeg: 135  },
   { id: 'EVENTS',   label: 'Events',   Icon: Trophy,   color: '#7C3AED', startDeg: 184, endDeg: 266, midDeg: 225  },
 ];
@@ -476,14 +493,30 @@ function CalendarModal({
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
+const VALID_CATEGORIES: Category[] = ['VENUES', 'TRAINERS', 'GAMES', 'EVENTS'];
+
 export default function ExploreScreen() {
+  const navBarHeight = useBottomNavBarHeight();
   const router = useRouter();
   const { active: isPro } = useSubscription();
+  // Lets other screens deep-link straight into a category, e.g.
+  // router.replace('/explore?category=TRAINERS') from the trainer booking flow.
+  const params = useLocalSearchParams<{ category?: string }>();
 
   // Navigation
   const [step, setStep] = useState<ExploreStep>('SEARCH');
-  const [category, setCategory] = useState<Category>('VENUES');
+  const [category, setCategory] = useState<Category>(() => {
+    const requested = params.category?.toUpperCase();
+    return (VALID_CATEGORIES as string[]).includes(requested ?? '') ? (requested as Category) : 'VENUES';
+  });
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
+
+  const [unreadGeneral, setUnreadGeneral] = useState(0);
+  useFocusEffect(
+    useCallback(() => {
+      notificationApi.getUnreadCount('GENERAL').then(setUnreadGeneral).catch(() => {});
+    }, [])
+  );
 
   // Filters
   const [searchText, setSearchText] = useState('');
@@ -503,6 +536,7 @@ export default function ExploreScreen() {
   const [results, setResults] = useState<AnyResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
 
@@ -556,8 +590,8 @@ export default function ExploreScreen() {
   // and "scrolled to the bottom" (page N, append) — the only difference is
   // whether the mapped page of results replaces or extends the current list.
   const fetchResults = useCallback(
-    async (cat: Category, targetPage: number = 0, append: boolean = false) => {
-      if (append) setLoadingMore(true); else setLoading(true);
+    async (cat: Category, targetPage: number = 0, append: boolean = false, silent: boolean = false) => {
+      if (append) setLoadingMore(true); else if (!silent) setLoading(true);
       try {
         const filterDate = getFilterDate();
         const q = searchText.trim() || undefined;
@@ -577,26 +611,28 @@ export default function ExploreScreen() {
             location: v.location ?? v.locationName ?? '',
             pricePerSlot: v.pricePerSlot != null ? Number(v.pricePerSlot) : null,
             imageBase64: v.imageBase64, imageUrl: v.imageUrl,
-            latitude: v.latitude ?? 51.5074, longitude: v.longitude ?? -0.1278,
+            latitude: v.latitude ?? DEFAULT_LAT, longitude: v.longitude ?? DEFAULT_LNG,
             distance: mapDist(v.latitude, v.longitude),
           }));
           setResults((prev) => (append ? [...prev, ...mapped] : mapped));
 
         } else if (cat === 'TRAINERS') {
-          const { content, hasMore: m } = await futsalApi.filterVenues({
-            query: q, lat: lat2, lng: lng2, radiusKm, sport: 'TRAINER_GYM', ...pageParams,
+          const { content, hasMore: m } = await trainerApi.filterTrainers({
+            query: q, lat: lat2, lng: lng2, radiusKm, ...pageParams,
           });
           more = m;
-          const mapped = content.map((v: any): TrainerResult => ({
-            id: String(v.id ?? v._id),
-            name: v.name ?? 'Trainer',
-            location: v.location ?? v.locationName ?? '',
-            specialty: v.specialty ?? v.description ?? v.sportType,
-            pricePerSession: v.pricePerSlot != null ? Number(v.pricePerSlot) : null,
-            imageBase64: v.imageBase64, imageUrl: v.imageUrl,
-            rating: v.rating,
-            latitude: v.latitude ?? 51.5074, longitude: v.longitude ?? -0.1278,
-            distance: mapDist(v.latitude, v.longitude),
+          const mapped = content.map((t: any): TrainerResult => ({
+            id: String(t.id),
+            name: t.trainerDisplayName ?? 'Trainer',
+            location: t.location ?? '',
+            specialty: Array.isArray(t.categories) && t.categories.length
+              ? t.categories.map((c: string) => CATEGORY_LABELS[c] ?? c).join(' · ')
+              : undefined,
+            pricePerSession: t.hourlyRate != null ? Number(t.hourlyRate) : null,
+            imageUrl: resolveMediaUrl(t.profileImageUrl),
+            rating: t.rating,
+            latitude: t.latitude ?? DEFAULT_LAT, longitude: t.longitude ?? DEFAULT_LNG,
+            distance: mapDist(t.latitude, t.longitude),
           }));
           setResults((prev) => (append ? [...prev, ...mapped] : mapped));
 
@@ -623,7 +659,7 @@ export default function ExploreScreen() {
             maxSpots: b.maxSpots ?? 0, spotsLeft: b.spotsLeft ?? 0,
             totalPrice: b.totalPrice != null ? Number(b.totalPrice) : null,
             pricePerPlayer: b.pricePerPlayer != null ? Number(b.pricePerPlayer) : null,
-            latitude: b.latitude ?? 51.5074, longitude: b.longitude ?? -0.1278,
+            latitude: b.latitude ?? DEFAULT_LAT, longitude: b.longitude ?? DEFAULT_LNG,
             distance: mapDist(b.latitude, b.longitude),
           }));
           setResults((prev) => (append ? [...prev, ...mapped] : mapped));
@@ -643,7 +679,7 @@ export default function ExploreScreen() {
             teamCount: t.teamCount ?? (t.teams?.length ?? 0),
             maxTeams: t.maxTeams,
             status: t.status,
-            latitude: t.latitude ?? 51.5074, longitude: t.longitude ?? -0.1278,
+            latitude: t.latitude ?? DEFAULT_LAT, longitude: t.longitude ?? DEFAULT_LNG,
             distance: mapDist(t.latitude, t.longitude),
           }));
           setResults((prev) => (append ? [...prev, ...mapped] : mapped));
@@ -656,7 +692,7 @@ export default function ExploreScreen() {
         if (!append) setResults([]);
         setHasMore(false);
       } finally {
-        if (append) setLoadingMore(false); else setLoading(false);
+        if (append) setLoadingMore(false); else if (!silent) setLoading(false);
       }
     },
     [searchText, sportFilter, dateQuick, customDate, radiusKm, freeOnly, userLat, userLng, mapDist]
@@ -677,9 +713,18 @@ export default function ExploreScreen() {
     fetchResults(category, page + 1, true);
   };
 
+  const onRefreshResults = async () => {
+    setRefreshing(true);
+    try {
+      await fetchResults(category, 0, false, true);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   // ─── Map region for radius preview ────────────────────────────────────────
-  const lat = userLat ?? 51.5074;
-  const lng = userLng ?? -0.1278;
+  const lat = userLat ?? DEFAULT_LAT;
+  const lng = userLng ?? DEFAULT_LNG;
   const radiusDeg = radiusKm / 111;
   const radiusMapRegion = {
     latitude: lat,
@@ -842,9 +887,9 @@ export default function ExploreScreen() {
         {imageUri ? (
           <Image source={{ uri: imageUri }} style={styles.cardImage} resizeMode="cover" />
         ) : (
-          <LinearGradient colors={['#EA580C40', '#C2410C25']} style={[styles.cardImage, styles.cardImagePlaceholder]}>
-            <Dumbbell color="#EA580C" size={32} strokeWidth={1.5} />
-            <Text style={[styles.cardImagePlaceholderText, { color: '#EA580C' }]}>{trainer.name}</Text>
+          <LinearGradient colors={[`${Colors.trainer}40`, `${Colors.primaryDark}25`]} style={[styles.cardImage, styles.cardImagePlaceholder]}>
+            <Dumbbell color={Colors.trainer} size={32} strokeWidth={1.5} />
+            <Text style={[styles.cardImagePlaceholderText, { color: Colors.trainer }]}>{trainer.name}</Text>
           </LinearGradient>
         )}
         <View style={styles.cardBody}>
@@ -867,11 +912,11 @@ export default function ExploreScreen() {
                 <Text style={styles.metaText}>{trainer.rating.toFixed(1)}</Text>
               </View>
             )}
-            <Text style={[styles.priceLabel, { color: '#EA580C' }]}>{priceLabel}</Text>
+            <Text style={[styles.priceLabel, { color: Colors.trainer }]}>{priceLabel}</Text>
           </View>
-          <TouchableOpacity style={styles.cardCta} activeOpacity={0.88} onPress={() => router.push('/explore' as any)}>
-            <LinearGradient colors={['#EA580C', '#C2410C']} style={styles.cardCtaGrad}>
-              <Text style={styles.cardCtaText}>Book Session</Text>
+          <TouchableOpacity style={styles.cardCta} activeOpacity={0.88} onPress={() => router.push(`/trainer/${trainer.id}` as any)}>
+            <LinearGradient colors={[Colors.trainer, Colors.primaryDark]} style={styles.cardCtaGrad}>
+              <Text style={styles.cardCtaText}>View Trainer</Text>
               <ChevronRight color={Colors.white} size={14} strokeWidth={2.5} />
             </LinearGradient>
           </TouchableOpacity>
@@ -952,12 +997,24 @@ export default function ExploreScreen() {
   const renderSearchStep = () => (
     <ScrollView
       style={{ flex: 1 }}
-      contentContainerStyle={styles.searchScroll}
+      contentContainerStyle={[styles.searchScroll, { paddingBottom: navBarHeight + 28 }]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
       {/* Hero */}
       <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.hero}>
+        <TouchableOpacity
+          style={styles.exploreBell}
+          onPress={() => router.push('/notifications?category=GENERAL' as any)}
+          hitSlop={8}
+        >
+          <Bell color={Colors.white} size={19} strokeWidth={2} />
+          {unreadGeneral > 0 && (
+            <View style={styles.exploreBellBadge}>
+              <Text style={styles.exploreBellBadgeText}>{unreadGeneral > 9 ? '9+' : unreadGeneral}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
         <View style={styles.heroBrandRow}>
           <Image source={require('../../assets/logo.jpeg')} style={styles.heroLogo} resizeMode="contain" />
           {isPro && (
@@ -1269,19 +1326,22 @@ export default function ExploreScreen() {
 
       {loading ? (
         <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>
-            Finding {CATS.find(c => c.id === category)?.label ?? ''} near you…
-          </Text>
+          <LoadingScreen
+            inline
+            message={`Finding ${CATS.find(c => c.id === category)?.label ?? ''} near you…`}
+          />
         </View>
       ) : (
+        <View style={styles.refreshableArea}>
+        <PaasxoRefreshLogo refreshing={refreshing} />
         <FlatList
           style={{ flex: 1 }}
           data={results}
           keyExtractor={(item: any) => item.id}
           renderItem={renderItem}
-          contentContainerStyle={styles.resultsList}
+          contentContainerStyle={[styles.resultsList, { paddingBottom: navBarHeight + 18 }]}
           showsVerticalScrollIndicator={false}
+          refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefreshResults} />}
           onEndReached={loadMoreResults}
           onEndReachedThreshold={0.4}
           ListEmptyComponent={
@@ -1309,6 +1369,7 @@ export default function ExploreScreen() {
             ) : null
           }
         />
+        </View>
       )}
     </View>
   );
@@ -1415,16 +1476,21 @@ export default function ExploreScreen() {
                 activeOpacity={0.88}
                 onPress={() => {
                   closeSheet();
-                  if ('name' in selectedItem) {
+                  if ('pricePerSession' in selectedItem) {
+                    router.push(`/trainer/${selectedItem.id}` as any);
+                  } else if ('name' in selectedItem) {
                     router.push('/create-match' as any);
                   } else {
                     router.push(`/match/${selectedItem.id}` as any);
                   }
                 }}
               >
-                <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.sheetCtaGrad}>
+                <LinearGradient
+                  colors={'pricePerSession' in selectedItem ? [Colors.trainer, Colors.primaryDark] : [Colors.primary, Colors.primaryDark]}
+                  style={styles.sheetCtaGrad}
+                >
                   <Text style={styles.sheetCtaText}>
-                    {'name' in selectedItem ? 'Book Now' : 'View Game'}
+                    {'pricePerSession' in selectedItem ? 'View Trainer' : 'name' in selectedItem ? 'Book Now' : 'View Game'}
                   </Text>
                   <ChevronRight color={Colors.white} size={16} strokeWidth={2.5} />
                 </LinearGradient>
@@ -1452,6 +1518,16 @@ const styles = StyleSheet.create({
 
   // ── Hero
   hero: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 28, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
+  exploreBell: {
+    position: 'absolute', top: 20, right: 20, zIndex: 2,
+    width: 38, height: 38, borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
+  },
+  exploreBellBadge: {
+    position: 'absolute', top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8,
+    backgroundColor: Colors.error, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
+  },
+  exploreBellBadgeText: { fontSize: 9, fontWeight: '800', color: Colors.white },
   heroBrandRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 14 },
   heroLogo: { width: 38, height: 38, borderRadius: 10 },
   proBadge: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: Colors.warning, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2 },
@@ -1556,6 +1632,7 @@ const styles = StyleSheet.create({
 
   // ── Loading / empty
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  refreshableArea: { flex: 1, position: 'relative' },
   loadingText: { fontSize: 14, color: Colors.textSecondary },
   resultsList: { padding: 16, paddingBottom: 100, gap: 14 },
   loadMoreFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 20 },
@@ -1663,10 +1740,10 @@ const styles = StyleSheet.create({
 
   // ── Trainer card extras
   trainerBadge: {
-    alignSelf: 'flex-start', backgroundColor: '#EA580C22',
+    alignSelf: 'flex-start', backgroundColor: `${Colors.trainer}22`,
     borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, marginBottom: 4,
   },
-  trainerBadgeText: { fontSize: 9, fontWeight: '900', color: '#EA580C', letterSpacing: 0.8 },
+  trainerBadgeText: { fontSize: 9, fontWeight: '900', color: Colors.trainer, letterSpacing: 0.8 },
 
   // ── Event card extras
   eventCardHeader: {

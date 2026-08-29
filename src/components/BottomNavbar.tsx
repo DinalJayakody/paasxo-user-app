@@ -10,10 +10,27 @@ import {
   Easing,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Home as HomeIcon, Search, Plus, Settings, Users, Trophy, Swords, X, Sparkles, Camera, Video } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
+
+// Content-only height (icons + labels), excluding the safe-area clearance
+// added below the bar. Matches the original fixed-height design exactly on
+// any device that reports a 0 bottom inset, so nothing shifts on devices
+// where this was never an issue.
+const NAV_CONTENT_HEIGHT = Platform.OS === 'ios' ? 66 : 70;
+const NAV_BASE_BOTTOM_PADDING = Platform.OS === 'ios' ? 16 : 12;
+
+/** Total rendered height of <BottomNavbar/> on this device, incl. the bottom
+ *  safe-area inset (Android system nav bar / iOS home indicator). Screens
+ *  that render the bar should size their scrollable content's bottom padding
+ *  off this so nothing ends up hidden behind it. */
+export function useBottomNavBarHeight() {
+  const insets = useSafeAreaInsets();
+  return NAV_CONTENT_HEIGHT + NAV_BASE_BOTTOM_PADDING + insets.bottom;
+}
 
 const NAV_ITEMS = [
   {
@@ -52,6 +69,7 @@ interface BottomNavbarProps {
 
 export function BottomNavbar({ activeTab, showCreateButton = false }: BottomNavbarProps) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [createMenuVisible, setCreateMenuVisible] = useState(false);
 
   const scaleAnim = useRef(new Animated.Value(0)).current;
@@ -237,7 +255,15 @@ export function BottomNavbar({ activeTab, showCreateButton = false }: BottomNavb
   const activeMenuOptions = isExploreTab ? matchMenuOptions : postMenuOptions;
 
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        {
+          height: NAV_CONTENT_HEIGHT + NAV_BASE_BOTTOM_PADDING + insets.bottom,
+          paddingBottom: NAV_BASE_BOTTOM_PADDING + insets.bottom,
+        },
+      ]}
+    >
       {NAV_ITEMS.slice(0, 2).map(({ id, label, Icon, route }) => {
         const active = activeTab === id;
         const color = active ? Colors.primary : Colors.neutral400;
@@ -288,6 +314,7 @@ export function BottomNavbar({ activeTab, showCreateButton = false }: BottomNavb
               <Animated.View
                 style={[
                   styles.sheetCard,
+                  { paddingBottom: (Platform.OS === 'ios' ? 36 : 24) + insets.bottom },
                   {
                     opacity: opacityAnim,
                     transform: [

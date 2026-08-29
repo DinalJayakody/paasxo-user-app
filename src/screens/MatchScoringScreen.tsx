@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  ActivityIndicator,
   Animated,
   ScrollView,
   Modal,
@@ -40,6 +39,7 @@ import { tournamentApi } from '../api/tournamentApi';
 import { tournamentStorage } from '../utils/tournamentStorage';
 import { buildTeamUI, buildMatchUI } from '../utils/parseTournament';
 import { TournamentMatchUI, TournamentTeamUI } from '../types/api';
+import { LoadingScreen } from '../components/LoadingScreen';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -711,12 +711,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
   // ─── Main render ──────────────────────────────────────────────────────────
 
   if (loading || !match) {
-    return (
-      <SafeAreaView style={styles.loadingScreen} edges={['top']}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Loading match...</Text>
-      </SafeAreaView>
-    );
+    return <LoadingScreen message="Loading match…" />;
   }
 
   return (

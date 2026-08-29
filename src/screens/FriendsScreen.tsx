@@ -24,7 +24,10 @@ import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../styles/colors';
-import { BottomNavbar } from '../components/BottomNavbar';
+import { PaasxoLogoLoader } from '../components/PaasxoLogoLoader';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
 import { socialMediaApi } from '../api/socialMediaApi';
 import { userApi } from '../api/userApi';
 import { useAuth } from '../context/AuthContext';
@@ -162,6 +165,7 @@ const cardKey = (u: UserCard) => u.firebaseUid;
 // ─── Main screen ─────────────────────────────────────────────
 
 export default function FriendsScreen() {
+  const navBarHeight = useBottomNavBarHeight();
   const router = useRouter();
   const { user } = useAuth();
   const myUid = user?.firebaseUid ?? 'me';
@@ -447,7 +451,7 @@ export default function FriendsScreen() {
     if (list.loading && list.data.length === 0) {
       return (
         <View style={styles.loadingWrap}>
-          <ActivityIndicator color={Colors.primary} />
+          <PaasxoLogoLoader size={44} elevated={false} />
         </View>
       );
     }
@@ -455,30 +459,34 @@ export default function FriendsScreen() {
       return renderEmptyState(emptyIllustration, emptyTitle, emptySub);
     }
     return (
-      <FlatList
-        data={list.data}
-        keyExtractor={cardKey}
-        renderItem={({ item }) => renderRow(item)}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        onEndReachedThreshold={0.5}
-        onEndReached={() => {
-          if (!list.momentumRef.current) {
-            list.momentumRef.current = true;
-            list.loadMore();
+      <View style={styles.refreshableArea}>
+        <PaasxoRefreshLogo refreshing={list.loading} />
+        <FlatList
+          data={list.data}
+          keyExtractor={cardKey}
+          renderItem={({ item }) => renderRow(item)}
+          contentContainerStyle={[styles.listContent, { paddingBottom: navBarHeight + 38 }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<PaasxoRefreshControl refreshing={list.loading} onRefresh={list.reload} />}
+          onEndReachedThreshold={0.5}
+          onEndReached={() => {
+            if (!list.momentumRef.current) {
+              list.momentumRef.current = true;
+              list.loadMore();
+            }
+          }}
+          onMomentumScrollBegin={() => {
+            list.momentumRef.current = false;
+          }}
+          ListFooterComponent={
+            list.loadingMore ? (
+              <View style={styles.footerLoading}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+              </View>
+            ) : null
           }
-        }}
-        onMomentumScrollBegin={() => {
-          list.momentumRef.current = false;
-        }}
-        ListFooterComponent={
-          list.loadingMore ? (
-            <View style={styles.footerLoading}>
-              <ActivityIndicator size="small" color={Colors.primary} />
-            </View>
-          ) : null
-        }
-      />
+        />
+      </View>
     );
   };
 
@@ -658,6 +666,7 @@ const styles = StyleSheet.create({
   // Lists
   listContent: { paddingHorizontal: 18, paddingBottom: 120, gap: 12, paddingTop: 4 },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 40 },
+  refreshableArea: { flex: 1, position: 'relative' },
   footerLoading: { paddingVertical: 16, alignItems: 'center' },
 
   // User card

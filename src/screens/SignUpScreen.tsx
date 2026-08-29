@@ -34,6 +34,7 @@ import { RegisterPayload } from '../types/api';
 import { SPORTS } from '../constants/sports';
 import { GOOGLE_CLIENT_IDS, GOOGLE_CONFIGURED } from '../config/googleAuth';
 import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
+import { APPLE_SIGN_IN_AVAILABLE, performAppleSignIn } from '../utils/appleSignIn';
 
 // Required by expo-auth-session on web to close the auth popup and return
 // the result to the app. Harmless to call from multiple screens/modules.
@@ -83,9 +84,10 @@ export default function SignUpScreen() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [socialError, setSocialError] = useState<string | undefined>();
+  const [appleLoading, setAppleLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const { signInWithGoogle } = useAuth();
+  const { signInWithGoogle, signInWithApple } = useAuth();
 
   // ─── expo-auth-session Google hook (native only) ──────────────────────────
   // On web we use Firebase signInWithPopup instead (see handleGoogleLogin).
@@ -238,6 +240,29 @@ await auth.signUp(payload);
     }
   };
 
+  // ─── Apple button handler (iOS only) ──────────────────────────────────────
+  // Same account-creation semantics as Google: the backend creates a new
+  // profileCompleted=false account for a first-time Apple sign-in.
+  const handleAppleLogin = async () => {
+    setSocialError(undefined);
+    setAppleLoading(true);
+    try {
+      const firebaseIdToken = await performAppleSignIn();
+      await signInWithApple(firebaseIdToken);
+      // Same as the Google branch above: new Apple accounts are marked
+      // profileCompleted=false, so AuthProvider shows CompleteProfileModal
+      // automatically - safe to head straight to /home either way.
+      router.replace('/home');
+    } catch (err: any) {
+      // User cancelling the native sheet is not an error worth surfacing.
+      if (err?.code !== '1001') {
+        setSocialError(err?.message ?? 'Apple sign-in failed. Please try again.');
+      }
+    } finally {
+      setAppleLoading(false);
+    }
+  };
+
   /* Avatar picker guide (Expo)
      - Install: `expo install expo-image-picker`
      - Request permission then call `launchImageLibraryAsync`.
@@ -285,8 +310,6 @@ await auth.signUp(payload);
 
           {/* Colorful gradient hero band */}
           <LinearGradient colors={[Colors.primaryLight, Colors.background]} style={styles.heroGradient}>
-            <View style={styles.heroDecorCircleA} />
-            <View style={styles.heroDecorCircleB} />
             <Animated.View style={[styles.heroBadge, { transform: [{ scale: badgePulse }] }]}>
               <Trophy color={Colors.primary} size={30} strokeWidth={2} />
             </Animated.View>
@@ -321,17 +344,22 @@ await auth.signUp(payload);
                 <Text style={styles.socialError}>{socialError}</Text>
               ) : null}
 
-              <Button
-                title="Continue with Apple"
-                onPress={async () => {
-                  // Apple Sign-In (iOS)
-                  // Use `expo-apple-authentication` (Expo) or native Apple Auth in bare RN.
-                  await auth.completeSocialSignIn('apple', '');
-                }}
-                variant="secondary"
-                style={styles.socialButtonSecond}
-                icon={<Image source={{ uri: 'https://img.icons8.com/ios-filled/50/000000/mac-os.png' }} style={styles.socialIcon} />}
-              />
+              {APPLE_SIGN_IN_AVAILABLE && (
+                <Button
+                  title={appleLoading ? 'Signing in…' : 'Continue with Apple'}
+                  onPress={handleAppleLogin}
+                  variant="secondary"
+                  style={styles.socialButtonSecond}
+                  disabled={appleLoading}
+                  icon={
+                    appleLoading ? (
+                      <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 8 }} />
+                    ) : (
+                      <Image source={{ uri: 'https://img.icons8.com/ios-filled/50/000000/mac-os.png' }} style={styles.socialIcon} />
+                    )
+                  }
+                />
+              )}
             </View>
 
           </View>
@@ -554,16 +582,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-  },
-  heroDecorCircleA: {
-    position: 'absolute', top: -30, right: -30,
-    width: 110, height: 110, borderRadius: 55,
-    backgroundColor: Colors.primaryAccent + '22',
-  },
-  heroDecorCircleB: {
-    position: 'absolute', bottom: -24, left: -20,
-    width: 90, height: 90, borderRadius: 45,
-    backgroundColor: Colors.warning + '1c',
   },
   heroBadge: {
     width: 64, height: 64, borderRadius: 32,

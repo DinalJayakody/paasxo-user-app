@@ -1,8 +1,8 @@
 import React, { useCallback, useContext, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Image,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
@@ -23,6 +23,7 @@ import {
   ChevronRight,
   Clock,
   MapPin,
+  Navigation,
   UserPlus,
   Users,
   X,
@@ -36,6 +37,7 @@ import { MatchDetails } from '../types/api';
 import { parseMatchDetails } from '../utils/parseMatch';
 import { AuthContext } from '../context/AuthContext';
 import { resolveMediaUrl } from '../utils/mediaUrl';
+import { LoadingScreen } from '../components/LoadingScreen';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,6 +52,20 @@ interface PlayerProfile {
 
 function resolveImageUri(url?: string | null): string | null {
   return resolveMediaUrl(url) ?? null;
+}
+
+// Free Google Maps web deep link (no API key) straight into turn-by-turn
+// directions — same URL scheme used everywhere else a venue location is
+// shown, so tapping any map in the app behaves the same way.
+function openDirections(venue?: { latitude?: number; longitude?: number; name?: string; address?: string; city?: string }) {
+  if (!venue) return;
+  const { latitude, longitude, name, address, city } = venue;
+  const fallback = [address, city, name].filter(Boolean).join(', ');
+  const url =
+    latitude != null && longitude != null
+      ? `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}&travelmode=driving`
+      : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(fallback)}&travelmode=driving`;
+  Linking.openURL(url).catch(() => {});
 }
 
 // ─── Sub-components (identical pattern to MatchDetailsScreen) ─────────────────
@@ -177,6 +193,7 @@ interface JoinMatchScreenProps {
 }
 
 export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useContext(AuthContext);
 
@@ -269,11 +286,7 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
   };
 
   if (loading || !match) {
-    return (
-      <SafeAreaView style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-      </SafeAreaView>
-    );
+    return <LoadingScreen message="Loading match details…" />;
   }
 
   const sym = match.currencySymbol ?? 'LKR ';
@@ -316,7 +329,7 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
 
   return (
     <SafeAreaView style={styles.flex1} edges={['top']}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 + insets.bottom }}>
 
         {/* Hero */}
         <View style={styles.heroContainer}>
@@ -374,9 +387,15 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
           {mapRegion && (
             <View style={styles.mapSection}>
               <Text style={styles.sectionTitle}>Location</Text>
-              <View style={styles.mapContainer}>
+              <Pressable
+                style={styles.mapContainer}
+                onPress={() => openDirections(match.venue)}
+                accessibilityRole="button"
+                accessibilityLabel="Open directions in Google Maps"
+              >
                 <MapView
                   style={styles.map}
+                  pointerEvents="none"
                   initialRegion={mapRegion}
                   showsUserLocation={true}
                   showsMyLocationButton={false}
@@ -389,7 +408,11 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
                     <Marker coordinate={venueLatLng} title={match.venue?.name ?? 'Venue'} />
                   )}
                 </MapView>
-              </View>
+                <View style={styles.mapNavBadge}>
+                  <Navigation color={Colors.white} size={13} strokeWidth={2.4} />
+                  <Text style={styles.mapNavBadgeText}>Tap to navigate</Text>
+                </View>
+              </Pressable>
             </View>
           )}
 
@@ -464,7 +487,7 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
       </ScrollView>
 
       {/* Bottom bar */}
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, { paddingBottom: (Platform.OS === 'ios' ? 28 : 16) + insets.bottom }]}>
         {perPlayer != null && !alreadyJoined && !isFull && (
           <View style={styles.bottomPriceRow}>
             <Text style={styles.bottomPriceLabel}>Your cost</Text>
@@ -542,6 +565,11 @@ const styles = StyleSheet.create({
   mapSection: { marginBottom: 20 },
   mapContainer: { borderRadius: 14, overflow: 'hidden', height: 190 },
   map: { flex: 1 },
+  mapNavBadge: {
+    position: 'absolute', right: 10, bottom: 10, flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(20,20,20,0.72)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6,
+  },
+  mapNavBadgeText: { color: Colors.white, fontSize: 11, fontWeight: '700' },
 
   pricingCard: { backgroundColor: Colors.white, borderRadius: 14, padding: 16, marginBottom: 20 },
   priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },

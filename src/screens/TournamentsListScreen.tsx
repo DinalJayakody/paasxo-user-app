@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -9,6 +9,8 @@ import { tournamentApi } from '../api/tournamentApi';
 import { tournamentStorage, TrackedTournament } from '../utils/tournamentStorage';
 import { buildMatchUI, deriveTournamentLifecycle } from '../utils/parseTournament';
 import { TournamentLifecycle } from '../types/api';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 
 interface ListItem extends TrackedTournament {
   date?: string;
@@ -71,18 +73,19 @@ export default function TournamentsListScreen() {
         <View style={{ width: 22 }} />
       </View>
 
+      <View style={styles.refreshableArea}>
+      <PaasxoRefreshLogo refreshing={refreshing} />
       <ScrollView
         style={styles.flex1}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl
+          <PaasxoRefreshControl
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
               load(true);
             }}
-            tintColor={Colors.primary}
           />
         }
       >
@@ -140,12 +143,14 @@ export default function TournamentsListScreen() {
           })
         )}
       </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
+  refreshableArea: { flex: 1, position: 'relative' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

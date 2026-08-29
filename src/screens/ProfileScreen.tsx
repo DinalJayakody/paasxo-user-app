@@ -28,7 +28,7 @@ import {
 } from 'lucide-react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BottomNavbar } from '../components/BottomNavbar';
+import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
 import { Colors } from '../styles/colors';
 import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
@@ -41,6 +41,10 @@ import { PostSummary, ReelSummary } from '../types/api';
 import { reelApi } from '../api/reelApi';
 import { FullScreenImageViewer } from '../components/FullScreenImageViewer';
 import { AvatarActionSheet } from '../components/AvatarActionSheet';
+import { LoadingScreen } from '../components/LoadingScreen';
+import { PaasxoLogoLoader } from '../components/PaasxoLogoLoader';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 
 const SPORT_STATS: Record<string, { icon: any; value: string; label: string; color: string }[]> = {
   CRICKET: [
@@ -124,6 +128,7 @@ const StatCard = ({ icon: Icon, value, label, color, index }: any) => {
 };
 
 export default function ProfileScreen() {
+  const navBarHeight = useBottomNavBarHeight();
   const router = useRouter();
   const { openPostId, openReelId, tab } = useLocalSearchParams<{ openPostId?: string; openReelId?: string; tab?: string }>();
   const { user, loading: authLoading, updateUser } = useAuth();
@@ -176,37 +181,35 @@ export default function ProfileScreen() {
     ]).start();
   }, []);
 
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        setLoading(true);
-        const res = await socialMediaApi.getUserProfile(userId as string);
-        setProfileData(res);
-      } catch {
-        setProfileData({ followersCount: 0, followingCount: 0 });
-      } finally {
-        setLoading(false);
-      }
-    };
-    if (userId) fetchProfile();
-    else if (!authLoading) setLoading(false);
+  const fetchProfile = React.useCallback(async () => {
+    if (!userId) { if (!authLoading) setLoading(false); return; }
+    try {
+      setLoading(true);
+      const res = await socialMediaApi.getUserProfile(userId as string);
+      setProfileData(res);
+    } catch {
+      setProfileData({ followersCount: 0, followingCount: 0 });
+    } finally {
+      setLoading(false);
+    }
   }, [userId, authLoading]);
 
-  useEffect(() => {
-    const fetchPosts = async () => {
-      if (!userId) return;
-      setPostsLoading(true);
-      try {
-        const res = await socialMediaApi.getUserPosts(userId, 0, 30);
-        setUserPosts(res.content);
-      } catch {
-        setUserPosts([]);
-      } finally {
-        setPostsLoading(false);
-      }
-    };
-    fetchPosts();
+  useEffect(() => { fetchProfile(); }, [fetchProfile]);
+
+  const fetchPosts = React.useCallback(async () => {
+    if (!userId) return;
+    setPostsLoading(true);
+    try {
+      const res = await socialMediaApi.getUserPosts(userId, 0, 30);
+      setUserPosts(res.content);
+    } catch {
+      setUserPosts([]);
+    } finally {
+      setPostsLoading(false);
+    }
   }, [userId]);
+
+  useEffect(() => { fetchPosts(); }, [fetchPosts]);
 
   // Deep link from a "liked/commented your post" notification - open that
   // exact post once its data has loaded. Only ever consumed once so closing
@@ -221,31 +224,57 @@ export default function ProfileScreen() {
     }
   }, [openPostId, userPosts]);
 
+  const fetchSaved = React.useCallback(async () => {
+    setSavedLoading(true);
+    try {
+      const res = await socialMediaApi.getSavedPosts();
+      setSavedPosts(res.content);
+    } catch {
+      setSavedPosts([]);
+    } finally {
+      setSavedLoading(false);
+      setSavedLoaded(true);
+    }
+  }, []);
+
   // Saved tab is fetched lazily, the first time it's opened.
   useEffect(() => {
     if (selectedTab !== 'Saved' || savedLoaded) return;
-    setSavedLoading(true);
-    socialMediaApi.getSavedPosts()
-      .then((res) => setSavedPosts(res.content))
-      .catch(() => setSavedPosts([]))
-      .finally(() => {
-        setSavedLoading(false);
-        setSavedLoaded(true);
-      });
-  }, [selectedTab, savedLoaded]);
+    fetchSaved();
+  }, [selectedTab, savedLoaded, fetchSaved]);
+
+  const fetchReels = React.useCallback(async () => {
+    if (!userId) return;
+    setReelsLoading(true);
+    try {
+      const res = await reelApi.getUserReels(userId);
+      setUserReels(res.content);
+    } catch {
+      setUserReels([]);
+    } finally {
+      setReelsLoading(false);
+      setReelsLoaded(true);
+    }
+  }, [userId]);
 
   // Reels tab is fetched lazily, the first time it's opened.
   useEffect(() => {
     if (selectedTab !== 'Reels' || reelsLoaded || !userId) return;
-    setReelsLoading(true);
-    reelApi.getUserReels(userId)
-      .then((res) => setUserReels(res.content))
-      .catch(() => setUserReels([]))
-      .finally(() => {
-        setReelsLoading(false);
-        setReelsLoaded(true);
-      });
-  }, [selectedTab, reelsLoaded, userId]);
+    fetchReels();
+  }, [selectedTab, reelsLoaded, userId, fetchReels]);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const tasks = [fetchProfile(), fetchPosts()];
+      if (selectedTab === 'Saved') tasks.push(fetchSaved());
+      if (selectedTab === 'Reels') tasks.push(fetchReels());
+      await Promise.all(tasks);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchProfile, fetchPosts, fetchSaved, fetchReels, selectedTab]);
 
   const sport = useMemo(() => {
     const s = Array.isArray(user?.sport) ? user?.sport[0] : user?.sport;
@@ -345,12 +374,7 @@ export default function ProfileScreen() {
   const bioText = user?.bio || `Passionate ${sport.toLowerCase()} player striving for excellence in every match. Let's play!`;
 
   if (loading) {
-    return (
-      <SafeAreaView style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Loading profile...</Text>
-      </SafeAreaView>
-    );
+    return <LoadingScreen message="Loading your profile…" />;
   }
 
   // ── Tab content renderers ────────────────────────────────────────────────
@@ -395,7 +419,7 @@ export default function ProfileScreen() {
     if (postsLoading) {
       return (
         <View style={styles.emptyTabContent}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <PaasxoLogoLoader size={44} elevated={false} />
           <Text style={styles.emptyTabSubtitle}>Loading your moments...</Text>
         </View>
       );
@@ -423,7 +447,7 @@ export default function ProfileScreen() {
     if (savedLoading) {
       return (
         <View style={styles.emptyTabContent}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <PaasxoLogoLoader size={44} elevated={false} />
           <Text style={styles.emptyTabSubtitle}>Loading saved posts...</Text>
         </View>
       );
@@ -451,7 +475,7 @@ export default function ProfileScreen() {
     if (reelsLoading) {
       return (
         <View style={styles.emptyTabContent}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <PaasxoLogoLoader size={44} elevated={false} />
           <Text style={styles.emptyTabSubtitle}>Loading your reels...</Text>
         </View>
       );
@@ -482,7 +506,12 @@ export default function ProfileScreen() {
   return (
     <>
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <PaasxoRefreshLogo refreshing={refreshing} />
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: navBarHeight + 38 }]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         {/* Header */}
         <Animated.View style={[styles.profileCardHeader, { opacity: headerFade, transform: [{ translateY: headerSlide }] }]}>
           <AnimatedPressable onPress={() => router.back()} style={styles.topIconButton}>

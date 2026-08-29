@@ -1,0 +1,42 @@
+{
+  // This is a React Native / Expo project. The android/ folder is only a
+  // native build target, not something to edit in a Java/Gradle IDE workflow,
+  // so stop VS Code's Java & Gradle extensions from auto-importing it and
+  // spinning up a Gradle daemon + Java language server on every open.
+  "java.import.gradle.enabled": false,
+  "java.import.maven.enabled": false,
+  "java.configuration.updateBuildConfiguration": "disabled",
+  "gradle.nestedProjects": false,
+
+  // Keep the file watcher and search index off huge/regenerable folders so
+  // opening the workspace and searching stays fast.
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/android/app/build/**": true,
+    "**/android/build/**": true,
+    "**/android/.gradle/**": true,
+    "**/android/.kotlin/**": true,
+    "**/android/app/.cxx/**": true,
+    "**/ios/build/**": true,
+    "**/ios/Pods/**": true,
+    "**/.expo/**": true,
+    "**/dist/**": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/android/app/build": true,
+    "**/android/build": true,
+    "**/android/.gradle": true,
+    "**/ios/build": true,
+    "**/ios/Pods": true,
+    "**/.expo": true,
+    "**/dist": true
+  },
+  "files.exclude": {
+    "**/android/app/build": true,
+    "**/android/.gradle": true,
+    "**/android/.kotlin": true,
+    "**/android/app/.cxx": true,
+    "**/ios/build": true
+  }
+}

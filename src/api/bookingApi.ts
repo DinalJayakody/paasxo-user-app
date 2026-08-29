@@ -109,11 +109,33 @@ export const bookingApi = {
     return extractList(data);
   },
 
-  // POST /bookings/{id}/join — join an existing match as a player
+  // POST /bookings/{id}/join — join an existing match as a player. Only actually adds
+  // anyone for a FREE match — see createJoinOrder, which is what JoinCheckoutScreen
+  // calls for the general (possibly-paid) case.
   joinMatch: async (id: string | number, additionalPlayerIds: string[] = []) => {
     const { data } = await axiosInstance.post(ENDPOINTS.BOOKINGS.JOIN(id), {
       additionalPlayerIds,
     });
     return data;
   },
+
+  // POST /bookings/{id}/join-order — starts a direct (no invitation) join. The server
+  // decides free vs. paid: a free match joins instantly (joined=true), a paid one
+  // returns paymentOrderId for paymentApi.initiateCheckout('MATCH_JOIN', paymentOrderId).
+  createJoinOrder: async (
+    id: string | number,
+    additionalPlayerIds: string[] = []
+  ): Promise<JoinOrderResponse> => {
+    const { data } = await axiosInstance.post(ENDPOINTS.BOOKINGS.JOIN_ORDER(id), {
+      additionalPlayerIds,
+    });
+    return data;
+  },
 };
+
+export interface JoinOrderResponse {
+  joined: boolean;
+  paymentOrderId?: number;
+  amountDue?: number;
+  message: string;
+}
