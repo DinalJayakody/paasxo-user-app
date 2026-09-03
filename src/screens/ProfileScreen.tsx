@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import {
   ArrowLeft,
-  Settings,
+  Menu,
   Activity,
   Target,
   Star,
@@ -27,9 +27,9 @@ import {
   Users,
 } from 'lucide-react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
-import { Colors } from '../styles/colors';
+import { Colors, ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
 import { socialMediaApi } from '../api/socialMediaApi';
@@ -45,7 +45,11 @@ import { LoadingScreen } from '../components/LoadingScreen';
 import { PaasxoLogoLoader } from '../components/PaasxoLogoLoader';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import ScreenGlow from '../components/ScreenGlow';
+import { FollowListModal } from '../components/FollowListModal';
 
+// Module-scope, always light-palette accent colors regardless of theme (see
+// SPORT_MASCOTS in HomeScreen.tsx for the same deliberate choice).
 const SPORT_STATS: Record<string, { icon: any; value: string; label: string; color: string }[]> = {
   CRICKET: [
     { icon: Activity, value: '87', label: 'Matches', color: Colors.cricket },
@@ -79,7 +83,7 @@ const SPORT_STATS: Record<string, { icon: any; value: string; label: string; col
   ],
 };
 
-const PROFILE_TABS = ['Moments', 'Saved', 'Stats', 'Reels', 'Tagged'] as const;
+const PROFILE_TABS = ['Moments', 'Stats', 'Reels', 'Tagged'] as const;
 type ProfileTab = (typeof PROFILE_TABS)[number];
 
 const AnimatedPressable = ({
@@ -104,7 +108,7 @@ const AnimatedPressable = ({
   );
 };
 
-const StatCard = ({ icon: Icon, value, label, color, index }: any) => {
+const StatCard = ({ icon: Icon, value, label, color, index, styles }: any) => {
   const slideAnim = useRef(new Animated.Value(30)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -128,6 +132,8 @@ const StatCard = ({ icon: Icon, value, label, color, index }: any) => {
 };
 
 export default function ProfileScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const navBarHeight = useBottomNavBarHeight();
   const router = useRouter();
   const { openPostId, openReelId, tab } = useLocalSearchParams<{ openPostId?: string; openReelId?: string; tab?: string }>();
@@ -149,10 +155,6 @@ export default function ProfileScreen() {
 
   // Saved tab - lazily loaded the first time it's opened (same pattern as
   // Friends' Suggested tab).
-  const [savedPosts, setSavedPosts] = useState<PostSummary[]>([]);
-  const [savedLoading, setSavedLoading] = useState(false);
-  const [savedLoaded, setSavedLoaded] = useState(false);
-  const [selectedSavedPostId, setSelectedSavedPostId] = useState<string | null>(null);
 
   // Reels tab - lazily loaded the first time it's opened (same pattern as Saved).
   const [userReels, setUserReels] = useState<ReelSummary[]>([]);
@@ -160,6 +162,8 @@ export default function ProfileScreen() {
   const [reelsLoaded, setReelsLoaded] = useState(false);
 
   const userId = user?.firebaseUid;
+
+  const [followModalTab, setFollowModalTab] = useState<'Followers' | 'Following' | null>(null);
 
   // Deep link from a notification requesting a specific starting tab
   // (e.g. "liked your reel" -> Reels tab).
@@ -224,25 +228,6 @@ export default function ProfileScreen() {
     }
   }, [openPostId, userPosts]);
 
-  const fetchSaved = React.useCallback(async () => {
-    setSavedLoading(true);
-    try {
-      const res = await socialMediaApi.getSavedPosts();
-      setSavedPosts(res.content);
-    } catch {
-      setSavedPosts([]);
-    } finally {
-      setSavedLoading(false);
-      setSavedLoaded(true);
-    }
-  }, []);
-
-  // Saved tab is fetched lazily, the first time it's opened.
-  useEffect(() => {
-    if (selectedTab !== 'Saved' || savedLoaded) return;
-    fetchSaved();
-  }, [selectedTab, savedLoaded, fetchSaved]);
-
   const fetchReels = React.useCallback(async () => {
     if (!userId) return;
     setReelsLoading(true);
@@ -268,13 +253,12 @@ export default function ProfileScreen() {
     setRefreshing(true);
     try {
       const tasks = [fetchProfile(), fetchPosts()];
-      if (selectedTab === 'Saved') tasks.push(fetchSaved());
       if (selectedTab === 'Reels') tasks.push(fetchReels());
       await Promise.all(tasks);
     } finally {
       setRefreshing(false);
     }
-  }, [fetchProfile, fetchPosts, fetchSaved, fetchReels, selectedTab]);
+  }, [fetchProfile, fetchPosts, fetchReels, selectedTab]);
 
   const sport = useMemo(() => {
     const s = Array.isArray(user?.sport) ? user?.sport[0] : user?.sport;
@@ -284,7 +268,7 @@ export default function ProfileScreen() {
   const statCards = useMemo(() => SPORT_STATS[sport] || SPORT_STATS['FUTSAL'], [sport]);
 
   const sportEmoji = { CRICKET: '🏏', FUTSAL: '⚽', PICKLEBALL: '🏓' }[sport] || '🏅';
-  const sportColor = { CRICKET: Colors.cricket, FUTSAL: Colors.futsal, PICKLEBALL: Colors.pickleball }[sport] || Colors.primary;
+  const sportColor = { CRICKET: colors.cricket, FUTSAL: colors.futsal, PICKLEBALL: colors.pickleball }[sport] || colors.primary;
 
   const profileImageUri = useMemo(() => {
     // Backend may return the image under several different field names.
@@ -387,7 +371,7 @@ export default function ProfileScreen() {
       </View>
       <View style={styles.statsGrid}>
         {statCards.map((card, index) => (
-          <StatCard key={card.label} {...card} index={index} />
+          <StatCard key={card.label} {...card} index={index} styles={styles} />
         ))}
       </View>
 
@@ -400,8 +384,8 @@ export default function ProfileScreen() {
         ].map((match, i) => (
           <View key={i} style={styles.recentMatchRow}>
             <View style={styles.recentMatchLeft}>
-              <View style={[styles.resultBadge, { backgroundColor: match.result === 'WIN' ? Colors.success + '20' : match.result === 'DRAW' ? Colors.warning + '20' : Colors.error + '20' }]}>
-                <Text style={[styles.resultBadgeText, { color: match.result === 'WIN' ? Colors.success : match.result === 'DRAW' ? Colors.warning : Colors.error }]}>{match.result}</Text>
+              <View style={[styles.resultBadge, { backgroundColor: match.result === 'WIN' ? colors.success + '20' : match.result === 'DRAW' ? colors.warning + '20' : colors.error + '20' }]}>
+                <Text style={[styles.resultBadgeText, { color: match.result === 'WIN' ? colors.success : match.result === 'DRAW' ? colors.warning : colors.error }]}>{match.result}</Text>
               </View>
               <Text style={styles.recentMatchOpponent}>vs {match.opponent}</Text>
             </View>
@@ -443,34 +427,6 @@ export default function ProfileScreen() {
     );
   };
 
-  const renderSavedTab = () => {
-    if (savedLoading) {
-      return (
-        <View style={styles.emptyTabContent}>
-          <PaasxoLogoLoader size={44} elevated={false} />
-          <Text style={styles.emptyTabSubtitle}>Loading saved posts...</Text>
-        </View>
-      );
-    }
-    if (savedPosts.length === 0) {
-      return (
-        <View style={styles.emptyTabContent}>
-          <Text style={styles.emptyTabEmoji}>🔖</Text>
-          <Text style={styles.emptyTabTitle}>No saved posts yet</Text>
-          <Text style={styles.emptyTabSubtitle}>Tap the bookmark icon on a post to save it here.</Text>
-        </View>
-      );
-    }
-    return (
-      <PostGrid
-        posts={savedPosts}
-        selectedPostId={selectedSavedPostId}
-        onSelectPost={(post) => setSelectedSavedPostId(post.id)}
-        onCloseDetail={() => setSelectedSavedPostId(null)}
-      />
-    );
-  };
-
   const renderReelsTab = () => {
     if (reelsLoading) {
       return (
@@ -506,34 +462,33 @@ export default function ProfileScreen() {
   return (
     <>
     <SafeAreaView style={styles.safeArea}>
+      <ScreenGlow />
       <PaasxoRefreshLogo refreshing={refreshing} />
       <ScrollView
         contentContainerStyle={[styles.content, { paddingBottom: navBarHeight + 38 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {/* Header */}
-        <Animated.View style={[styles.profileCardHeader, { opacity: headerFade, transform: [{ translateY: headerSlide }] }]}>
-          <AnimatedPressable onPress={() => router.back()} style={styles.topIconButton}>
-            <ArrowLeft color={Colors.neutral900} size={18} strokeWidth={2} />
-          </AnimatedPressable>
-          <AnimatedPressable onPress={() => router.push('/settings')} style={styles.topIconButton}>
-            <Settings color={Colors.neutral900} size={18} strokeWidth={2} />
-          </AnimatedPressable>
-        </Animated.View>
+        {/* Hero section — profile picture + info sit directly on the page
+            background (no separate tinted card), with the nav icons anchored
+            to its own top edge, right next to the avatar. */}
+        <Animated.View style={[styles.heroBanner, { opacity: headerFade, transform: [{ translateY: headerSlide }] }]}>
+          <View style={styles.heroTopRow}>
+            <AnimatedPressable onPress={() => router.back()} style={styles.topIconButton}>
+              <ArrowLeft color={colors.neutral900} size={18} strokeWidth={2} />
+            </AnimatedPressable>
+            <AnimatedPressable onPress={() => router.push('/settings')} style={styles.topIconButton}>
+              <Menu color={colors.neutral900} size={18} strokeWidth={2} />
+            </AnimatedPressable>
+          </View>
 
-        {/* Hero gradient banner */}
-        <LinearGradient
-          colors={[sportColor + '28', Colors.background]}
-          style={styles.heroBanner}
-        >
           {/* Avatar */}
           <Pressable onPress={() => setAvatarSheetVisible(true)} disabled={avatarUploading}>
             <Animated.View style={[styles.avatarContainer, { transform: [{ scale: avatarScale }] }]}>
               <Image source={{ uri: profileImageUri }} style={styles.avatar} />
               {avatarUploading && (
                 <View style={styles.avatarUploadingOverlay}>
-                  <ActivityIndicator color={Colors.white} size="small" />
+                  <ActivityIndicator color={colors.white} size="small" />
                 </View>
               )}
               <View style={[styles.sportBadgeOnAvatar, { backgroundColor: sportColor }]}>
@@ -541,7 +496,7 @@ export default function ProfileScreen() {
               </View>
               {isPro && (
                 <View style={styles.proAvatarBadge}>
-                  <Zap color={Colors.white} size={12} strokeWidth={2.5} fill={Colors.white} />
+                  <Zap color={colors.white} size={12} strokeWidth={2.5} fill={colors.white} />
                 </View>
               )}
             </Animated.View>
@@ -554,14 +509,14 @@ export default function ProfileScreen() {
           {/* Social stats — accurate from API + loaded posts */}
           <View style={styles.socialStatsRow}>
             {[
-              { value: postsLoading ? '…' : String(userPosts.length), label: 'POSTS' },
-              { value: String(profileData?.followersCount ?? 0), label: 'FOLLOWERS' },
-              { value: String(profileData?.followingCount ?? 0), label: 'FOLLOWING' },
+              { value: postsLoading ? '…' : String(userPosts.length), label: 'POSTS', onPress: undefined },
+              { value: String(profileData?.followersCount ?? 0), label: 'FOLLOWERS', onPress: () => setFollowModalTab('Followers') },
+              { value: String(profileData?.followingCount ?? 0), label: 'FOLLOWING', onPress: () => setFollowModalTab('Following') },
             ].map((s, i) => (
-              <View key={i} style={styles.socialStatItem}>
+              <Pressable key={i} style={styles.socialStatItem} onPress={s.onPress} disabled={!s.onPress}>
                 <Text style={styles.socialStatValue}>{s.value}</Text>
                 <Text style={styles.socialStatLabel}>{s.label}</Text>
-              </View>
+              </Pressable>
             ))}
           </View>
 
@@ -570,11 +525,11 @@ export default function ProfileScreen() {
               <Text style={styles.editButtonText}>Edit Profile</Text>
             </AnimatedPressable>
             <AnimatedPressable onPress={() => {}} style={[styles.shareButton, styles.buttonShadow]}>
-              <Share2 color={Colors.white} size={16} strokeWidth={2} />
+              <Share2 color={colors.white} size={16} strokeWidth={2} />
               <Text style={styles.shareButtonText}>Share</Text>
             </AnimatedPressable>
           </View>
-        </LinearGradient>
+        </Animated.View>
 
         {/* Tabs */}
         <View style={styles.tabRow}>
@@ -591,7 +546,6 @@ export default function ProfileScreen() {
 
         {/* Tab content */}
         {selectedTab === 'Moments' && renderMomentsTab()}
-        {selectedTab === 'Saved' && renderSavedTab()}
         {selectedTab === 'Stats' && renderStatsTab()}
         {selectedTab === 'Reels' && renderReelsTab()}
         {selectedTab === 'Tagged' && renderEmptyTab('Tags')}
@@ -614,39 +568,49 @@ export default function ProfileScreen() {
       imageUri={profileImageUri}
       onClose={() => setAvatarViewerVisible(false)}
     />
+    {!!userId && (
+      <FollowListModal
+        visible={followModalTab !== null}
+        onClose={() => setFollowModalTab(null)}
+        uid={userId}
+        initialTab={followModalTab ?? 'Followers'}
+      />
+    )}
     </>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: Colors.background },
-  loadingScreen: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background, gap: 12 },
-  loadingText: { fontSize: 14, color: Colors.textSecondary, fontWeight: '500' },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  loadingScreen: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background, gap: 12 },
+  loadingText: { fontSize: 14, color: colors.textSecondary, fontWeight: '500' },
   content: { paddingBottom: 120 },
 
-  profileCardHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8,
-  },
   topIconButton: {
-    width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.neutral200,
-    shadowColor: Colors.neutral900, shadowOpacity: 0.06, shadowRadius: 8,
+    width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.neutral200,
+    shadowColor: colors.neutral900, shadowOpacity: 0.06, shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 }, elevation: 4,
   },
 
+  // No card treatment (background/border/gradient) — the profile picture and
+  // info sit directly on the page's ambient ScreenGlow backdrop, not an
+  // opaque fill of their own (that would block the glow behind this section).
   heroBanner: {
-    marginHorizontal: 16, borderRadius: 24, paddingTop: 20, paddingBottom: 24,
+    paddingTop: 8, paddingBottom: 24,
     paddingHorizontal: 20, alignItems: 'center', marginBottom: 4,
-    borderWidth: 1, borderColor: Colors.neutral200 + '60',
+  },
+  heroTopRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    width: '100%', marginBottom: 12,
   },
 
   avatarContainer: {
     width: 120, height: 120, borderRadius: 60,
-    borderWidth: 4, borderColor: Colors.white, backgroundColor: Colors.neutral100,
+    borderWidth: 4, borderColor: colors.white, backgroundColor: colors.neutral100,
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 14, overflow: 'visible',
-    shadowColor: Colors.primary, shadowOpacity: 0.25, shadowRadius: 16,
+    shadowColor: colors.primary, shadowOpacity: 0.25, shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 }, elevation: 8,
   },
   avatar: { width: 112, height: 112, borderRadius: 56 },
@@ -659,46 +623,46 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: -2, right: -2,
     width: 30, height: 30, borderRadius: 15,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: Colors.white,
+    borderWidth: 2, borderColor: colors.white,
   },
   sportBadgeEmoji: { fontSize: 14 },
 
-  profileName: { fontSize: 24, fontWeight: '900', color: Colors.neutral900, marginBottom: 6, textAlign: 'center' },
-  profileRole: { fontSize: 11, fontWeight: '800', color: Colors.neutral500, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12, textAlign: 'center' },
-  profileBio: { fontSize: 13, lineHeight: 20, textAlign: 'center', color: Colors.textSecondary, marginBottom: 18, paddingHorizontal: 8 },
+  profileName: { fontSize: 24, fontWeight: '900', color: colors.neutral900, marginBottom: 6, textAlign: 'center' },
+  profileRole: { fontSize: 11, fontWeight: '800', color: colors.neutral500, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12, textAlign: 'center' },
+  profileBio: { fontSize: 13, lineHeight: 20, textAlign: 'center', color: colors.textSecondary, marginBottom: 18, paddingHorizontal: 8 },
 
   socialStatsRow: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginBottom: 20, paddingHorizontal: 8 },
   socialStatItem: { flex: 1, alignItems: 'center' },
-  socialStatValue: { fontSize: 20, fontWeight: '800', color: Colors.primary, marginBottom: 4 },
-  socialStatLabel: { fontSize: 10, fontWeight: '700', color: Colors.neutral500, letterSpacing: 1.1, textTransform: 'uppercase' },
+  socialStatValue: { fontSize: 20, fontWeight: '800', color: colors.primary, marginBottom: 4 },
+  socialStatLabel: { fontSize: 10, fontWeight: '700', color: colors.neutral500, letterSpacing: 1.1, textTransform: 'uppercase' },
 
   buttonsRow: { flexDirection: 'row', width: '100%', gap: 12 },
   editButton: {
-    flex: 1, height: 46, borderRadius: 23, backgroundColor: Colors.white,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: Colors.neutral200,
+    flex: 1, height: 46, borderRadius: 23, backgroundColor: colors.cardBg,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.neutral200,
   },
-  editButtonText: { color: Colors.neutral900, fontSize: 14, fontWeight: '700' },
+  editButtonText: { color: colors.neutral900, fontSize: 14, fontWeight: '700' },
   shareButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, paddingHorizontal: 20, height: 46, borderRadius: 23, backgroundColor: Colors.primary,
+    gap: 6, paddingHorizontal: 20, height: 46, borderRadius: 23, backgroundColor: colors.primary,
   },
-  shareButtonText: { color: Colors.white, fontSize: 14, fontWeight: '700' },
-  buttonShadow: { shadowColor: Colors.neutral900, shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
+  shareButtonText: { color: colors.white, fontSize: 14, fontWeight: '700' },
+  buttonShadow: { shadowColor: colors.neutral900, shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
 
   tabRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    marginHorizontal: 16, marginVertical: 16, backgroundColor: Colors.white,
+    marginHorizontal: 16, marginVertical: 16, backgroundColor: colors.cardBg,
     borderRadius: 16, padding: 4,
     shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
   tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 10 },
-  tabText: { fontSize: 13, fontWeight: '700', color: Colors.neutral400 },
+  tabText: { fontSize: 13, fontWeight: '700', color: colors.neutral400 },
   tabUnderline: { marginTop: 4, width: 20, height: 3, borderRadius: 2 },
 
   // Stats tab
   statsSportBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    marginHorizontal: 16, marginBottom: 16, backgroundColor: Colors.white,
+    marginHorizontal: 16, marginBottom: 16, backgroundColor: colors.cardBg,
     borderRadius: 12, padding: 12,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
   },
@@ -706,34 +670,34 @@ const styles = StyleSheet.create({
   statsSportLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 1.2 },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, gap: 10, marginBottom: 20 },
   statCard: {
-    width: '47%', backgroundColor: Colors.white, borderRadius: 18,
+    width: '47%', backgroundColor: colors.cardBg, borderRadius: 18,
     padding: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
   statCardIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   statCardValue: { fontSize: 20, fontWeight: '900', marginBottom: 4 },
-  statCardLabel: { fontSize: 11, fontWeight: '600', color: Colors.textSecondary },
+  statCardLabel: { fontSize: 11, fontWeight: '600', color: colors.textSecondary },
 
   recentMatchesSection: { marginHorizontal: 16, marginBottom: 16 },
-  recentMatchesTitle: { fontSize: 16, fontWeight: '800', color: Colors.text, marginBottom: 12 },
+  recentMatchesTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 12 },
   recentMatchRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: Colors.white, borderRadius: 14, padding: 14, marginBottom: 8,
+    backgroundColor: colors.cardBg, borderRadius: 14, padding: 14, marginBottom: 8,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
   },
   recentMatchLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   resultBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   resultBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
-  recentMatchOpponent: { fontSize: 13, fontWeight: '600', color: Colors.text, flex: 1 },
+  recentMatchOpponent: { fontSize: 13, fontWeight: '600', color: colors.text, flex: 1 },
   recentMatchRight: { alignItems: 'flex-end' },
-  recentMatchScore: { fontSize: 15, fontWeight: '800', color: Colors.primary },
-  recentMatchDate: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+  recentMatchScore: { fontSize: 15, fontWeight: '800', color: colors.primary },
+  recentMatchDate: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
 
   // Empty tabs
   emptyTabContent: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 32, gap: 8 },
   emptyTabEmoji: { fontSize: 48, marginBottom: 8 },
-  emptyTabTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
-  emptyTabSubtitle: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  emptyTabTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
+  emptyTabSubtitle: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
 
   pressed: { opacity: 0.88 },
   proAvatarBadge: {
@@ -743,10 +707,10 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: Colors.warning,
+    backgroundColor: colors.warning,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2.5,
-    borderColor: Colors.white,
+    borderColor: colors.white,
   },
 });

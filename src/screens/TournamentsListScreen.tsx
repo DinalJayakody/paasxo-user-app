@@ -1,16 +1,18 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, Trophy, MapPin, Crown, Eye } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { tournamentApi } from '../api/tournamentApi';
 import { tournamentStorage, TrackedTournament } from '../utils/tournamentStorage';
 import { buildMatchUI, deriveTournamentLifecycle } from '../utils/parseTournament';
 import { TournamentLifecycle } from '../types/api';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import ScreenGlow from '../components/ScreenGlow';
 
 interface ListItem extends TrackedTournament {
   date?: string;
@@ -18,6 +20,8 @@ interface ListItem extends TrackedTournament {
 }
 
 export default function TournamentsListScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const [items, setItems] = useState<ListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,16 +62,17 @@ export default function TournamentsListScreen() {
   }, [load]);
 
   const lifecycleConfig = {
-    UPCOMING: { label: 'Upcoming', color: Colors.neutral500, bg: Colors.neutral200 },
+    UPCOMING: { label: 'Upcoming', color: colors.neutral500, bg: colors.neutral200 },
     LIVE: { label: 'Live Now', color: '#DC2626', bg: '#FDE8E8' },
-    COMPLETED: { label: 'Completed', color: Colors.success, bg: '#E7F8EE' },
+    COMPLETED: { label: 'Completed', color: colors.success, bg: '#E7F8EE' },
   };
 
   return (
     <SafeAreaView style={styles.flex1} edges={['top']}>
+      <ScreenGlow />
       <View style={styles.header}>
         <Pressable onPress={() => router.back()}>
-          <ArrowLeft color={Colors.text} size={22} strokeWidth={2.5} />
+          <ArrowLeft color={colors.text} size={22} strokeWidth={2.5} />
         </Pressable>
         <Text style={styles.headerTitle}>My Tournaments</Text>
         <View style={{ width: 22 }} />
@@ -90,7 +95,7 @@ export default function TournamentsListScreen() {
         }
       >
         {loading ? (
-          <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />
+          <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
         ) : items.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>🏆</Text>
@@ -100,8 +105,8 @@ export default function TournamentsListScreen() {
               someone shared with you.
             </Text>
             <Pressable style={styles.createButton} onPress={() => router.push('/create-tournament' as any)}>
-              <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.createButtonGradient}>
-                <Trophy color={Colors.white} size={18} strokeWidth={2.5} />
+              <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.createButtonGradient}>
+                <Trophy color={colors.white} size={18} strokeWidth={2.5} />
                 <Text style={styles.createButtonText}>Create a Tournament</Text>
               </LinearGradient>
             </Pressable>
@@ -121,7 +126,7 @@ export default function TournamentsListScreen() {
                 <View style={styles.flex1}>
                   <Text style={styles.cardTitle}>{item.name}</Text>
                   <View style={styles.cardMetaRow}>
-                    <MapPin color={Colors.textSecondary} size={12} strokeWidth={2} />
+                    <MapPin color={colors.textSecondary} size={12} strokeWidth={2} />
                     <Text style={styles.cardMetaText}>{item.date || 'Date TBD'}</Text>
                   </View>
                   <View style={styles.cardBadgeRow}>
@@ -130,9 +135,9 @@ export default function TournamentsListScreen() {
                     </View>
                     <View style={styles.roleBadge}>
                       {item.role === 'owner' ? (
-                        <Crown color={Colors.primary} size={11} strokeWidth={2.5} />
+                        <Crown color={colors.primary} size={11} strokeWidth={2.5} />
                       ) : (
-                        <Eye color={Colors.neutral500} size={11} strokeWidth={2.5} />
+                        <Eye color={colors.neutral500} size={11} strokeWidth={2.5} />
                       )}
                       <Text style={styles.roleBadgeText}>{item.role === 'owner' ? 'Organizer' : 'Following'}</Text>
                     </View>
@@ -148,7 +153,7 @@ export default function TournamentsListScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   flex1: { flex: 1 },
   refreshableArea: { flex: 1, position: 'relative' },
   header: {
@@ -157,18 +162,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: Colors.background,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: Colors.text,
+    color: colors.text,
   },
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 40,
-    backgroundColor: Colors.background,
     flexGrow: 1,
   },
   emptyState: {
@@ -183,12 +186,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: Colors.text,
+    color: colors.text,
     marginBottom: 8,
   },
   emptySubtitle: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 24,
     lineHeight: 19,
@@ -208,12 +211,12 @@ const styles = StyleSheet.create({
   createButtonText: {
     fontSize: 15,
     fontWeight: '700',
-    color: Colors.white,
+    color: colors.white,
   },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 16,
     padding: 14,
     marginBottom: 12,
@@ -233,7 +236,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 15,
     fontWeight: '800',
-    color: Colors.text,
+    color: colors.text,
     marginBottom: 4,
   },
   cardMetaRow: {
@@ -244,7 +247,7 @@ const styles = StyleSheet.create({
   },
   cardMetaText: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   cardBadgeRow: {
     flexDirection: 'row',
@@ -266,11 +269,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 10,
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
   },
   roleBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: Colors.neutral600,
+    color: colors.neutral600,
   },
 });

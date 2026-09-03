@@ -2,7 +2,8 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Clock, Trophy } from 'lucide-react-native';
-import { Colors } from '../../styles/colors';
+import { ThemeColors } from '../../styles/colors';
+import { useTheme } from '../../context/ThemeContext';
 import { MatchScoreState } from '../../types/api';
 import { formatMatchDuration } from '../../utils/matchTimer';
 
@@ -13,13 +14,6 @@ interface LiveScoreboardProps {
   teamBName?: string;
   loading?: boolean;
 }
-
-const SPORT_COLOR: Record<string, string> = {
-  FUTSAL: Colors.futsal,
-  CRICKET: Colors.cricket,
-  PICKLEBALL: Colors.pickleball,
-  PADDLEBALL: Colors.paddleball,
-};
 
 function sportSubline(score: MatchScoreState): string {
   const s = score.state || {};
@@ -44,7 +38,7 @@ function sportSubline(score: MatchScoreState): string {
   }
 }
 
-function PulsingDot({ color }: { color: string }) {
+function PulsingDot({ color, styles }: { color: string; styles: ReturnType<typeof createStyles> }) {
   const pulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     const loop = Animated.loop(
@@ -65,25 +59,33 @@ function PulsingDot({ color }: { color: string }) {
 }
 
 export function LiveScoreboard({ score, displaySeconds, teamAName = 'Team A', teamBName = 'Team B' }: LiveScoreboardProps) {
-  const accent = SPORT_COLOR[score.sport] || Colors.primary;
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
+  const SPORT_COLOR: Record<string, string> = {
+    FUTSAL: colors.futsal,
+    CRICKET: colors.cricket,
+    PICKLEBALL: colors.pickleball,
+    PADDLEBALL: colors.paddleball,
+  };
+  const accent = SPORT_COLOR[score.sport] || colors.primary;
   const isLive = score.status === 'LIVE';
   const isPaused = score.status === 'PAUSED';
   const isDone = score.status === 'COMPLETED';
   const notStarted = score.status === 'NOT_STARTED';
 
   const statusLabel = isDone ? 'FULL TIME' : isPaused ? 'PAUSED' : isLive ? 'LIVE' : 'NOT STARTED';
-  const statusColor = isDone ? Colors.neutral500 : isPaused ? Colors.warning : isLive ? Colors.liveRed : Colors.neutral400;
+  const statusColor = isDone ? colors.neutral500 : isPaused ? colors.warning : isLive ? colors.liveRed : colors.neutral400;
 
   return (
-    <LinearGradient colors={[accent + '22', Colors.white]} style={styles.card}>
+    <LinearGradient colors={[accent + '22', colors.cardBg]} style={styles.card}>
       <View style={styles.statusRow}>
         <View style={styles.statusBadge}>
-          {isLive ? <PulsingDot color={statusColor} /> : <View style={[styles.dot, { backgroundColor: statusColor }]} />}
+          {isLive ? <PulsingDot color={statusColor} styles={styles} /> : <View style={[styles.dot, { backgroundColor: statusColor }]} />}
           <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
         </View>
         {!notStarted && (
           <View style={styles.timerBadge}>
-            <Clock color={Colors.neutral700} size={13} strokeWidth={2.4} />
+            <Clock color={colors.neutral700} size={13} strokeWidth={2.4} />
             <Text style={styles.timerText}>{formatMatchDuration(displaySeconds)}</Text>
           </View>
         )}
@@ -114,12 +116,12 @@ export function LiveScoreboard({ score, displaySeconds, teamAName = 'Team A', te
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   card: {
     borderRadius: 22,
     padding: 18,
     borderWidth: 1,
-    borderColor: Colors.neutral200 + '80',
+    borderColor: colors.neutral200 + '80',
   },
   statusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 7 },
@@ -129,18 +131,18 @@ const styles = StyleSheet.create({
   dotPulse: { position: 'absolute', width: 8, height: 8, borderRadius: 4, opacity: 0.4 },
   timerBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: Colors.white, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
+    backgroundColor: colors.cardBg, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
     shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
-  timerText: { fontSize: 13, fontWeight: '800', color: Colors.neutral800, fontVariant: ['tabular-nums'] },
+  timerText: { fontSize: 13, fontWeight: '800', color: colors.neutral800, fontVariant: ['tabular-nums'] },
 
   idleWrap: { alignItems: 'center', paddingVertical: 12, gap: 8 },
-  idleText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
+  idleText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
 
   scoreRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 18 },
   teamBlock: { flex: 1, alignItems: 'center', gap: 4, maxWidth: 130 },
-  teamName: { fontSize: 12, fontWeight: '700', color: Colors.neutral600, textTransform: 'uppercase', letterSpacing: 0.4 },
+  teamName: { fontSize: 12, fontWeight: '700', color: colors.neutral600, textTransform: 'uppercase', letterSpacing: 0.4 },
   scoreValue: { fontSize: 40, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  vsText: { fontSize: 20, fontWeight: '700', color: Colors.neutral300 },
-  subline: { textAlign: 'center', marginTop: 12, fontSize: 12.5, fontWeight: '700', color: Colors.neutral600 },
+  vsText: { fontSize: 20, fontWeight: '700', color: colors.neutral300 },
+  subline: { textAlign: 'center', marginTop: 12, fontSize: 12.5, fontWeight: '700', color: colors.neutral600 },
 });

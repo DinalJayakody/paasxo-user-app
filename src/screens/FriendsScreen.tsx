@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   FlatList,
@@ -23,11 +23,13 @@ import {
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Colors } from '../styles/colors';
+import { Colors, ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { PaasxoLogoLoader } from '../components/PaasxoLogoLoader';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
+import HeaderIconButton from '../components/HeaderIconButton';
 import { socialMediaApi } from '../api/socialMediaApi';
 import { userApi } from '../api/userApi';
 import { useAuth } from '../context/AuthContext';
@@ -39,12 +41,15 @@ import {
   NoSuggestionsIllustration,
 } from '../components/illustrations/FriendsIllustrations';
 import { resolveAvatarUri } from '../utils/mediaUrl';
+import { usePaginatedList, PaginatedList } from '../hooks/usePaginatedList';
+import ScreenGlow from '../components/ScreenGlow';
 
 const PAGE_SIZE = 10;
 
 const SEGMENT_ITEMS = ['Followers', 'Following', 'Requests', 'Suggested'] as const;
 type Segment = typeof SEGMENT_ITEMS[number];
 
+// Module-scope, always light-palette (see similar note in HomeScreen.tsx).
 const SKILL_COLOR: Record<string, string> = {
   BEGINNER: Colors.success,
   INTERMEDIATE: Colors.warning,
@@ -76,95 +81,13 @@ function ScalePressable({ onPress, style, children, ...rest }: any) {
   );
 }
 
-// ─── Generic 10-at-a-time paginated list, shared by every tab ─
-
-interface PaginatedList<T> {
-  data: T[];
-  loading: boolean;
-  loadingMore: boolean;
-  hasMore: boolean;
-  reload: () => void;
-  loadMore: () => void;
-  reset: () => void;
-  updateItem: (id: string, patch: Partial<T>) => void;
-  removeItem: (id: string) => void;
-  momentumRef: React.MutableRefObject<boolean>;
-}
-
-function usePaginatedList<T>(
-  fetchPage: (page: number) => Promise<{ content: T[]; hasMore: boolean }>,
-  keyExtractor: (item: T) => string
-): PaginatedList<T> {
-  const [data, setData] = useState<T[]>([]);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const momentumRef = useRef(false);
-
-  const reload = useCallback(() => {
-    setLoading(true);
-    fetchPage(0)
-      .then((res) => {
-        setData(res.content);
-        setHasMore(res.hasMore);
-        setPage(0);
-      })
-      .catch(() => {
-        setData([]);
-        setHasMore(false);
-      })
-      .finally(() => setLoading(false));
-  }, [fetchPage]);
-
-  const loadMore = useCallback(() => {
-    if (loadingMore || !hasMore) return;
-    setLoadingMore(true);
-    const nextPage = page + 1;
-    fetchPage(nextPage)
-      .then((res) => {
-        setData((prev) => {
-          const map = new Map(prev.map((item) => [keyExtractor(item), item]));
-          res.content.forEach((item) => map.set(keyExtractor(item), item));
-          return Array.from(map.values());
-        });
-        setHasMore(res.hasMore);
-        setPage(nextPage);
-      })
-      .catch(() => setHasMore(false))
-      .finally(() => setLoadingMore(false));
-  }, [fetchPage, hasMore, loadingMore, page, keyExtractor]);
-
-  const reset = useCallback(() => {
-    setData([]);
-    setHasMore(true);
-    setPage(0);
-    setLoading(false);
-    setLoadingMore(false);
-  }, []);
-
-  const updateItem = useCallback(
-    (id: string, patch: Partial<T>) => {
-      setData((prev) => prev.map((item) => (keyExtractor(item) === id ? { ...item, ...patch } : item)));
-    },
-    [keyExtractor]
-  );
-
-  const removeItem = useCallback(
-    (id: string) => {
-      setData((prev) => prev.filter((item) => keyExtractor(item) !== id));
-    },
-    [keyExtractor]
-  );
-
-  return { data, loading, loadingMore, hasMore, reload, loadMore, reset, updateItem, removeItem, momentumRef };
-}
-
 const cardKey = (u: UserCard) => u.firebaseUid;
 
 // ─── Main screen ─────────────────────────────────────────────
 
 export default function FriendsScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const navBarHeight = useBottomNavBarHeight();
   const router = useRouter();
   const { user } = useAuth();
@@ -322,7 +245,7 @@ export default function FriendsScreen() {
     if (actionLoadingUids.has(uid)) {
       return (
         <View style={[styles.followBtn, styles.followBtnLoading]}>
-          <ActivityIndicator size="small" color={Colors.primary} />
+          <ActivityIndicator size="small" color={colors.primary} />
         </View>
       );
     }
@@ -359,7 +282,7 @@ export default function FriendsScreen() {
         </View>
         <View style={styles.userActions}>
           <TouchableOpacity style={styles.msgIconBtn} onPress={() => goToChat(uid, item.displayName)} activeOpacity={0.8}>
-            <MessageCircle color={Colors.primary} size={18} strokeWidth={2} />
+            <MessageCircle color={colors.primary} size={18} strokeWidth={2} />
           </TouchableOpacity>
           {renderActionButton(item)}
         </View>
@@ -369,7 +292,7 @@ export default function FriendsScreen() {
 
   const renderSuggestedRow = (item: UserCard) => {
     const uid = item.firebaseUid;
-    const skillColor = item.skillLevel ? SKILL_COLOR[item.skillLevel] ?? Colors.primary : Colors.primary;
+    const skillColor = item.skillLevel ? SKILL_COLOR[item.skillLevel] ?? colors.primary : colors.primary;
     return (
       <TouchableOpacity key={uid} style={styles.userCard} activeOpacity={0.88} onPress={() => goToProfile(uid)}>
         <View style={styles.nearbyAvatarWrap}>
@@ -395,7 +318,7 @@ export default function FriendsScreen() {
         </View>
         <View style={styles.userActions}>
           <TouchableOpacity style={styles.msgIconBtn} onPress={() => goToChat(uid, item.displayName)} activeOpacity={0.8}>
-            <MessageCircle color={Colors.primary} size={18} strokeWidth={2} />
+            <MessageCircle color={colors.primary} size={18} strokeWidth={2} />
           </TouchableOpacity>
           {renderActionButton(item)}
         </View>
@@ -416,14 +339,14 @@ export default function FriendsScreen() {
           <Text style={styles.userMeta}>{[item.sports?.[0], item.skillLevel].filter(Boolean).join(' · ')}</Text>
         </View>
         {isLoading ? (
-          <ActivityIndicator color={Colors.primary} />
+          <ActivityIndicator color={colors.primary} />
         ) : (
           <View style={styles.requestBtns}>
             <TouchableOpacity style={styles.declineBtn} onPress={() => handleRejectRequest(item)} activeOpacity={0.8}>
-              <X color={Colors.neutral500} size={15} strokeWidth={2.5} />
+              <X color={colors.neutral500} size={15} strokeWidth={2.5} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.acceptBtn} onPress={() => handleAcceptRequest(item)} activeOpacity={0.85}>
-              <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.acceptBtnGrad}>
+              <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.acceptBtnGrad}>
                 <Text style={styles.acceptBtnText}>Accept</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -481,7 +404,7 @@ export default function FriendsScreen() {
           ListFooterComponent={
             list.loadingMore ? (
               <View style={styles.footerLoading}>
-                <ActivityIndicator size="small" color={Colors.primary} />
+                <ActivityIndicator size="small" color={colors.primary} />
               </View>
             ) : null
           }
@@ -530,7 +453,7 @@ export default function FriendsScreen() {
   const renderSuggestedTab = () => (
     <View style={{ flex: 1 }}>
       <View style={styles.nearbyBanner}>
-        <MapPin color={Colors.primary} size={16} strokeWidth={2} />
+        <MapPin color={colors.primary} size={16} strokeWidth={2} />
         <Text style={styles.nearbyBannerText}>People who share your sports, ranked by fit and distance</Text>
       </View>
       {renderPaginatedTab(
@@ -547,38 +470,49 @@ export default function FriendsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerTitleRow}>
-          <Users color={Colors.primary} size={22} strokeWidth={2.5} />
-          <Text style={styles.headerTitle}>Friends</Text>
-        </View>
-        <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/notifications' as any)} activeOpacity={0.8}>
-            <Bell color={Colors.neutral700} size={20} strokeWidth={2} />
-          </TouchableOpacity>
+      <ScreenGlow />
+      {/* Floating glass-gradient header */}
+      <View style={styles.topHeaderShadow}>
+        <View style={styles.header}>
+          <LinearGradient
+            colors={[colors.primaryAccent, colors.primary, colors.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.headerGlassStroke} pointerEvents="none" />
+
+          <View style={styles.headerTitleRow}>
+            <Users color={colors.white} size={22} strokeWidth={2.5} />
+            <Text style={styles.headerTitle}>Friends</Text>
+          </View>
+          <View style={styles.headerRight}>
+            <HeaderIconButton onPress={() => router.push('/notifications' as any)} style={styles.iconBtn}>
+              <Bell color={colors.white} size={20} strokeWidth={2} />
+            </HeaderIconButton>
+          </View>
         </View>
       </View>
 
       {/* Search */}
       <View style={[styles.searchWrap, isFocused && styles.searchWrapFocused]}>
-        <Search color={Colors.neutral500} size={17} strokeWidth={2} />
+        <Search color={colors.neutral500} size={17} strokeWidth={2} />
         <TextInput
           style={styles.searchInput}
           value={searchValue}
           onChangeText={setSearchValue}
           placeholder="Search players or clubs..."
-          placeholderTextColor={Colors.neutral500}
+          placeholderTextColor={colors.neutral500}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           returnKeyType="search"
         />
         {!!searchValue && (
           <TouchableOpacity onPress={() => setSearchValue('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <X color={Colors.neutral400} size={15} strokeWidth={2} />
+            <X color={colors.neutral400} size={15} strokeWidth={2} />
           </TouchableOpacity>
         )}
-        {isSearching && searchList.loading && <ActivityIndicator size="small" color={Colors.primary} />}
+        {isSearching && searchList.loading && <ActivityIndicator size="small" color={colors.primary} />}
       </View>
 
       {/* Segment bar */}
@@ -614,22 +548,40 @@ export default function FriendsScreen() {
 }
 
 // ─── Styles ──────────────────────────────────────────────────
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.background },
 
   // Header
+  topHeaderShadow: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    marginBottom: 2,
+    borderRadius: 26,
+    shadowColor: colors.primaryDark,
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 18, paddingTop: 14, paddingBottom: 12,
+    paddingHorizontal: 18, paddingVertical: 14,
+    borderRadius: 26,
+    overflow: 'hidden',
+  },
+  headerGlassStroke: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
   },
   headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle: { fontSize: 22, fontWeight: '900', color: Colors.text },
+  headerTitle: { fontSize: 22, fontWeight: '900', color: colors.white },
   headerRight: { flexDirection: 'row', gap: 8 },
   iconBtn: {
-    width: 42, height: 42, borderRadius: 14, backgroundColor: Colors.white,
+    width: 38, height: 38, borderRadius: 19,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: Colors.neutral200,
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+    backgroundColor: 'rgba(255,255,255,0.18)',
   },
 
   // Search
@@ -637,31 +589,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 10,
     marginHorizontal: 18, marginBottom: 14,
     paddingHorizontal: 14, paddingVertical: 12,
-    backgroundColor: Colors.white, borderRadius: 16,
-    borderWidth: 1.5, borderColor: Colors.neutral200,
+    backgroundColor: colors.inputBg, borderRadius: 16,
+    borderWidth: 1.5, borderColor: colors.neutral200,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1,
   },
-  searchWrapFocused: { borderColor: Colors.primary, shadowColor: Colors.primary, shadowOpacity: 0.15 },
-  searchInput: { flex: 1, fontSize: 15, fontWeight: '500', color: Colors.text, padding: 0 },
+  searchWrapFocused: { borderColor: colors.primary, shadowColor: colors.primary, shadowOpacity: 0.15 },
+  searchInput: { flex: 1, fontSize: 15, fontWeight: '500', color: colors.text, padding: 0 },
 
   // Segment bar
   segmentBar: {
     flexDirection: 'row', marginHorizontal: 18, marginBottom: 16,
-    backgroundColor: Colors.white, borderRadius: 16, padding: 4,
+    backgroundColor: colors.cardBg, borderRadius: 16, padding: 4,
     shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2,
   },
   segmentItem: {
     flex: 1, paddingVertical: 10, borderRadius: 12,
     alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4,
   },
-  segmentItemActive: { backgroundColor: Colors.primary },
-  segmentText: { fontSize: 12, fontWeight: '700', color: Colors.neutral500 },
-  segmentTextActive: { color: Colors.white },
+  segmentItemActive: { backgroundColor: colors.primary },
+  segmentText: { fontSize: 12, fontWeight: '700', color: colors.neutral500 },
+  segmentTextActive: { color: colors.white },
   requestBadge: {
     minWidth: 16, height: 16, borderRadius: 8,
-    backgroundColor: Colors.liveRed, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
+    backgroundColor: colors.liveRed, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
   },
-  requestBadgeText: { fontSize: 9, fontWeight: '900', color: Colors.white },
+  requestBadgeText: { fontSize: 9, fontWeight: '900', color: colors.white },
 
   // Lists
   listContent: { paddingHorizontal: 18, paddingBottom: 120, gap: 12, paddingTop: 4 },
@@ -672,34 +624,34 @@ const styles = StyleSheet.create({
   // User card
   userCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.white, borderRadius: 18, padding: 14,
+    backgroundColor: colors.cardBg, borderRadius: 18, padding: 14,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2,
   },
   userAvatar: { width: 52, height: 52, borderRadius: 16 },
   userInfo: { flex: 1 },
-  userName: { fontSize: 15, fontWeight: '800', color: Colors.text, marginBottom: 3 },
-  userMeta: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' },
+  userName: { fontSize: 15, fontWeight: '800', color: colors.text, marginBottom: 3 },
+  userMeta: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
   userActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   msgIconBtn: {
     width: 36, height: 36, borderRadius: 12,
-    backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center',
   },
   followBtn: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12,
-    borderWidth: 1.5, borderColor: Colors.primary, backgroundColor: Colors.white,
+    borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.cardBg,
     minWidth: 76, alignItems: 'center', justifyContent: 'center',
   },
-  followBtnLoading: { borderColor: Colors.neutral200 },
-  followBtnText: { fontSize: 12, fontWeight: '800', color: Colors.primary },
-  followingBtn: { backgroundColor: Colors.neutral100, borderColor: Colors.neutral200 },
-  followingBtnText: { color: Colors.neutral600 },
-  requestedBtn: { backgroundColor: Colors.primaryLight, borderColor: Colors.primaryLight },
-  requestedBtnText: { color: Colors.primary },
+  followBtnLoading: { borderColor: colors.neutral200 },
+  followBtnText: { fontSize: 12, fontWeight: '800', color: colors.primary },
+  followingBtn: { backgroundColor: colors.neutral100, borderColor: colors.neutral200 },
+  followingBtnText: { color: colors.neutral600 },
+  requestedBtn: { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight },
+  requestedBtnText: { color: colors.primary },
 
   // Request card
   requestCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.white, borderRadius: 18, padding: 14,
+    backgroundColor: colors.cardBg, borderRadius: 18, padding: 14,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2,
   },
   requestAvatar: { width: 52, height: 52, borderRadius: 16 },
@@ -707,33 +659,33 @@ const styles = StyleSheet.create({
   requestBtns: { flexDirection: 'row', gap: 8 },
   declineBtn: {
     width: 36, height: 36, borderRadius: 12,
-    backgroundColor: Colors.neutral100, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: Colors.neutral200,
+    backgroundColor: colors.neutral100, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.neutral200,
   },
   acceptBtn: { borderRadius: 12, overflow: 'hidden' },
   acceptBtnGrad: { paddingHorizontal: 16, paddingVertical: 10 },
-  acceptBtnText: { fontSize: 13, fontWeight: '800', color: Colors.white },
+  acceptBtnText: { fontSize: 13, fontWeight: '800', color: colors.white },
 
   // Suggested
   nearbyBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: Colors.primaryLight, borderRadius: 14, padding: 12,
+    backgroundColor: colors.primaryLight, borderRadius: 14, padding: 12,
     marginHorizontal: 18, marginBottom: 4,
   },
-  nearbyBannerText: { fontSize: 13, fontWeight: '600', color: Colors.primary, flex: 1 },
+  nearbyBannerText: { fontSize: 13, fontWeight: '600', color: colors.primary, flex: 1 },
   nearbyAvatarWrap: { position: 'relative' },
   nearbyDistanceBadge: {
     position: 'absolute', bottom: -4, right: -4,
-    backgroundColor: Colors.primary, borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2,
-    borderWidth: 1.5, borderColor: Colors.white,
+    backgroundColor: colors.primary, borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2,
+    borderWidth: 1.5, borderColor: colors.white,
   },
-  nearbyDistanceText: { fontSize: 8, fontWeight: '800', color: Colors.white },
+  nearbyDistanceText: { fontSize: 8, fontWeight: '800', color: colors.white },
   nearbyMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
   skillBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   skillText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.4 },
 
   // Empty state
   emptyWrap: { alignItems: 'center', paddingTop: 44, gap: 10 },
-  emptyTitle: { fontSize: 17, fontWeight: '800', color: Colors.text },
-  emptySub: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', paddingHorizontal: 32 },
+  emptyTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
+  emptySub: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 32 },
 });

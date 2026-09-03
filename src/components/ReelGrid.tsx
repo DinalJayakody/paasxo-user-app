@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Eye, Heart, Play } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { Colors, ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { ReelSummary } from '../types/api';
 import { parseMediaUrl } from '../utils/postFormat';
 import { ReelPlayer } from './ReelPlayer';
@@ -16,7 +17,7 @@ interface ReelGridProps {
   autoOpenReelId?: string | null;
 }
 
-function ReelTile({ reel, onPress }: { reel: ReelSummary; onPress: () => void }) {
+function ReelTile({ reel, onPress, styles }: { reel: ReelSummary; onPress: () => void; styles: ReturnType<typeof createStyles> }) {
   const thumbUri = parseMediaUrl(reel.thumbnailUrl);
 
   return (
@@ -44,6 +45,8 @@ function ReelTile({ reel, onPress }: { reel: ReelSummary; onPress: () => void })
 }
 
 export function ReelGrid({ reels, autoOpenReelId }: ReelGridProps) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const [selectedReelId, setSelectedReelId] = useState<string | null>(null);
   const selectedReel = reels.find((r) => r.id === selectedReelId) ?? null;
 
@@ -60,7 +63,7 @@ export function ReelGrid({ reels, autoOpenReelId }: ReelGridProps) {
     <>
       <View style={styles.grid}>
         {reels.map((reel) => (
-          <ReelTile key={reel.id} reel={reel} onPress={() => setSelectedReelId(reel.id)} />
+          <ReelTile key={reel.id} reel={reel} onPress={() => setSelectedReelId(reel.id)} styles={styles} />
         ))}
       </View>
 
@@ -72,7 +75,7 @@ export function ReelGrid({ reels, autoOpenReelId }: ReelGridProps) {
 const NUM_COLUMNS = 3;
 const TILE_GAP = 3;
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -85,11 +88,11 @@ const styles = StyleSheet.create({
     aspectRatio: 9 / 16,
     borderRadius: 14,
     overflow: 'hidden',
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
   },
   tileImage: { width: '100%', height: '100%' },
   tilePlaceholder: { alignItems: 'center', justifyContent: 'center', padding: 8 },
-  tilePlaceholderText: { fontSize: 11, color: Colors.textSecondary, textAlign: 'center' },
+  tilePlaceholderText: { fontSize: 11, color: colors.textSecondary, textAlign: 'center' },
   playBadge: {
     position: 'absolute', top: '50%', left: '50%',
     marginTop: -14, marginLeft: -14,
@@ -99,5 +102,5 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: 6, left: 6,
     flexDirection: 'row', alignItems: 'center', gap: 4,
   },
-  tileMetaText: { fontSize: 11, fontWeight: '700', color: Colors.white },
+  tileMetaText: { fontSize: 11, fontWeight: '700', color: colors.white },
 });

@@ -8,7 +8,8 @@ import {
   ViewStyle,
   TextStyle,
 } from 'react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { BorderRadius } from '../styles/spacing';
 
 interface ButtonProps {
@@ -32,6 +33,8 @@ export const Button: React.FC<ButtonProps> = ({
   textStyle,
   icon,
 }) => {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = () => {
@@ -81,7 +84,7 @@ export const Button: React.FC<ButtonProps> = ({
       >
         {loading ? (
           <ActivityIndicator
-            color={variant === 'primary' ? Colors.white : Colors.primary}
+            color={variant === 'primary' ? colors.white : colors.primary}
             size="small"
           />
         ) : (
@@ -95,7 +98,7 @@ export const Button: React.FC<ButtonProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   base: {
     height: 54,
     borderRadius: BorderRadius.full,
@@ -106,17 +109,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   primary: {
-    backgroundColor: Colors.primary,
-    shadowColor: Colors.primary,
+    backgroundColor: colors.primary,
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 6,
   },
   secondary: {
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
     borderWidth: 1,
-    borderColor: Colors.neutral200,
+    borderColor: colors.neutral200,
   },
   ghost: {
     backgroundColor: 'transparent',
@@ -130,12 +133,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   labelPrimary: {
-    color: Colors.white,
+    color: colors.white,
   },
   labelSecondary: {
-    color: Colors.text,
+    color: colors.text,
   },
   labelGhost: {
-    color: Colors.primary,
+    color: colors.primary,
   },
 });

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Image, StyleSheet, View } from 'react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 
 interface Props {
   size?: number;
@@ -18,6 +19,8 @@ interface Props {
  * "in progress" shape — spins around it.
  */
 export function PaasxoLogoLoader({ size = 56, elevated = true }: Props) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const spin = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
 
@@ -84,22 +87,22 @@ export function PaasxoLogoLoader({ size = 56, elevated = true }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   wrap: { alignItems: 'center', justifyContent: 'center' },
   ring: {
     position: 'absolute',
     borderWidth: 2.5,
-    borderColor: Colors.primary + '25',
-    borderTopColor: Colors.primary,
-    borderRightColor: Colors.primary,
+    borderColor: colors.primary + '25',
+    borderTopColor: colors.primary,
+    borderRightColor: colors.primary,
   },
   badge: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
   },
   badgeElevated: {
-    shadowColor: Colors.primary,
+    shadowColor: colors.primary,
     shadowOpacity: 0.25,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },

@@ -14,11 +14,13 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { CircleCheckBig, Clock, MapPin, CalendarPlus, ArrowRight, Trophy, ShieldCheck } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Colors } from '../styles/colors';
+import { Colors, ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { bookingApi } from '../api/bookingApi';
 import { MatchDetails } from '../types/api';
 import { parseMatchDetails } from '../utils/parseMatch';
 import { LoadingScreen } from '../components/LoadingScreen';
+import ScreenGlow from '../components/ScreenGlow';
 
 interface BookingStatusScreenProps {
   matchId: string;
@@ -94,6 +96,8 @@ const CONFETTI = Array.from({ length: 12 }, (_, i) => ({
 }));
 
 export default function BookingStatusScreen({ matchId, forcePending = false }: BookingStatusScreenProps) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [match, setMatch] = useState<MatchDetails | null>(null);
@@ -179,10 +183,11 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
 
   const gradColors: [string, string] = isPendingVendor
     ? ['#EA580C', '#C2410C']
-    : [Colors.primary, Colors.primaryDark];
+    : [colors.primary, colors.primaryDark];
 
   return (
     <SafeAreaView style={styles.flex1} edges={['top']}>
+      <ScreenGlow />
       {/* Confetti only shown for confirmed bookings */}
       {!isPendingVendor && (
         <View style={confettiStyles.container} pointerEvents="none">
@@ -212,7 +217,7 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
             <View style={styles.checkCircle}>
               {isPendingVendor
                 ? <Clock color="#EA580C" size={52} strokeWidth={2} />
-                : <CircleCheckBig color={Colors.primary} size={52} strokeWidth={2} />
+                : <CircleCheckBig color={colors.primary} size={52} strokeWidth={2} />
               }
             </View>
           </LinearGradient>
@@ -266,8 +271,8 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
               </View>
             </View>
             <View style={styles.pendingInfoRow}>
-              <View style={[styles.pendingStep, { backgroundColor: Colors.primaryLight }]}>
-                <ShieldCheck color={Colors.primary} size={16} strokeWidth={2} />
+              <View style={[styles.pendingStep, { backgroundColor: colors.primaryLight }]}>
+                <ShieldCheck color={colors.primary} size={16} strokeWidth={2} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.pendingStepTitle}>Your payment is safe</Text>
@@ -278,7 +283,7 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
             </View>
             <View style={styles.pendingInfoRow}>
               <View style={[styles.pendingStep, { backgroundColor: '#DCFCE7' }]}>
-                <Trophy color={Colors.success} size={16} strokeWidth={2} />
+                <Trophy color={colors.success} size={16} strokeWidth={2} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.pendingStepTitle}>Once accepted → match goes live</Text>
@@ -295,7 +300,7 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
           <View style={styles.detailsCard}>
             <View style={styles.detailsRow}>
               <View style={styles.detailIconWrap}>
-                <Trophy color={Colors.primary} size={18} strokeWidth={2} />
+                <Trophy color={colors.primary} size={18} strokeWidth={2} />
               </View>
               <View style={styles.detailInfo}>
                 <Text style={styles.detailLabel}>SPORT</Text>
@@ -306,7 +311,7 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
             {match.startDate && (
               <View style={styles.detailsRow}>
                 <View style={styles.detailIconWrap}>
-                  <Clock color={Colors.primary} size={18} strokeWidth={2} />
+                  <Clock color={colors.primary} size={18} strokeWidth={2} />
                 </View>
                 <View style={styles.detailInfo}>
                   <Text style={styles.detailLabel}>DATE & TIME</Text>
@@ -318,7 +323,7 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
 
             <View style={[styles.detailsRow, { borderBottomWidth: 0, marginBottom: 0 }]}>
               <View style={styles.detailIconWrap}>
-                <MapPin color={Colors.primary} size={18} strokeWidth={2} />
+                <MapPin color={colors.primary} size={18} strokeWidth={2} />
               </View>
               <View style={styles.detailInfo}>
                 <Text style={styles.detailLabel}>VENUE</Text>
@@ -344,7 +349,7 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
         {/* Add to Calendar — only for confirmed bookings */}
         {match && !isPendingVendor && (
           <Pressable style={styles.calendarBtn} onPress={() => addToCalendar(match)}>
-            <CalendarPlus color={Colors.primary} size={18} strokeWidth={2} />
+            <CalendarPlus color={colors.primary} size={18} strokeWidth={2} />
             <Text style={styles.calendarBtnText}>Add to Calendar</Text>
           </Pressable>
         )}
@@ -357,13 +362,13 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
           onPress={() => router.replace(`/match/${matchId}` as any)}
         >
           <LinearGradient
-            colors={isPendingVendor ? ['#EA580C', '#C2410C'] : [Colors.primary, Colors.primaryDark]}
+            colors={isPendingVendor ? ['#EA580C', '#C2410C'] : [colors.primary, colors.primaryDark]}
             style={styles.primaryButtonGrad}
           >
             <Text style={styles.primaryButtonText}>
               {isPendingVendor ? 'Track My Request' : 'View Match Details'}
             </Text>
-            <ArrowRight color={Colors.white} size={18} strokeWidth={2.5} />
+            <ArrowRight color={colors.white} size={18} strokeWidth={2.5} />
           </LinearGradient>
         </Pressable>
 
@@ -398,13 +403,13 @@ const confettiStyles = StyleSheet.create({
   },
 });
 
-const styles = StyleSheet.create({
-  flex1: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  flex1: { flex: 1, backgroundColor: colors.background },
   loadingScreen: {
-    flex: 1, backgroundColor: Colors.background,
+    flex: 1, backgroundColor: colors.background,
     alignItems: 'center', justifyContent: 'center', gap: 16,
   },
-  loadingText: { fontSize: 14, color: Colors.textSecondary, fontWeight: '500' },
+  loadingText: { fontSize: 14, color: colors.textSecondary, fontWeight: '500' },
 
   topGrad: {
     alignItems: 'center',
@@ -418,7 +423,7 @@ const styles = StyleSheet.create({
   },
   pulseRing: {
     position: 'absolute', width: 116, height: 116, borderRadius: 58,
-    borderWidth: 2, borderColor: Colors.white,
+    borderWidth: 2, borderColor: colors.white,
   },
   checkCircleRing: {
     width: 116,
@@ -431,10 +436,10 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: Colors.primary,
+    shadowColor: colors.primary,
     shadowOpacity: 0.3,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
@@ -443,18 +448,17 @@ const styles = StyleSheet.create({
   confirmedTitle: {
     fontSize: 28,
     fontWeight: '900',
-    color: Colors.white,
+    color: colors.white,
     textAlign: 'center',
   },
   confirmedSubtitle: {
     fontSize: 14,
-    color: Colors.white + 'CC',
+    color: colors.white + 'CC',
     textAlign: 'center',
   },
 
   sheet: {
     flex: 1,
-    backgroundColor: Colors.background,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     marginTop: -24,
@@ -469,26 +473,26 @@ const styles = StyleSheet.create({
   actionBar: {
     paddingHorizontal: 20,
     paddingTop: 14,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderTopWidth: 1,
-    borderTopColor: Colors.neutral200,
+    borderTopColor: colors.neutral200,
   },
 
   bookingIdBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
     marginBottom: 14,
   },
-  bookingIdLabel: { fontSize: 10, fontWeight: '800', color: Colors.primary, letterSpacing: 0.5 },
-  bookingIdText: { fontSize: 13, fontWeight: '700', color: Colors.primaryDark },
+  bookingIdLabel: { fontSize: 10, fontWeight: '800', color: colors.primary, letterSpacing: 0.5 },
+  bookingIdText: { fontSize: 13, fontWeight: '700', color: colors.primaryDark },
 
   detailsCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 18,
     padding: 16,
     marginBottom: 14,
@@ -505,47 +509,47 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     marginBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.neutral100,
+    borderBottomColor: colors.neutral100,
   },
   detailIconWrap: {
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   detailInfo: { flex: 1 },
-  detailLabel: { fontSize: 10, fontWeight: '800', color: Colors.textSecondary, letterSpacing: 0.5, marginBottom: 3 },
-  detailValue: { fontSize: 14, fontWeight: '700', color: Colors.text },
-  detailSubValue: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  detailLabel: { fontSize: 10, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.5, marginBottom: 3 },
+  detailValue: { fontSize: 14, fontWeight: '700', color: colors.text },
+  detailSubValue: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
 
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 14,
     marginBottom: 14,
   },
-  totalLabel: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
-  totalAmount: { fontSize: 22, fontWeight: '900', color: Colors.primary },
+  totalLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
+  totalAmount: { fontSize: 22, fontWeight: '900', color: colors.primary },
 
   calendarBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 14,
     paddingVertical: 14,
     marginBottom: 10,
     borderWidth: 1.5,
-    borderColor: Colors.primary,
+    borderColor: colors.primary,
   },
-  calendarBtnText: { fontSize: 14, fontWeight: '700', color: Colors.primary },
+  calendarBtnText: { fontSize: 14, fontWeight: '700', color: colors.primary },
 
   primaryButton: { borderRadius: 16, overflow: 'hidden', marginBottom: 10 },
   primaryButtonGrad: {
@@ -555,17 +559,17 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 16,
   },
-  primaryButtonText: { fontSize: 15, fontWeight: '800', color: Colors.white },
+  primaryButtonText: { fontSize: 15, fontWeight: '800', color: colors.white },
 
   homeBtn: {
     alignItems: 'center',
     paddingVertical: 14,
   },
-  homeBtnText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
+  homeBtnText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
 
   // ── Pending vendor explanation card
   pendingInfoCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 18,
     padding: 16,
     marginBottom: 14,
@@ -592,12 +596,12 @@ const styles = StyleSheet.create({
   pendingStepTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
     marginBottom: 2,
   },
   pendingStepText: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     lineHeight: 17,
   },
 });

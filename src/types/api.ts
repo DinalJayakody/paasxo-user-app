@@ -255,6 +255,15 @@ export interface MatchDetails {
   vendorStatus?: 'PENDING_VENDOR' | 'ACTIVE_MATCH';
   rejectionReason?: string;
   bookedAt?: string;
+  // Mirrors backend BookingResponse.paymentStatus — used to know whether cancelling
+  // will actually trigger a refund (NOT_APPLICABLE = free/walk-in booking, nothing to refund).
+  paymentStatus?: 'NOT_APPLICABLE' | 'AWAITING_PAYMENT' | 'PAID' | 'PAYMENT_FAILED' | 'REFUND_PENDING' | 'REFUNDED';
+  // Mirrors backend BookingResponse.isWithinCancellationWindow — false once the booking
+  // is within 48h of kickoff (for bookings longer than 1h), matching BookingService's
+  // enforceCancellationWindow rule server-side. Drives whether Cancel Booking is shown.
+  isWithinCancellationWindow?: boolean;
+  // Organizer + every paying joiner, mirrors backend BookingResponse.paidParticipants.
+  paidParticipants?: number;
 }
 
 export interface CreateBookingPayload {
@@ -265,6 +274,8 @@ export interface CreateBookingPayload {
   sport?: string;
   maxPlayers?: number;
   minPlayers?: number;
+  /** true (default) = discoverable in public search/discovery; false = invitees-only. */
+  isPublic?: boolean;
   players?: string[];
 }
 

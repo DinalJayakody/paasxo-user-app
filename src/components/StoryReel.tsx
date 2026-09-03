@@ -14,10 +14,13 @@ import { Plus, Video } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { UserStoryGroup, storyApi } from '../api/storyApi';
 import { StoryViewer } from './StoryViewer';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { resolveMediaUrl } from '../utils/mediaUrl';
 
 export function StoryReel() {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const [groups, setGroups] = useState<UserStoryGroup[]>([]);
   const [viewerVisible, setViewerVisible] = useState(false);
@@ -53,13 +56,13 @@ export function StoryReel() {
     <TouchableOpacity style={styles.itemWrap} onPress={handleAddStory} activeOpacity={0.8}>
       <View style={styles.addRing}>
         <LinearGradient
-          colors={[Colors.primary, Colors.primaryDark]}
+          colors={[colors.primary, colors.primaryDark]}
           style={StyleSheet.absoluteFillObject}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         />
         <View style={styles.addAvatarInner}>
-          <Plus color={Colors.white} size={26} strokeWidth={2.5} />
+          <Plus color={colors.white} size={26} strokeWidth={2.5} />
         </View>
       </View>
       <Text style={styles.label} numberOfLines={1}>Your Story</Text>
@@ -83,7 +86,7 @@ export function StoryReel() {
         <View style={[styles.ringWrap, !hasUnseen && styles.ringWrapSeen]}>
           {hasUnseen && (
             <LinearGradient
-              colors={['#F9A825', '#E91E63', '#7B1FA2', Colors.primary]}
+              colors={['#F9A825', '#E91E63', '#7B1FA2', colors.primary]}
               style={StyleSheet.absoluteFillObject}
               start={{ x: 0, y: 1 }}
               end={{ x: 1, y: 0 }}
@@ -105,7 +108,7 @@ export function StoryReel() {
         {/* Video indicator */}
         {isVideo && (
           <View style={styles.videoIndicator}>
-            <Video color={Colors.white} size={9} strokeWidth={2.5} fill={Colors.white} />
+            <Video color={colors.white} size={9} strokeWidth={2.5} fill={colors.white} />
           </View>
         )}
         <Text style={[styles.label, !hasUnseen && styles.labelSeen]} numberOfLines={1}>
@@ -146,7 +149,7 @@ export function StoryReel() {
 const BUBBLE = 66;
 const RING_SIZE = BUBBLE + 6; // 3px border each side
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   list: { paddingHorizontal: 12, paddingVertical: 10, gap: 0 },
 
   itemWrap: {
@@ -169,11 +172,11 @@ const styles = StyleSheet.create({
     width: BUBBLE,
     height: BUBBLE,
     borderRadius: BUBBLE / 2,
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: Colors.white,
+    borderColor: colors.white,
   },
 
   // ── Story ring ─────────────────────────────────────────────────────────────
@@ -185,22 +188,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  ringWrapSeen: { backgroundColor: Colors.neutral300 },
+  ringWrapSeen: { backgroundColor: colors.neutral300 },
   avatarBubble: {
     width: BUBBLE,
     height: BUBBLE,
     borderRadius: BUBBLE / 2,
     overflow: 'hidden',
     borderWidth: 2,
-    borderColor: Colors.white,
+    borderColor: colors.white,
   },
   avatar: { width: '100%', height: '100%' },
   avatarFallback: {
-    backgroundColor: Colors.neutral200,
+    backgroundColor: colors.neutral200,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarInitial: { fontSize: 22, fontWeight: '800', color: Colors.text },
+  avatarInitial: { fontSize: 22, fontWeight: '800', color: colors.text },
 
   // Video badge
   videoIndicator: {
@@ -210,20 +213,20 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: Colors.white,
+    borderColor: colors.white,
   },
 
   label: {
     marginTop: 5,
     fontSize: 10,
     fontWeight: '600',
-    color: Colors.text,
+    color: colors.text,
     maxWidth: RING_SIZE + 4,
     textAlign: 'center',
   },
-  labelSeen: { color: Colors.textMuted },
+  labelSeen: { color: colors.textMuted },
 });

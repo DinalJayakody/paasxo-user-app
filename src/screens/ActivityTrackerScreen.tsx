@@ -7,8 +7,8 @@ import {
   Animated,
   Dimensions,
   Alert,
-  Platform,
   ScrollView,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -237,6 +237,7 @@ export default function ActivityTrackerScreen() {
   const [elevGain, setElevGain] = useState(0);
   const [mapCoords, setMapCoords] = useState<{ latitude: number; longitude: number }[]>([]);
   const [currentLoc, setCurrentLoc] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [placeName, setPlaceName] = useState<string | null>(null);
   const [milestones, setMilestones] = useState<number[]>([]);
   const [milestoneBanner, setMilestoneBanner] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -270,6 +271,23 @@ export default function ActivityTrackerScreen() {
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         setCurrentLoc({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
         setGpsStatus('READY');
+
+        // Best-effort — show a human-readable place name instead of raw
+        // coordinates on the ready-to-start screen. Silently keep showing
+        // nothing rather than coordinates if reverse geocoding fails/is
+        // unsupported on this platform.
+        try {
+          const [place] = await Location.reverseGeocodeAsync({
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+          });
+          if (place) {
+            const parts = [place.street || place.name, place.district || place.city || place.subregion].filter(Boolean);
+            setPlaceName(parts.length > 0 ? parts.join(', ') : place.city || place.region || null);
+          }
+        } catch {
+          // Leave placeName null — UI falls back to a generic "current location" label.
+        }
       } catch {
         setGpsStatus('ERROR');
       }
@@ -481,6 +499,24 @@ export default function ActivityTrackerScreen() {
     ]);
   }, [completedActivity, router]);
 
+  const handleShare = useCallback(async () => {
+    if (!completedActivity) return;
+    const { durationSeconds, distanceMeters, maxSpeedKmh: maxSp } = completedActivity;
+    const pace = calcPace(distanceMeters, durationSeconds);
+    const message =
+      `${ACT[actType].emoji} ${ACT[actType].label} complete on Paasxo!\n\n` +
+      `📍 Distance: ${formatDist(distanceMeters)} ${distUnit(distanceMeters)}\n` +
+      `⏱️ Duration: ${formatTime(durationSeconds)}\n` +
+      `🏃 Pace: ${pace} min/km\n` +
+      `⚡ Max Speed: ${maxSp.toFixed(1)} km/h\n` +
+      `⛰️ Elevation: ${completedActivity.elevationGainMeters}m gain`;
+    try {
+      await Share.share({ message });
+    } catch {
+      // User cancelled the share sheet or it's unsupported — no error surfaced.
+    }
+  }, [completedActivity, actType]);
+
   const handleDiscard = useCallback(() => {
     Alert.alert('Discard Activity?', 'This activity will not be saved.', [
       { text: 'Keep', style: 'cancel' },
@@ -568,8 +604,8 @@ export default function ActivityTrackerScreen() {
               </Text>
             </View>
             {gpsStatus === 'READY' && currentLoc && (
-              <Text style={styles.gpsCoord}>
-                {currentLoc.latitude.toFixed(4)}, {currentLoc.longitude.toFixed(4)}
+              <Text style={styles.gpsCoord} numberOfLines={1}>
+                {placeName ?? 'Current location'}
               </Text>
             )}
           </View>
@@ -839,6 +875,11 @@ export default function ActivityTrackerScreen() {
             </LinearGradient>
           </TouchableOpacity>
 
+          <TouchableOpacity onPress={handleShare} activeOpacity={0.8} style={styles.shareBtn}>
+            <Share2 color={cfg.accentColor} size={18} strokeWidth={2.25} />
+            <Text style={[styles.shareBtnText, { color: cfg.accentColor }]}>Share</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity onPress={handleDiscard} activeOpacity={0.8} style={styles.discardBtn}>
             <Trash2 color={Colors.error} size={18} />
             <Text style={styles.discardBtnText}>Discard</Text>
@@ -924,7 +965,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
   },
   gpsText: { fontSize: 13, color: Colors.neutral300, fontWeight: '600', flex: 1 },
-  gpsCoord: { fontSize: 11, color: Colors.neutral500, marginTop: 6, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  gpsCoord: { fontSize: 12, fontWeight: '600', color: Colors.neutral500, marginTop: 6 },
 
   startBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -1036,6 +1077,12 @@ const styles = StyleSheet.create({
     gap: 10, borderRadius: 18, paddingVertical: 18,
   },
   saveBtnText: { fontSize: 17, fontWeight: '900', color: Colors.white },
+  shareBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 14, marginTop: 10,
+    borderRadius: 16, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.15)',
+  },
+  shareBtnText: { fontSize: 15, fontWeight: '800' },
   discardBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, paddingVertical: 14, marginTop: 8,

@@ -1,12 +1,12 @@
-import React, { createContext, useEffect, useState, useCallback, useContext } from 'react';
+import React, { createContext, useEffect, useState, useCallback, useContext, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DeviceEventEmitter, Platform } from 'react-native';
+import { AppState, AppStateStatus, DeviceEventEmitter, Platform } from 'react-native';
 import { getRedirectResult } from 'firebase/auth';
 import { authApi } from '../api/authApi';
 import { socialApi } from '../api/socialApi';
 import { AUTH_LOGOUT_EVENT } from '../api/axios';
 import { AuthResponse, LoginPayload, RegisterPayload, UserProfile } from '../types/api';
-import axiosInstance from '../api/axios';
+import axiosInstance, { refreshTokenIfNeeded } from '../api/axios';
 import { CompleteProfileModal } from '../components/CompleteProfileModal';
 import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
 import { clearSubscriptionCache } from '../hooks/useSubscription';
@@ -48,6 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const persistTokens = async (tokens: AuthResponse) => {
     if (tokens.idToken) {
       await AsyncStorage.setItem('accessToken', tokens.idToken);
+      await AsyncStorage.setItem('tokenIssuedAt', String(Date.now()));
       axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${tokens.idToken}`;
     }
     if (tokens.refreshToken) {
@@ -99,6 +100,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => sub.remove();
   }, []);
 
+  // Proactively refresh the access token whenever the app returns to the
+  // foreground, so a token that would have expired while backgrounded is
+  // already fresh before any screen makes a request — this is what actually
+  // keeps "leave the app logged in and running in the background" true; the
+  // reactive 401-then-refresh path in axios.ts only covers requests made
+  // *after* expiry, not the transition back into the app.
+  const appState = useRef(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (appState.current.match(/inactive|background/) && nextState === 'active') {
+        refreshTokenIfNeeded();
+      }
+      appState.current = nextState;
+    });
+    return () => sub.remove();
+  }, []);
+
   // ─── Auth actions ────────────────────────────────────────────────────────────
 
   const signIn = async (payload: LoginPayload): Promise<void> => {
@@ -124,7 +142,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = async (): Promise<void> => {
     try {
-      await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'user']);
+      await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'user', 'tokenIssuedAt']);
       await clearSubscriptionCache();
     } catch { /* ignore */ }
     delete axiosInstance.defaults.headers.common['Authorization'];

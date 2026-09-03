@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -16,10 +16,12 @@ import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, Zap, CheckCircle, CreditCard, Shield, Star } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
 import { useSubscription } from '../hooks/useSubscription';
 import { extractApiError } from '../utils/apiError';
+import ScreenGlow from '../components/ScreenGlow';
 
 const FEATURES = [
   'Create unlimited matches & tournaments',
@@ -30,6 +32,8 @@ const FEATURES = [
 ];
 
 export default function SubscriptionScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const { active, plan, endDate, startTrial, activate, refresh } = useSubscription();
 
@@ -90,21 +94,22 @@ export default function SubscriptionScreen() {
   };
 
   const badgeLabel = !active ? null : plan === 'TRIAL' ? 'Free Trial' : 'Pro Member';
-  const badgeColor = plan === 'TRIAL' ? Colors.warning : Colors.primary;
+  const badgeColor = plan === 'TRIAL' ? colors.warning : colors.primary;
 
   if (active) {
     return (
       <SafeAreaView style={styles.safeArea}>
+        <ScreenGlow />
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
-            <ArrowLeft color={Colors.primary} size={22} strokeWidth={2.5} />
+            <ArrowLeft color={colors.primary} size={22} strokeWidth={2.5} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Subscription</Text>
           <View style={{ width: 40 }} />
         </View>
         <ScrollView contentContainerStyle={styles.scroll}>
-          <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.activeBanner}>
-            <Zap color={Colors.warning} size={32} strokeWidth={2.5} fill={Colors.warning} />
+          <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.activeBanner}>
+            <Zap color={colors.warning} size={32} strokeWidth={2.5} fill={colors.warning} />
             <Text style={styles.activePlan}>{badgeLabel}</Text>
             <View style={[styles.badge, { backgroundColor: badgeColor }]}>
               <Text style={styles.badgeText}>{badgeLabel?.toUpperCase()}</Text>
@@ -119,7 +124,7 @@ export default function SubscriptionScreen() {
           <Text style={styles.sectionTitle}>Your Benefits</Text>
           {FEATURES.map((f) => (
             <View key={f} style={styles.featureRow}>
-              <CheckCircle color={Colors.success} size={18} strokeWidth={2} />
+              <CheckCircle color={colors.success} size={18} strokeWidth={2} />
               <Text style={styles.featureText}>{f}</Text>
             </View>
           ))}
@@ -130,9 +135,10 @@ export default function SubscriptionScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <ScreenGlow />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
-          <ArrowLeft color={Colors.primary} size={22} strokeWidth={2.5} />
+          <ArrowLeft color={colors.primary} size={22} strokeWidth={2.5} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Unlock Full Access</Text>
         <View style={{ width: 40 }} />
@@ -146,8 +152,8 @@ export default function SubscriptionScreen() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {mode === 'plans' ? (
           <>
-            <LinearGradient colors={[Colors.neutral800, Colors.neutral900]} style={styles.heroBanner}>
-              <Zap color={Colors.warning} size={28} strokeWidth={2.5} fill={Colors.warning} />
+            <LinearGradient colors={[colors.neutral800, colors.neutral900]} style={styles.heroBanner}>
+              <Zap color={colors.warning} size={28} strokeWidth={2.5} fill={colors.warning} />
               <Text style={styles.heroTitle}>Paasxo Pro</Text>
               <Text style={styles.heroSubtitle}>
                 Create matches, run tournaments, and access the full platform.
@@ -157,7 +163,7 @@ export default function SubscriptionScreen() {
             <Text style={styles.sectionTitle}>What's included</Text>
             {FEATURES.map((f) => (
               <View key={f} style={styles.featureRow}>
-                <CheckCircle color={Colors.success} size={18} strokeWidth={2} />
+                <CheckCircle color={colors.success} size={18} strokeWidth={2} />
                 <Text style={styles.featureText}>{f}</Text>
               </View>
             ))}
@@ -165,7 +171,7 @@ export default function SubscriptionScreen() {
             {/* Free trial option */}
             <View style={styles.planCard}>
               <View style={styles.planCardHeader}>
-                <Star color={Colors.warning} size={20} strokeWidth={2} />
+                <Star color={colors.warning} size={20} strokeWidth={2} />
                 <Text style={styles.planCardTitle}>1-Month Free Trial</Text>
               </View>
               <Text style={styles.planCardDesc}>
@@ -182,7 +188,7 @@ export default function SubscriptionScreen() {
             {/* Paid plan */}
             <View style={[styles.planCard, styles.planCardPrimary]}>
               <View style={styles.planCardHeader}>
-                <Shield color={Colors.primary} size={20} strokeWidth={2} />
+                <Shield color={colors.primary} size={20} strokeWidth={2} />
                 <Text style={styles.planCardTitle}>Monthly — LKR 9.99 / mo</Text>
               </View>
               <Text style={styles.planCardDesc}>
@@ -199,7 +205,7 @@ export default function SubscriptionScreen() {
           <>
             <Text style={styles.sectionTitle}>Payment Details</Text>
             <View style={styles.card}>
-              <CreditCard color={Colors.primary} size={24} strokeWidth={2} />
+              <CreditCard color={colors.primary} size={24} strokeWidth={2} />
               <Text style={styles.payLabel}>CARDHOLDER NAME</Text>
               <TextInput
                 style={styles.input}
@@ -243,7 +249,7 @@ export default function SubscriptionScreen() {
                 </View>
               </View>
               <Text style={styles.secureNote}>
-                <Shield color={Colors.success} size={12} strokeWidth={2} /> Secured by 256-bit encryption
+                <Shield color={colors.success} size={12} strokeWidth={2} /> Secured by 256-bit encryption
               </Text>
             </View>
 
@@ -264,60 +270,60 @@ export default function SubscriptionScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingVertical: 14,
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: Colors.text },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
   scroll: { paddingHorizontal: 20, paddingBottom: 40 },
 
   heroBanner: {
     borderRadius: 20, padding: 24, alignItems: 'center', gap: 8, marginBottom: 24,
   },
-  heroTitle: { fontSize: 26, fontWeight: '900', color: Colors.white },
-  heroSubtitle: { fontSize: 13, color: Colors.neutral300, textAlign: 'center', lineHeight: 20 },
+  heroTitle: { fontSize: 26, fontWeight: '900', color: colors.white },
+  heroSubtitle: { fontSize: 13, color: colors.neutral300, textAlign: 'center', lineHeight: 20 },
 
   activeBanner: {
     borderRadius: 20, padding: 28, alignItems: 'center', gap: 10, marginBottom: 24,
   },
-  activePlan: { fontSize: 22, fontWeight: '900', color: Colors.white },
+  activePlan: { fontSize: 22, fontWeight: '900', color: colors.white },
   badge: {
     paddingHorizontal: 14, paddingVertical: 5, borderRadius: 999,
   },
-  badgeText: { fontSize: 11, fontWeight: '800', color: Colors.white, letterSpacing: 1 },
-  activeExpiry: { fontSize: 12, color: Colors.white + 'CC' },
+  badgeText: { fontSize: 11, fontWeight: '800', color: colors.white, letterSpacing: 1 },
+  activeExpiry: { fontSize: 12, color: colors.white + 'CC' },
 
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: Colors.text, marginBottom: 14 },
+  sectionTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 14 },
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  featureText: { fontSize: 14, color: Colors.text, flex: 1 },
+  featureText: { fontSize: 14, color: colors.text, flex: 1 },
 
   planCard: {
-    backgroundColor: Colors.white, borderRadius: 20, padding: 18, marginBottom: 14,
+    backgroundColor: colors.cardBg, borderRadius: 20, padding: 18, marginBottom: 14,
     shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
-  planCardPrimary: { borderWidth: 2, borderColor: Colors.primary },
+  planCardPrimary: { borderWidth: 2, borderColor: colors.primary },
   planCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  planCardTitle: { fontSize: 15, fontWeight: '800', color: Colors.text },
-  planCardDesc: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20, marginBottom: 14 },
+  planCardTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
+  planCardDesc: { fontSize: 13, color: colors.textSecondary, lineHeight: 20, marginBottom: 14 },
   planBtn: { width: '100%' },
 
   card: {
-    backgroundColor: Colors.white, borderRadius: 20, padding: 18, marginBottom: 20,
+    backgroundColor: colors.cardBg, borderRadius: 20, padding: 18, marginBottom: 20,
     gap: 10, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
-  payLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: Colors.neutral500, marginTop: 4 },
+  payLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: colors.neutral500, marginTop: 4 },
   input: {
-    borderWidth: 1, borderColor: Colors.neutral200, borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: Colors.text,
-    backgroundColor: Colors.inputBg,
+    borderWidth: 1, borderColor: colors.neutral200, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: colors.text,
+    backgroundColor: colors.inputBg,
   },
   cardRow: { flexDirection: 'row' },
-  secureNote: { fontSize: 11, color: Colors.textSecondary, textAlign: 'center', marginTop: 4 },
+  secureNote: { fontSize: 11, color: colors.textSecondary, textAlign: 'center', marginTop: 4 },
   backLink: { alignItems: 'center', paddingVertical: 8 },
-  backLinkText: { fontSize: 14, fontWeight: '600', color: Colors.primary },
+  backLinkText: { fontSize: 14, fontWeight: '600', color: colors.primary },
 });

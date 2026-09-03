@@ -1,4 +1,10 @@
-export const Colors = {
+// `white` is deliberately NOT flipped between palettes — across this codebase it's
+// used as much for icon/text tint on colored surfaces (e.g. <Icon color={Colors.white}/>
+// on a blue button) as for literal card backgrounds. Flipping it would break the former.
+// Surfaces that are genuinely meant to invert in dark mode use `cardBg`, `background`,
+// `backgroundLight`, `inputBg`, and the `neutral*` scale instead — those ARE flipped.
+
+export const lightColors = {
   primary: '#2977C2',
   logoBlue: '#2977C2',
   primaryDark: '#205E9D',
@@ -50,4 +56,70 @@ export const Colors = {
   tournamentGradEnd: '#1A5FA0',
   tournamentGradMid: '#205E9D',
   liveRed: '#DC2626',
+  // Glassmorphism surfaces — a BlurView sits underneath, these sit on top:
+  // a faint theme-tinted wash (glassTint) plus a hairline edge highlight
+  // (glassBorder) so floating bars/pills read as tinted glass, not plain frost.
+  glassTint: 'rgba(255,255,255,0.55)',
+  glassBorder: 'rgba(255,255,255,0.6)',
 };
+
+export const darkColors: typeof lightColors = {
+  primary: '#4A9EFF',
+  logoBlue: '#4A9EFF',
+  primaryDark: '#2977C2',
+  primaryLight: '#1B3A5C',
+  primaryAccent: '#6BB6FF',
+  primaryVibrant: '#3B8FD4',
+  background: '#0B1220',
+  backgroundLight: '#111A2E',
+  white: '#FFFFFF',
+  cardBg: '#161F32',
+  text: '#F1F5F9',
+  textSecondary: '#94A3B8',
+  textMuted: '#64748B',
+  inputBg: '#1E293B',
+  inputBorder: '#334155',
+  inputBorderFocus: '#4A9EFF',
+  error: '#F87171',
+  success: '#4ADE80',
+  successDark: '#22C55E',
+  warning: '#FBBF24',
+  divider: '#334155',
+  tagBg: '#1E293B',
+  tagBgSelected: '#1E3A5F',
+  tagBorderSelected: '#4A9EFF',
+  neutral100: '#1E293B',
+  neutral200: '#334155',
+  neutral300: '#475569',
+  neutral400: '#64748B',
+  neutral500: '#94A3B8',
+  neutral600: '#CBD5E1',
+  neutral700: '#E2E8F0',
+  neutral800: '#F1F5F9',
+  neutral900: '#F8FAFC',
+  cricket: '#4A9EFF',
+  cricketLight: '#1B3A5C',
+  futsal: '#4A9EFF',
+  futsalLight: '#1B3A5C',
+  pickleball: '#6BB6FF',
+  pickleballLight: '#1E3550',
+  paddleball: '#A78BFA',
+  paddleballLight: '#2E2154',
+  trainer: '#4A9EFF',
+  trainerLight: '#1B3A5C',
+  walkRun: '#34D399',
+  walkRunLight: '#0F3D2E',
+  tournamentGradStart: '#2977C2',
+  tournamentGradEnd: '#1A5FA0',
+  tournamentGradMid: '#205E9D',
+  liveRed: '#EF4444',
+  glassTint: 'rgba(11,18,32,0.55)',
+  glassBorder: 'rgba(255,255,255,0.14)',
+};
+
+export type ThemeColors = typeof lightColors;
+
+// Static default export — kept for any screen not yet migrated to useThemeColors()
+// (see src/context/ThemeContext.tsx). Always resolves to the light palette; screens
+// using this directly won't react to a dark-mode switch until converted.
+export const Colors = lightColors;

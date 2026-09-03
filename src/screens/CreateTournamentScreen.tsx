@@ -16,7 +16,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
@@ -40,8 +40,10 @@ import {
   Shield,
   X,
 } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { Colors, ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { SubscriptionGate } from '../components/SubscriptionGate';
+import HeaderIconButton from '../components/HeaderIconButton';
 import { futsalApi } from '../api/futsalApi';
 import { tournamentApi } from '../api/tournamentApi';
 import { socialMediaApi } from '../api/socialMediaApi';
@@ -49,6 +51,7 @@ import { tournamentStorage } from '../utils/tournamentStorage';
 import { teamFlair } from '../utils/parseTournament';
 import { TournamentTeamUI } from '../types/api';
 import { AuthContext } from '../context/AuthContext';
+import ScreenGlow from '../components/ScreenGlow';
 
 const STEPS = ['Sport', 'Basics', 'Rules', 'Teams', 'Players', 'Matches', 'Review'];
 
@@ -99,7 +102,10 @@ const GUIDE_TIPS: Record<number, { emoji: string; title: string; body: string }>
 };
 
 export default function CreateTournamentScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user } = React.useContext(AuthContext);
   const [step, setStep] = useState(0);
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -405,7 +411,7 @@ export default function CreateTournamentScreen() {
         onPress={() => selectedSport && animateStep(1)}
         disabled={!selectedSport}
       >
-        <ChevronRight color={Colors.white} size={18} strokeWidth={2.5} />
+        <ChevronRight color={colors.white} size={18} strokeWidth={2.5} />
         <Text style={styles.primaryButtonText}>Continue</Text>
       </Pressable>
     </View>
@@ -422,7 +428,7 @@ export default function CreateTournamentScreen() {
           <Image source={{ uri: coverImage }} style={styles.coverImagePreview} resizeMode="cover" />
         ) : (
           <View style={styles.coverImagePlaceholder}>
-            <Camera color={Colors.primary} size={28} strokeWidth={2} />
+            <Camera color={colors.primary} size={28} strokeWidth={2} />
             <Text style={styles.coverImageHint}>Tap to add a cover image (16:9)</Text>
           </View>
         )}
@@ -432,7 +438,7 @@ export default function CreateTournamentScreen() {
       <TextInput
         style={styles.input}
         placeholder={`e.g. ${currentSport?.label || 'Summer'} Championship 2025`}
-        placeholderTextColor={Colors.neutral400}
+        placeholderTextColor={colors.neutral400}
         value={name}
         onChangeText={setName}
       />
@@ -441,7 +447,7 @@ export default function CreateTournamentScreen() {
       <TextInput
         style={[styles.input, styles.textArea]}
         placeholder="Tell players what this tournament is about..."
-        placeholderTextColor={Colors.neutral400}
+        placeholderTextColor={colors.neutral400}
         multiline
         numberOfLines={3}
         value={description}
@@ -457,8 +463,8 @@ export default function CreateTournamentScreen() {
         <Switch
           value={isOpenTournament}
           onValueChange={setIsOpenTournament}
-          trackColor={{ false: Colors.neutral300, true: Colors.primary + '80' }}
-          thumbColor={isOpenTournament ? Colors.primary : Colors.white}
+          trackColor={{ false: colors.neutral300, true: colors.primary + '80' }}
+          thumbColor={isOpenTournament ? colors.primary : colors.white}
         />
       </View>
 
@@ -479,9 +485,9 @@ export default function CreateTournamentScreen() {
 
       <Text style={styles.label}>Venue *</Text>
       <Pressable style={styles.selectorButton} onPress={openVenueModal}>
-        <MapPin color={Colors.primary} size={20} strokeWidth={2} />
+        <MapPin color={colors.primary} size={20} strokeWidth={2} />
         <Text style={styles.selectorButtonText}>{selectedVenue ? selectedVenue.name : 'Choose a venue...'}</Text>
-        <ChevronRight color={Colors.neutral400} size={16} strokeWidth={2} />
+        <ChevronRight color={colors.neutral400} size={16} strokeWidth={2} />
       </Pressable>
 
       {selectedVenue && (
@@ -516,7 +522,7 @@ export default function CreateTournamentScreen() {
         <>
           <Text style={styles.label}>Reserve Time Slots (optional)</Text>
           {loadingSlots ? (
-            <ActivityIndicator color={Colors.primary} style={{ marginVertical: 12 }} />
+            <ActivityIndicator color={colors.primary} style={{ marginVertical: 12 }} />
           ) : slots.length > 0 ? (
             <View style={styles.slotGrid}>
               {slots.map((slot) => {
@@ -528,7 +534,7 @@ export default function CreateTournamentScreen() {
                     disabled={!slot.available}
                     style={[styles.slotChip, !slot.available && styles.slotChipDisabled, isSelected && styles.slotChipSelected]}
                   >
-                    <Clock color={!slot.available ? Colors.neutral400 : isSelected ? Colors.white : Colors.primary} size={14} strokeWidth={2} />
+                    <Clock color={!slot.available ? colors.neutral400 : isSelected ? colors.white : colors.primary} size={14} strokeWidth={2} />
                     <Text style={[styles.slotChipText, !slot.available && styles.slotChipTextDisabled, isSelected && styles.slotChipTextSelected]}>
                       {slot.time}
                     </Text>
@@ -548,10 +554,10 @@ export default function CreateTournamentScreen() {
         disabled={creatingTournament}
       >
         {creatingTournament ? (
-          <ActivityIndicator color={Colors.white} />
+          <ActivityIndicator color={colors.white} />
         ) : (
           <>
-            <Trophy color={Colors.white} size={18} strokeWidth={2.5} />
+            <Trophy color={colors.white} size={18} strokeWidth={2.5} />
             <Text style={styles.primaryButtonText}>Create & Continue</Text>
           </>
         )}
@@ -573,7 +579,7 @@ export default function CreateTournamentScreen() {
             </View>
             <Text style={styles.ruleText}>{rule}</Text>
             <Pressable onPress={() => removeRule(index)} style={styles.ruleRemoveBtn}>
-              <X color={Colors.neutral400} size={14} strokeWidth={2.5} />
+              <X color={colors.neutral400} size={14} strokeWidth={2.5} />
             </Pressable>
           </View>
         ))}
@@ -584,19 +590,19 @@ export default function CreateTournamentScreen() {
         <TextInput
           style={[styles.input, styles.addRuleInput]}
           placeholder="Type a rule..."
-          placeholderTextColor={Colors.neutral400}
+          placeholderTextColor={colors.neutral400}
           value={newRule}
           onChangeText={setNewRule}
           onSubmitEditing={addCustomRule}
         />
         <Pressable style={styles.addIconButton} onPress={addCustomRule}>
-          <Plus color={Colors.white} size={20} strokeWidth={2.5} />
+          <Plus color={colors.white} size={20} strokeWidth={2.5} />
         </Pressable>
       </View>
 
       {/* Acceptance toggle */}
       <View style={styles.acceptanceCard}>
-        <Shield color={Colors.primary} size={22} strokeWidth={2} />
+        <Shield color={colors.primary} size={22} strokeWidth={2} />
         <View style={styles.acceptanceInfo}>
           <Text style={styles.acceptanceTitle}>I accept these rules</Text>
           <Text style={styles.acceptanceSubtitle}>
@@ -606,8 +612,8 @@ export default function CreateTournamentScreen() {
         <Switch
           value={rulesAccepted}
           onValueChange={setRulesAccepted}
-          trackColor={{ false: Colors.neutral300, true: Colors.primary + '80' }}
-          thumbColor={rulesAccepted ? Colors.primary : Colors.white}
+          trackColor={{ false: colors.neutral300, true: colors.primary + '80' }}
+          thumbColor={rulesAccepted ? colors.primary : colors.white}
         />
       </View>
 
@@ -616,7 +622,7 @@ export default function CreateTournamentScreen() {
         onPress={() => rulesAccepted && animateStep(3)}
         disabled={!rulesAccepted}
       >
-        <Users color={Colors.white} size={18} strokeWidth={2.5} />
+        <Users color={colors.white} size={18} strokeWidth={2.5} />
         <Text style={styles.primaryButtonText}>Next: Add Teams</Text>
       </Pressable>
     </View>
@@ -643,13 +649,13 @@ export default function CreateTournamentScreen() {
         <TextInput
           style={[styles.input, styles.addTeamInput]}
           placeholder="Team name (e.g. Thunder FC)"
-          placeholderTextColor={Colors.neutral400}
+          placeholderTextColor={colors.neutral400}
           value={teamNameInput}
           onChangeText={setTeamNameInput}
           onSubmitEditing={handleAddTeam}
         />
         <Pressable style={[styles.addIconButton, addingTeam && styles.primaryButtonDisabled]} onPress={handleAddTeam} disabled={addingTeam}>
-          {addingTeam ? <ActivityIndicator color={Colors.white} size="small" /> : <Plus color={Colors.white} size={20} strokeWidth={2.5} />}
+          {addingTeam ? <ActivityIndicator color={colors.white} size="small" /> : <Plus color={colors.white} size={20} strokeWidth={2.5} />}
         </Pressable>
       </View>
 
@@ -671,7 +677,7 @@ export default function CreateTournamentScreen() {
         style={styles.primaryButton}
         onPress={() => animateStep(4)}
       >
-        <Users color={Colors.white} size={18} strokeWidth={2.5} />
+        <Users color={colors.white} size={18} strokeWidth={2.5} />
         <Text style={styles.primaryButtonText}>{teams.length >= 2 ? 'Next: Add Players' : 'Skip — add players later'}</Text>
       </Pressable>
     </View>
@@ -698,15 +704,15 @@ export default function CreateTournamentScreen() {
           </ScrollView>
 
           <View style={styles.searchBar}>
-            <Search color={Colors.neutral400} size={18} strokeWidth={2} />
+            <Search color={colors.neutral400} size={18} strokeWidth={2} />
             <TextInput
               style={styles.searchInput}
               placeholder="Search players by name..."
-              placeholderTextColor={Colors.neutral400}
+              placeholderTextColor={colors.neutral400}
               value={playerSearch}
               onChangeText={setPlayerSearch}
             />
-            {searchingPlayers && <ActivityIndicator color={Colors.primary} size="small" />}
+            {searchingPlayers && <ActivityIndicator color={colors.primary} size="small" />}
           </View>
 
           {playerResults.map((player) => (
@@ -724,7 +730,7 @@ export default function CreateTournamentScreen() {
                 <Text style={styles.playerResultEmail}>{player.email}</Text>
               </View>
               <View style={styles.addPlayerBtn}>
-                <Plus color={Colors.white} size={16} strokeWidth={2.5} />
+                <Plus color={colors.white} size={16} strokeWidth={2.5} />
               </View>
             </Pressable>
           ))}
@@ -757,7 +763,7 @@ export default function CreateTournamentScreen() {
       )}
 
       <Pressable style={styles.primaryButton} onPress={() => animateStep(5)}>
-        <Swords color={Colors.white} size={18} strokeWidth={2.5} />
+        <Swords color={colors.white} size={18} strokeWidth={2.5} />
         <Text style={styles.primaryButtonText}>Next: Schedule Matches</Text>
       </Pressable>
     </View>
@@ -773,12 +779,12 @@ export default function CreateTournamentScreen() {
           onPress={handleGenerateRoundRobin}
           disabled={generatingRoundRobin}
         >
-          <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.highlightButtonGrad}>
+          <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.highlightButtonGrad}>
             {generatingRoundRobin ? (
-              <ActivityIndicator color={Colors.white} />
+              <ActivityIndicator color={colors.white} />
             ) : (
               <>
-                <Sparkles color={Colors.white} size={18} strokeWidth={2.5} />
+                <Sparkles color={colors.white} size={18} strokeWidth={2.5} />
                 <Text style={styles.highlightButtonText}>Auto Round-Robin ({teamPairs.length} matches)</Text>
               </>
             )}
@@ -820,7 +826,7 @@ export default function CreateTournamentScreen() {
         onPress={handleAddMatch}
         disabled={creatingMatch || matchTeamA == null || matchTeamB == null}
       >
-        {creatingMatch ? <ActivityIndicator color={Colors.white} /> : <Plus color={Colors.white} size={18} strokeWidth={2.5} />}
+        {creatingMatch ? <ActivityIndicator color={colors.white} /> : <Plus color={colors.white} size={18} strokeWidth={2.5} />}
         <Text style={styles.primaryButtonText}>Add Match</Text>
       </Pressable>
 
@@ -851,7 +857,7 @@ export default function CreateTournamentScreen() {
         style={[styles.primaryButton, { marginTop: 12 }]}
         onPress={() => animateStep(6)}
       >
-        <CheckCircle2 color={Colors.white} size={18} strokeWidth={2.5} />
+        <CheckCircle2 color={colors.white} size={18} strokeWidth={2.5} />
         <Text style={styles.primaryButtonText}>Review & Launch</Text>
       </Pressable>
     </View>
@@ -869,8 +875,8 @@ export default function CreateTournamentScreen() {
         </Animated.Text>
       )}
 
-      <View style={[styles.sportPill, { backgroundColor: (currentSport?.color || Colors.primary) + '20' }]}>
-        <Text style={[styles.sportPillText, { color: currentSport?.color || Colors.primary }]}>
+      <View style={[styles.sportPill, { backgroundColor: (currentSport?.color || colors.primary) + '20' }]}>
+        <Text style={[styles.sportPillText, { color: currentSport?.color || colors.primary }]}>
           {currentSport?.label?.toUpperCase() || 'SPORT'} TOURNAMENT
         </Text>
       </View>
@@ -897,8 +903,8 @@ export default function CreateTournamentScreen() {
       </View>
 
       <Pressable style={styles.finishButton} onPress={() => router.replace(`/tournament/${tournamentId}` as any)}>
-        <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.finishButtonGradient}>
-          <PartyPopper color={Colors.white} size={20} strokeWidth={2.5} />
+        <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.finishButtonGradient}>
+          <PartyPopper color={colors.white} size={20} strokeWidth={2.5} />
           <Text style={styles.finishButtonText}>Launch Tournament 🚀</Text>
         </LinearGradient>
       </Pressable>
@@ -921,19 +927,30 @@ export default function CreateTournamentScreen() {
   return (
     <SubscriptionGate feature="creating tournaments">
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* Header */}
-      <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.header}>
-        <Pressable onPress={() => (step === 0 ? router.back() : animateStep(step - 1))} style={styles.backBtn}>
-          <ArrowLeft color={Colors.white} size={22} strokeWidth={2.5} />
-        </Pressable>
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Create Tournament</Text>
-          <Text style={styles.headerSubtitle}>{STEPS[step]}</Text>
+      <ScreenGlow />
+      {/* Floating glass-gradient header */}
+      <View style={styles.topHeaderShadow}>
+        <View style={styles.header}>
+          <LinearGradient
+            colors={[colors.primaryAccent, colors.primary, colors.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.headerGlassStroke} pointerEvents="none" />
+
+          <HeaderIconButton onPress={() => (step === 0 ? router.back() : animateStep(step - 1))} style={styles.backBtn}>
+            <ArrowLeft color={colors.white} size={20} strokeWidth={2.5} />
+          </HeaderIconButton>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>Create Tournament</Text>
+            <Text style={styles.headerSubtitle}>{STEPS[step]}</Text>
+          </View>
+          <View style={styles.headerRight}>
+            <Text style={styles.headerStep}>{step + 1}/{STEPS.length}</Text>
+          </View>
         </View>
-        <View style={styles.headerRight}>
-          <Text style={styles.headerStep}>{step + 1}/{STEPS.length}</Text>
-        </View>
-      </LinearGradient>
+      </View>
 
       {/* Step progress */}
       <View style={styles.progressBar}>
@@ -948,7 +965,7 @@ export default function CreateTournamentScreen() {
             <Text style={styles.tipTitle}>{tip.title}</Text>
             <Text style={styles.tipBody}>{tip.body}</Text>
           </View>
-          <Info color={Colors.primary} size={16} strokeWidth={2} />
+          <Info color={colors.primary} size={16} strokeWidth={2} />
         </View>
       )}
 
@@ -967,18 +984,23 @@ export default function CreateTournamentScreen() {
       </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Venue modal */}
-      <Modal visible={venueModalVisible} transparent animationType="slide">
-        <SafeAreaView style={styles.venueModal} edges={['top']}>
-          <View style={styles.venueModalHeader}>
+      {/* Venue modal — statusBarTranslucent is required on Android: without it, RN's
+          Modal presents in its own native window that doesn't extend under the status
+          bar, so the back button at the top of the modal ends up drawn underneath it.
+          paddingTop is applied directly from insets.top rather than left to the nested
+          SafeAreaView's own top edge, since that inset isn't reliably picked up for
+          content presented inside a Modal. */}
+      <Modal visible={venueModalVisible} transparent animationType="slide" statusBarTranslucent>
+        <SafeAreaView style={styles.venueModal} edges={['bottom']}>
+          <View style={[styles.venueModalHeader, { paddingTop: insets.top + 14 }]}>
             <Pressable onPress={() => setVenueModalVisible(false)}>
-              <ArrowLeft color={Colors.text} size={22} strokeWidth={2.5} />
+              <ArrowLeft color={colors.text} size={22} strokeWidth={2.5} />
             </Pressable>
             <Text style={styles.venueModalTitle}>Select Venue</Text>
             <View style={{ width: 22 }} />
           </View>
           {loadingVenues ? (
-            <ActivityIndicator color={Colors.primary} style={{ marginTop: 32 }} />
+            <ActivityIndicator color={colors.primary} style={{ marginTop: 32 }} />
           ) : venues.length === 0 ? (
             <View style={styles.emptyVenue}>
               <Text style={styles.emptyVenueEmoji}>🏟️</Text>
@@ -991,13 +1013,13 @@ export default function CreateTournamentScreen() {
               renderItem={({ item }) => (
                 <Pressable style={styles.venueRow} onPress={() => handleVenueSelect(item)}>
                   <View style={styles.venueIconBox}>
-                    <MapPin color={Colors.white} size={16} strokeWidth={2} />
+                    <MapPin color={colors.white} size={16} strokeWidth={2} />
                   </View>
                   <View style={{ flex: 1, marginLeft: 12 }}>
                     <Text style={styles.venueRowName}>{item.name}</Text>
                     <Text style={styles.venueRowLocation}>{item.location || item.address || 'Location TBD'}</Text>
                   </View>
-                  <ChevronRight color={Colors.neutral300} size={16} strokeWidth={2} />
+                  <ChevronRight color={colors.neutral300} size={16} strokeWidth={2} />
                 </Pressable>
               )}
             />
@@ -1009,133 +1031,156 @@ export default function CreateTournamentScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   flex1: { flex: 1 },
-  safeArea: { flex: 1, backgroundColor: Colors.background },
+  safeArea: { flex: 1, backgroundColor: colors.background },
 
+  topHeaderShadow: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    marginBottom: 2,
+    borderRadius: 26,
+    shadowColor: colors.primaryDark,
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 14,
+    borderRadius: 26,
+    overflow: 'hidden',
   },
-  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  headerGlassStroke: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  backBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 16, fontWeight: '800', color: Colors.white },
-  headerSubtitle: { fontSize: 11, color: Colors.white + 'CC', fontWeight: '500', marginTop: 2 },
-  headerRight: { width: 36, alignItems: 'flex-end' },
-  headerStep: { fontSize: 12, color: Colors.white + 'CC', fontWeight: '700' },
+  headerTitle: { fontSize: 16, fontWeight: '800', color: colors.white },
+  headerSubtitle: { fontSize: 11, color: colors.white + 'CC', fontWeight: '500', marginTop: 2 },
+  headerRight: { width: 38, alignItems: 'flex-end' },
+  headerStep: { fontSize: 12, color: colors.white + 'CC', fontWeight: '700' },
 
-  progressBar: { height: 3, backgroundColor: Colors.neutral200 },
-  progressFill: { height: 3, backgroundColor: Colors.primary, borderRadius: 2 },
+  progressBar: { height: 3, backgroundColor: colors.neutral200 },
+  progressFill: { height: 3, backgroundColor: colors.primary, borderRadius: 2 },
 
   tipCard: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-    backgroundColor: Colors.primaryLight, marginHorizontal: 16, marginTop: 12,
-    borderRadius: 14, padding: 12, borderWidth: 1, borderColor: Colors.primary + '30',
+    backgroundColor: colors.primaryLight, marginHorizontal: 16, marginTop: 12,
+    borderRadius: 14, padding: 12, borderWidth: 1, borderColor: colors.primary + '30',
   },
   tipEmoji: { fontSize: 20, marginTop: 1 },
   tipContent: { flex: 1 },
-  tipTitle: { fontSize: 13, fontWeight: '700', color: Colors.primary, marginBottom: 2 },
-  tipBody: { fontSize: 12, color: Colors.primaryDark, lineHeight: 17 },
+  tipTitle: { fontSize: 13, fontWeight: '700', color: colors.primary, marginBottom: 2 },
+  tipBody: { fontSize: 12, color: colors.primaryDark, lineHeight: 17 },
 
   scrollContent: { paddingHorizontal: 16, paddingBottom: 48, paddingTop: 12 },
 
-  stepHint: { fontSize: 13, color: Colors.textSecondary, marginBottom: 16, lineHeight: 19 },
-  label: { fontSize: 13, fontWeight: '700', color: Colors.text, marginBottom: 8, marginTop: 16 },
-  subLabel: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary, marginBottom: 6 },
+  stepHint: { fontSize: 13, color: colors.textSecondary, marginBottom: 16, lineHeight: 19 },
+  label: { fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 8, marginTop: 16 },
+  subLabel: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 6 },
 
   input: {
-    backgroundColor: Colors.white, borderRadius: 12,
+    backgroundColor: colors.inputBg, borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 14, color: Colors.text,
-    borderWidth: 1, borderColor: Colors.neutral200,
+    fontSize: 14, color: colors.text,
+    borderWidth: 1, borderColor: colors.neutral200,
   },
   textArea: { height: 80, textAlignVertical: 'top' },
 
   // Sport step
   sportCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.white, borderRadius: 16, padding: 16, marginBottom: 10,
-    borderWidth: 2, borderColor: Colors.neutral200,
+    backgroundColor: colors.cardBg, borderRadius: 16, padding: 16, marginBottom: 10,
+    borderWidth: 2, borderColor: colors.neutral200,
   },
   sportCardEmoji: { fontSize: 32 },
   sportCardInfo: { flex: 1 },
-  sportCardLabel: { fontSize: 16, fontWeight: '800', color: Colors.text, marginBottom: 2 },
-  sportCardDesc: { fontSize: 12, color: Colors.textSecondary },
+  sportCardLabel: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 2 },
+  sportCardDesc: { fontSize: 12, color: colors.textSecondary },
 
   // Cover image
   coverImagePicker: {
     width: '100%', height: 160, borderRadius: 16, overflow: 'hidden',
-    backgroundColor: Colors.white, borderWidth: 2, borderColor: Colors.neutral200,
+    backgroundColor: colors.cardBg, borderWidth: 2, borderColor: colors.neutral200,
     borderStyle: 'dashed',
   },
   coverImagePreview: { width: '100%', height: '100%' },
   coverImagePlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
-  coverImageHint: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  coverImageHint: { fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
 
   // Open tournament
   openTournamentRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: Colors.white, borderRadius: 14, padding: 14, marginTop: 16,
-    borderWidth: 1, borderColor: Colors.neutral200,
+    backgroundColor: colors.cardBg, borderRadius: 14, padding: 14, marginTop: 16,
+    borderWidth: 1, borderColor: colors.neutral200,
   },
   openTournamentInfo: { flex: 1 },
-  openTournamentDesc: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  openTournamentDesc: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
 
   // Teams count
   teamsCountRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   teamsCountChip: {
     paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20,
-    backgroundColor: Colors.white, borderWidth: 1.5, borderColor: Colors.neutral200,
+    backgroundColor: colors.cardBg, borderWidth: 1.5, borderColor: colors.neutral200,
   },
-  teamsCountChipSelected: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  teamsCountChipText: { fontSize: 14, fontWeight: '700', color: Colors.text },
-  teamsCountChipTextSelected: { color: Colors.white },
+  teamsCountChipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
+  teamsCountChipText: { fontSize: 14, fontWeight: '700', color: colors.text },
+  teamsCountChipTextSelected: { color: colors.white },
 
   selectorButton: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: Colors.white, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13,
-    borderWidth: 1, borderColor: Colors.neutral200,
+    backgroundColor: colors.inputBg, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13,
+    borderWidth: 1, borderColor: colors.neutral200,
   },
-  selectorButtonText: { flex: 1, fontSize: 14, fontWeight: '500', color: Colors.text },
+  selectorButtonText: { flex: 1, fontSize: 14, fontWeight: '500', color: colors.text },
 
   dateScrollRow: { marginBottom: 8 },
   dateChip: {
     width: 58, paddingVertical: 10, borderRadius: 12,
-    backgroundColor: Colors.white, alignItems: 'center',
-    borderWidth: 1, borderColor: Colors.neutral200, gap: 2, marginRight: 8,
+    backgroundColor: colors.cardBg, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.neutral200, gap: 2, marginRight: 8,
   },
-  dateChipSelected: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  dateChipDay: { fontSize: 10, fontWeight: '600', color: Colors.neutral500 },
-  dateChipDate: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  dateChipTextSelected: { color: Colors.white },
+  dateChipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
+  dateChipDay: { fontSize: 10, fontWeight: '600', color: colors.neutral500 },
+  dateChipDate: { fontSize: 15, fontWeight: '700', color: colors.text },
+  dateChipTextSelected: { color: colors.white },
 
   slotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   slotChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingVertical: 8, paddingHorizontal: 12, borderRadius: 16,
-    backgroundColor: Colors.white, borderWidth: 1.5, borderColor: Colors.primary,
+    backgroundColor: colors.cardBg, borderWidth: 1.5, borderColor: colors.primary,
   },
-  slotChipDisabled: { borderColor: Colors.neutral300, backgroundColor: Colors.neutral100 },
-  slotChipSelected: { backgroundColor: Colors.primary },
-  slotChipText: { fontSize: 12, fontWeight: '600', color: Colors.primary },
-  slotChipTextDisabled: { color: Colors.neutral400 },
-  slotChipTextSelected: { color: Colors.white },
+  slotChipDisabled: { borderColor: colors.neutral300, backgroundColor: colors.neutral100 },
+  slotChipSelected: { backgroundColor: colors.primary },
+  slotChipText: { fontSize: 12, fontWeight: '600', color: colors.primary },
+  slotChipTextDisabled: { color: colors.neutral400 },
+  slotChipTextSelected: { color: colors.white },
 
   // Rules step
   rulesListCard: {
-    backgroundColor: Colors.white, borderRadius: 16, padding: 12, marginBottom: 8,
-    borderWidth: 1, borderColor: Colors.neutral200,
+    backgroundColor: colors.cardBg, borderRadius: 16, padding: 12, marginBottom: 8,
+    borderWidth: 1, borderColor: colors.neutral200,
   },
   ruleRow: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 8,
-    borderBottomWidth: 1, borderBottomColor: Colors.neutral100,
+    borderBottomWidth: 1, borderBottomColor: colors.neutral100,
   },
   ruleNumberBadge: {
-    width: 22, height: 22, borderRadius: 11, backgroundColor: Colors.primary,
+    width: 22, height: 22, borderRadius: 11, backgroundColor: colors.primary,
     alignItems: 'center', justifyContent: 'center', marginTop: 1,
   },
-  ruleNumber: { fontSize: 10, fontWeight: '800', color: Colors.white },
-  ruleText: { flex: 1, fontSize: 13, color: Colors.text, lineHeight: 19 },
+  ruleNumber: { fontSize: 10, fontWeight: '800', color: colors.white },
+  ruleText: { flex: 1, fontSize: 13, color: colors.text, lineHeight: 19 },
   ruleRemoveBtn: { padding: 4, marginTop: 1 },
 
   addRuleRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
@@ -1143,78 +1188,78 @@ const styles = StyleSheet.create({
 
   acceptanceCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.primaryLight, borderRadius: 16, padding: 16,
-    borderWidth: 1, borderColor: Colors.primary + '30', marginBottom: 8,
+    backgroundColor: colors.primaryLight, borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: colors.primary + '30', marginBottom: 8,
   },
   acceptanceInfo: { flex: 1 },
-  acceptanceTitle: { fontSize: 14, fontWeight: '700', color: Colors.primary },
-  acceptanceSubtitle: { fontSize: 12, color: Colors.primaryDark, marginTop: 2 },
+  acceptanceTitle: { fontSize: 14, fontWeight: '700', color: colors.primary },
+  acceptanceSubtitle: { fontSize: 12, color: colors.primaryDark, marginTop: 2 },
 
   // Open status card
   openStatusCard: {
-    backgroundColor: Colors.primaryLight, borderRadius: 12, padding: 14,
-    borderWidth: 1, borderColor: Colors.primary + '25', marginBottom: 8,
+    backgroundColor: colors.primaryLight, borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: colors.primary + '25', marginBottom: 8,
   },
-  openStatusLabel: { fontSize: 14, fontWeight: '700', color: Colors.primary, marginBottom: 4 },
-  openStatusDesc: { fontSize: 12, color: Colors.primaryDark },
+  openStatusLabel: { fontSize: 14, fontWeight: '700', color: colors.primary, marginBottom: 4 },
+  openStatusDesc: { fontSize: 12, color: colors.primaryDark },
 
   // Teams step
   addTeamRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
   addTeamInput: { flex: 1 },
   addIconButton: {
-    width: 48, height: 48, borderRadius: 12, backgroundColor: Colors.primary,
+    width: 48, height: 48, borderRadius: 12, backgroundColor: colors.primary,
     alignItems: 'center', justifyContent: 'center',
   },
   teamGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 },
   teamCard: {
-    width: '47%', backgroundColor: Colors.white, borderRadius: 14,
+    width: '47%', backgroundColor: colors.cardBg, borderRadius: 14,
     paddingVertical: 16, alignItems: 'center', borderWidth: 2, gap: 4,
   },
   teamCardEmoji: { fontSize: 28 },
-  teamCardName: { fontSize: 13, fontWeight: '700', color: Colors.text },
-  teamCardMeta: { fontSize: 11, color: Colors.textSecondary },
+  teamCardName: { fontSize: 13, fontWeight: '700', color: colors.text },
+  teamCardMeta: { fontSize: 11, color: colors.textSecondary },
 
   teamChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingVertical: 8, paddingHorizontal: 12, borderRadius: 16,
-    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.neutral200, marginRight: 8,
+    backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.neutral200, marginRight: 8,
   },
   teamChipEmoji: { fontSize: 14 },
-  teamChipText: { fontSize: 12, fontWeight: '600', color: Colors.text },
-  teamChipTextActive: { color: Colors.white },
+  teamChipText: { fontSize: 12, fontWeight: '600', color: colors.text },
+  teamChipTextActive: { color: colors.white },
 
   // Players step
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: Colors.white, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
-    borderWidth: 1, borderColor: Colors.neutral200, marginBottom: 10,
+    backgroundColor: colors.inputBg, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
+    borderWidth: 1, borderColor: colors.neutral200, marginBottom: 10,
   },
-  searchInput: { flex: 1, fontSize: 14, color: Colors.text },
+  searchInput: { flex: 1, fontSize: 14, color: colors.text },
   playerResultRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: Colors.white, borderRadius: 12, padding: 12, marginBottom: 8,
-    borderWidth: 1, borderColor: Colors.neutral100,
+    backgroundColor: colors.cardBg, borderRadius: 12, padding: 12, marginBottom: 8,
+    borderWidth: 1, borderColor: colors.neutral100,
   },
   playerAvatar: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primaryLight,
+    width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primaryLight,
     alignItems: 'center', justifyContent: 'center',
   },
-  playerAvatarText: { fontSize: 14, fontWeight: '700', color: Colors.primary },
-  playerResultName: { fontSize: 13, fontWeight: '600', color: Colors.text },
-  playerResultEmail: { fontSize: 11, color: Colors.textMuted, marginTop: 1 },
+  playerAvatarText: { fontSize: 14, fontWeight: '700', color: colors.primary },
+  playerResultName: { fontSize: 13, fontWeight: '600', color: colors.text },
+  playerResultEmail: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
   addPlayerBtn: {
-    width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.primary,
+    width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primary,
     alignItems: 'center', justifyContent: 'center',
   },
-  rosterTeamBlock: { backgroundColor: Colors.white, borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: Colors.neutral100 },
+  rosterTeamBlock: { backgroundColor: colors.cardBg, borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: colors.neutral100 },
   rosterTeamHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, borderLeftWidth: 3, paddingLeft: 8 },
-  rosterTeamTitle: { fontSize: 13, fontWeight: '700', color: Colors.text },
-  rosterTeamCount: { fontSize: 12, color: Colors.textSecondary },
-  rosterEmpty: { fontSize: 12, color: Colors.neutral400, fontStyle: 'italic' },
-  rosterPlayerName: { fontSize: 12, color: Colors.textSecondary, marginLeft: 4, marginVertical: 2 },
+  rosterTeamTitle: { fontSize: 13, fontWeight: '700', color: colors.text },
+  rosterTeamCount: { fontSize: 12, color: colors.textSecondary },
+  rosterEmpty: { fontSize: 12, color: colors.neutral400, fontStyle: 'italic' },
+  rosterPlayerName: { fontSize: 12, color: colors.textSecondary, marginLeft: 4, marginVertical: 2 },
   noTeamsHint: { alignItems: 'center', paddingVertical: 28 },
   noTeamsEmoji: { fontSize: 40, marginBottom: 12 },
-  noTeamsText: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', marginBottom: 16 },
+  noTeamsText: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginBottom: 16 },
 
   // Matches step
   highlightButton: { borderRadius: 16, overflow: 'hidden', marginBottom: 16 },
@@ -1222,82 +1267,82 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 10, paddingVertical: 15,
   },
-  highlightButtonText: { fontSize: 15, fontWeight: '700', color: Colors.white },
+  highlightButtonText: { fontSize: 15, fontWeight: '700', color: colors.white },
 
-  vsText: { textAlign: 'center', fontSize: 14, fontWeight: '900', color: Colors.neutral400, marginVertical: 8 },
+  vsText: { textAlign: 'center', fontSize: 14, fontWeight: '900', color: colors.neutral400, marginVertical: 8 },
 
   fixtureRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.white, borderRadius: 12, padding: 12, marginBottom: 8,
-    borderWidth: 1, borderColor: Colors.neutral100,
+    backgroundColor: colors.cardBg, borderRadius: 12, padding: 12, marginBottom: 8,
+    borderWidth: 1, borderColor: colors.neutral100,
   },
   fixtureTeam: { flex: 1, alignItems: 'flex-start' },
   fixtureEmoji: { fontSize: 20, marginBottom: 4 },
-  fixtureName: { fontSize: 13, fontWeight: '600', color: Colors.text },
+  fixtureName: { fontSize: 13, fontWeight: '600', color: colors.text },
   fixtureBadge: {
-    paddingHorizontal: 10, paddingVertical: 4, backgroundColor: Colors.neutral100,
+    paddingHorizontal: 10, paddingVertical: 4, backgroundColor: colors.neutral100,
     borderRadius: 8, marginHorizontal: 8,
   },
-  fixtureBadgeText: { fontSize: 11, fontWeight: '800', color: Colors.neutral500 },
+  fixtureBadgeText: { fontSize: 11, fontWeight: '800', color: colors.neutral500 },
 
   // Review step
   reviewCoverImage: { width: '100%', height: 160, borderRadius: 18, marginBottom: 16 },
   reviewTrophy: { fontSize: 72, marginBottom: 12, marginTop: 12 },
   sportPill: { paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20, marginBottom: 10 },
   sportPillText: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
-  reviewTitle: { fontSize: 24, fontWeight: '900', color: Colors.text, textAlign: 'center', marginBottom: 6 },
-  reviewSubtitle: { fontSize: 13, color: Colors.textSecondary, marginBottom: 20, textAlign: 'center' },
+  reviewTitle: { fontSize: 24, fontWeight: '900', color: colors.text, textAlign: 'center', marginBottom: 6 },
+  reviewSubtitle: { fontSize: 13, color: colors.textSecondary, marginBottom: 20, textAlign: 'center' },
   reviewStatsRow: { flexDirection: 'row', gap: 10, marginBottom: 20, width: '100%' },
   reviewStatCard: {
-    flex: 1, backgroundColor: Colors.white, borderRadius: 16,
-    paddingVertical: 16, alignItems: 'center', borderWidth: 1, borderColor: Colors.neutral200,
+    flex: 1, backgroundColor: colors.cardBg, borderRadius: 16,
+    paddingVertical: 16, alignItems: 'center', borderWidth: 1, borderColor: colors.neutral200,
   },
-  reviewStatValue: { fontSize: 22, fontWeight: '900', color: Colors.primary },
-  reviewStatLabel: { fontSize: 10, color: Colors.textSecondary, marginTop: 4, textAlign: 'center' },
+  reviewStatValue: { fontSize: 22, fontWeight: '900', color: colors.primary },
+  reviewStatLabel: { fontSize: 10, color: colors.textSecondary, marginTop: 4, textAlign: 'center' },
 
   finishButton: { width: '100%', borderRadius: 18, overflow: 'hidden', marginTop: 8 },
   finishButtonGradient: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 10, paddingVertical: 18,
   },
-  finishButtonText: { fontSize: 17, fontWeight: '900', color: Colors.white },
+  finishButtonText: { fontSize: 17, fontWeight: '900', color: colors.white },
 
   // Shared buttons
   primaryButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 10, backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 15, marginTop: 20,
+    gap: 10, backgroundColor: colors.primary, borderRadius: 16, paddingVertical: 15, marginTop: 20,
   },
   primaryButtonDisabled: { opacity: 0.45 },
-  primaryButtonText: { fontSize: 15, fontWeight: '700', color: Colors.white },
+  primaryButtonText: { fontSize: 15, fontWeight: '700', color: colors.white },
   secondaryButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 10, backgroundColor: Colors.white, borderRadius: 14, paddingVertical: 12,
-    borderWidth: 1.5, borderColor: Colors.primary,
+    gap: 10, backgroundColor: colors.cardBg, borderRadius: 14, paddingVertical: 12,
+    borderWidth: 1.5, borderColor: colors.primary,
   },
-  secondaryButtonText: { fontSize: 14, fontWeight: '700', color: Colors.primary },
+  secondaryButtonText: { fontSize: 14, fontWeight: '700', color: colors.primary },
 
-  emptyHint: { fontSize: 13, color: Colors.neutral400, marginTop: 8, textAlign: 'center' },
+  emptyHint: { fontSize: 13, color: colors.neutral400, marginTop: 8, textAlign: 'center' },
 
   // Venue modal
-  venueModal: { flex: 1, backgroundColor: Colors.background },
+  venueModal: { flex: 1, backgroundColor: colors.background },
   venueModalHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: Colors.neutral200,
+    borderBottomWidth: 1, borderBottomColor: colors.neutral200,
   },
-  venueModalTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
+  venueModalTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
   venueRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: Colors.neutral100,
+    borderBottomWidth: 1, borderBottomColor: colors.neutral100,
   },
   venueIconBox: {
-    width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.primary,
+    width: 36, height: 36, borderRadius: 10, backgroundColor: colors.primary,
     alignItems: 'center', justifyContent: 'center',
   },
-  venueRowName: { fontSize: 14, fontWeight: '600', color: Colors.text },
-  venueRowLocation: { fontSize: 12, color: Colors.neutral500, marginTop: 2 },
+  venueRowName: { fontSize: 14, fontWeight: '600', color: colors.text },
+  venueRowLocation: { fontSize: 12, color: colors.neutral500, marginTop: 2 },
   emptyVenue: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
   emptyVenueEmoji: { fontSize: 40, marginBottom: 12 },
-  emptyVenueText: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center' },
+  emptyVenueText: { fontSize: 13, color: colors.textSecondary, textAlign: 'center' },
 });

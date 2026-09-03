@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -32,7 +32,8 @@ import {
   X,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Colors } from '../styles/colors';
+import { Colors, ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { SubscriptionGate } from '../components/SubscriptionGate';
 import { AuthContext } from '../context/AuthContext';
 import { tournamentApi } from '../api/tournamentApi';
@@ -40,6 +41,7 @@ import { tournamentStorage } from '../utils/tournamentStorage';
 import { buildTeamUI, buildMatchUI } from '../utils/parseTournament';
 import { TournamentMatchUI, TournamentTeamUI } from '../types/api';
 import { LoadingScreen } from '../components/LoadingScreen';
+import ScreenGlow from '../components/ScreenGlow';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -115,6 +117,8 @@ function guessSport(): Sport {
 }
 
 export default function MatchScoringScreen({ tournamentId = '', matchId = '', normalMatchId }: MatchScoringScreenProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const { user } = useContext(AuthContext);
   const [match, setMatch] = useState<TournamentMatchUI | null>(null);
@@ -168,8 +172,8 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
         teamAScore: scores.teamAScore ?? 0,
         teamBScore: scores.teamBScore ?? 0,
         derivedStatus: scores.status ?? 'SCHEDULED',
-        teamA: { id: 'a', name: 'Team A', emoji: '⚽', color: Colors.futsal, players: [] } as any,
-        teamB: { id: 'b', name: 'Team B', emoji: '🏆', color: Colors.liveRed, players: [] } as any,
+        teamA: { id: 'a', name: 'Team A', emoji: '⚽', color: colors.futsal, players: [] } as any,
+        teamB: { id: 'b', name: 'Team B', emoji: '🏆', color: colors.liveRed, players: [] } as any,
       } as any;
       setMatch(syntheticMatch);
       setIsOwner(true);
@@ -397,9 +401,9 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
 
   const renderStatusBadge = () => {
     const config = {
-      SCHEDULED: { label: 'Not Started', color: Colors.neutral500, bg: Colors.neutral200 },
-      LIVE: { label: 'LIVE', color: Colors.liveRed, bg: Colors.liveRed + '18' },
-      COMPLETED: { label: 'Full Time', color: Colors.success, bg: Colors.success + '18' },
+      SCHEDULED: { label: 'Not Started', color: colors.neutral500, bg: colors.neutral200 },
+      LIVE: { label: 'LIVE', color: colors.liveRed, bg: colors.liveRed + '18' },
+      COMPLETED: { label: 'Full Time', color: colors.success, bg: colors.success + '18' },
     }[match?.derivedStatus || 'SCHEDULED'];
 
     return (
@@ -429,10 +433,10 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
         {isOwner && match?.derivedStatus !== 'COMPLETED' && (
           <View style={styles.stepperRow}>
             <Pressable style={styles.stepperMinus} onPress={() => adjustScore('A', -1)}>
-              <Minus color={Colors.white} size={16} strokeWidth={3} />
+              <Minus color={colors.white} size={16} strokeWidth={3} />
             </Pressable>
             <Pressable style={[styles.stepperPlus, { backgroundColor: sportColor }]} onPress={() => adjustScore('A', 1)}>
-              <Plus color={Colors.white} size={16} strokeWidth={3} />
+              <Plus color={colors.white} size={16} strokeWidth={3} />
             </Pressable>
           </View>
         )}
@@ -441,7 +445,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
         <Text style={styles.vsLabel}>VS</Text>
         {match?.derivedStatus === 'LIVE' && (
           <View style={styles.liveIndicator}>
-            <Radio color={Colors.liveRed} size={12} strokeWidth={2} />
+            <Radio color={colors.liveRed} size={12} strokeWidth={2} />
             <Text style={styles.liveText}>LIVE</Text>
           </View>
         )}
@@ -455,10 +459,10 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
         {isOwner && match?.derivedStatus !== 'COMPLETED' && (
           <View style={styles.stepperRow}>
             <Pressable style={styles.stepperMinus} onPress={() => adjustScore('B', -1)}>
-              <Minus color={Colors.white} size={16} strokeWidth={3} />
+              <Minus color={colors.white} size={16} strokeWidth={3} />
             </Pressable>
             <Pressable style={[styles.stepperPlus, { backgroundColor: sportColor }]} onPress={() => adjustScore('B', 1)}>
-              <Plus color={Colors.white} size={16} strokeWidth={3} />
+              <Plus color={colors.white} size={16} strokeWidth={3} />
             </Pressable>
           </View>
         )}
@@ -520,7 +524,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
           </Animated.Text>
           {isOwner && match?.derivedStatus !== 'COMPLETED' && game?.winner === null && (
             <Pressable style={[styles.rallyBtn, { backgroundColor: sportColor }]} onPress={() => addPickleballPoint('A')}>
-              <Plus color={Colors.white} size={18} strokeWidth={2.5} />
+              <Plus color={colors.white} size={18} strokeWidth={2.5} />
               <Text style={styles.rallyBtnText}>Rally</Text>
             </Pressable>
           )}
@@ -538,7 +542,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
           </Animated.Text>
           {isOwner && match?.derivedStatus !== 'COMPLETED' && game?.winner === null && (
             <Pressable style={[styles.rallyBtn, { backgroundColor: sportColor }]} onPress={() => addPickleballPoint('B')}>
-              <Plus color={Colors.white} size={18} strokeWidth={2.5} />
+              <Plus color={colors.white} size={18} strokeWidth={2.5} />
               <Text style={styles.rallyBtnText}>Rally</Text>
             </Pressable>
           )}
@@ -559,18 +563,18 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
         <Text style={styles.eventsTitle}>Match Events</Text>
         <View style={styles.minuteControl}>
           <Pressable onPress={() => setMatchMinute((m) => Math.max(0, m - 1))} style={styles.minuteBtn}>
-            <Minus color={Colors.primary} size={14} strokeWidth={2.5} />
+            <Minus color={colors.primary} size={14} strokeWidth={2.5} />
           </Pressable>
           <Text style={styles.minuteText}>{matchMinute}'</Text>
           <Pressable onPress={() => setMatchMinute((m) => m + 1)} style={styles.minuteBtn}>
-            <Plus color={Colors.primary} size={14} strokeWidth={2.5} />
+            <Plus color={colors.primary} size={14} strokeWidth={2.5} />
           </Pressable>
         </View>
       </View>
 
       {isOwner && match?.derivedStatus === 'LIVE' && (
         <Pressable style={[styles.addEventBtn, { backgroundColor: sportColor }]} onPress={() => setEventModal(true)}>
-          <Plus color={Colors.white} size={16} strokeWidth={2.5} />
+          <Plus color={colors.white} size={16} strokeWidth={2.5} />
           <Text style={styles.addEventBtnText}>Add Event</Text>
         </Pressable>
       )}
@@ -582,7 +586,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
         </View>
       ) : (
         futsalEvents.map((ev, i) => (
-          <View key={i} style={[styles.eventRow, { borderLeftColor: ev.team === 'A' ? (match?.teamA as any)?.color || Colors.primary : Colors.liveRed }]}>
+          <View key={i} style={[styles.eventRow, { borderLeftColor: ev.team === 'A' ? (match?.teamA as any)?.color || colors.primary : colors.liveRed }]}>
             <View style={styles.eventBadge}>
               <Text style={styles.eventBadgeText}>{ev.minute}'</Text>
             </View>
@@ -607,8 +611,8 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
       <View style={styles.eventsSection}>
         <Text style={styles.eventsTitle}>Ball-by-Ball</Text>
         {isOwner && match?.derivedStatus === 'LIVE' && (
-          <Pressable style={[styles.addEventBtn, { backgroundColor: Colors.cricket }]} onPress={() => setCricketModal(true)}>
-            <Target color={Colors.white} size={16} strokeWidth={2.5} />
+          <Pressable style={[styles.addEventBtn, { backgroundColor: colors.cricket }]} onPress={() => setCricketModal(true)}>
+            <Target color={colors.white} size={16} strokeWidth={2.5} />
             <Text style={styles.addEventBtnText}>Record Ball</Text>
           </Pressable>
         )}
@@ -619,7 +623,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
           </View>
         ) : (
           innings.events.map((ball, i) => (
-            <View key={i} style={[styles.eventRow, { borderLeftColor: Colors.cricket }]}>
+            <View key={i} style={[styles.eventRow, { borderLeftColor: colors.cricket }]}>
               <View style={styles.eventBadge}>
                 <Text style={styles.eventBadgeText}>{ball.isWide ? 'W' : ball.isNoBall ? 'NB' : `${innings.overs - Math.floor(i / 6)}.${5 - (i % 6)}`}</Text>
               </View>
@@ -647,7 +651,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
           </View>
           {game.winner && (
             <View style={styles.pickleballWinner}>
-              <Award color={Colors.warning} size={14} strokeWidth={2.5} />
+              <Award color={colors.warning} size={14} strokeWidth={2.5} />
               <Text style={styles.pickleballWinnerText}>{game.winner === 'A' ? match?.teamA?.name : match?.teamB?.name}</Text>
             </View>
           )}
@@ -701,7 +705,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
             <Text style={styles.sportSelectorEmoji}>
               {s === 'FUTSAL' ? '⚽' : s === 'CRICKET' ? '🏏' : '🏓'}
             </Text>
-            <Text style={[styles.sportSelectorText, sport === s && { color: Colors.white }]}>{s}</Text>
+            <Text style={[styles.sportSelectorText, sport === s && { color: colors.white }]}>{s}</Text>
           </Pressable>
         ))}
       </View>
@@ -717,10 +721,11 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
   return (
     <SubscriptionGate feature="match scoring">
     <SafeAreaView style={styles.flex1} edges={['top']}>
+      <ScreenGlow />
       {/* Header */}
       <LinearGradient colors={[sportColor, sportColor + 'CC']} style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <ArrowLeft color={Colors.white} size={22} strokeWidth={2.5} />
+          <ArrowLeft color={colors.white} size={22} strokeWidth={2.5} />
         </Pressable>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>
@@ -743,14 +748,14 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
         {/* Owner controls */}
         {!isOwner && (
           <View style={styles.viewerCard}>
-            <Radio color={Colors.primary} size={16} strokeWidth={2} />
+            <Radio color={colors.primary} size={16} strokeWidth={2} />
             <Text style={styles.viewerText}>Following live • Score updates every 5s</Text>
           </View>
         )}
 
         {isOwner && match.derivedStatus === 'SCHEDULED' && (
-          <Pressable style={[styles.actionButton, { backgroundColor: Colors.success }]} onPress={handleStartMatch}>
-            <Play color={Colors.white} size={18} strokeWidth={2.5} />
+          <Pressable style={[styles.actionButton, { backgroundColor: colors.success }]} onPress={handleStartMatch}>
+            <Play color={colors.white} size={18} strokeWidth={2.5} />
             <Text style={styles.actionButtonText}>Start Match</Text>
           </Pressable>
         )}
@@ -759,18 +764,18 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
           <View style={styles.ownerActionsRow}>
             {sport === 'FUTSAL' && (
               <Pressable style={[styles.actionButtonSmall, { backgroundColor: sportColor }]} onPress={() => setEventModal(true)}>
-                <Target color={Colors.white} size={16} strokeWidth={2.5} />
+                <Target color={colors.white} size={16} strokeWidth={2.5} />
                 <Text style={styles.actionButtonSmallText}>Log Goal</Text>
               </Pressable>
             )}
             {sport === 'CRICKET' && (
-              <Pressable style={[styles.actionButtonSmall, { backgroundColor: Colors.cricket }]} onPress={() => setCricketModal(true)}>
-                <Target color={Colors.white} size={16} strokeWidth={2.5} />
+              <Pressable style={[styles.actionButtonSmall, { backgroundColor: colors.cricket }]} onPress={() => setCricketModal(true)}>
+                <Target color={colors.white} size={16} strokeWidth={2.5} />
                 <Text style={styles.actionButtonSmallText}>Record Ball</Text>
               </Pressable>
             )}
-            <Pressable style={[styles.actionButtonSmall, { backgroundColor: Colors.liveRed }]} onPress={handleMarkFinal}>
-              <Flag color={Colors.white} size={16} strokeWidth={2.5} />
+            <Pressable style={[styles.actionButtonSmall, { backgroundColor: colors.liveRed }]} onPress={handleMarkFinal}>
+              <Flag color={colors.white} size={16} strokeWidth={2.5} />
               <Text style={styles.actionButtonSmallText}>Full Time</Text>
             </Pressable>
           </View>
@@ -778,7 +783,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
 
         {match.derivedStatus === 'COMPLETED' && (
           <View style={styles.completedBanner}>
-            <Award color={Colors.warning} size={24} strokeWidth={2} />
+            <Award color={colors.warning} size={24} strokeWidth={2} />
             <Text style={styles.completedTitle}>Match Complete!</Text>
             <Text style={styles.completedSub}>
               {(match.teamAScore ?? 0) > (match.teamBScore ?? 0)
@@ -817,7 +822,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
           style={[styles.celebrateOverlay, { opacity: celebrateAnim, transform: [{ scale: celebrateAnim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) }] }]}
           pointerEvents="none"
         >
-          <PartyPopper color={Colors.warning} size={64} strokeWidth={2} />
+          <PartyPopper color={colors.warning} size={64} strokeWidth={2} />
           <Text style={styles.celebrateText}>Full Time! 🎉</Text>
           <Text style={styles.celebrateSub}>
             {(match.teamAScore ?? 0) !== (match.teamBScore ?? 0)
@@ -837,7 +842,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Log Match Event</Text>
               <Pressable onPress={() => setEventModal(false)}>
-                <X color={Colors.text} size={20} strokeWidth={2.5} />
+                <X color={colors.text} size={20} strokeWidth={2.5} />
               </Pressable>
             </View>
 
@@ -852,7 +857,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
                   <Text style={styles.eventTypeEmoji}>
                     {t === 'GOAL' ? '⚽' : t === 'ASSIST' ? '🎯' : t === 'YELLOW' ? '🟨' : t === 'RED' ? '🟥' : '🧤'}
                   </Text>
-                  <Text style={[styles.eventTypeText, eventType === t && { color: Colors.white }]}>{t}</Text>
+                  <Text style={[styles.eventTypeText, eventType === t && { color: colors.white }]}>{t}</Text>
                 </Pressable>
               ))}
             </ScrollView>
@@ -865,7 +870,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
                   onPress={() => setEventTeam(t)}
                   style={[styles.teamSelectBtn, eventTeam === t && { backgroundColor: sportColor }]}
                 >
-                  <Text style={[styles.teamSelectText, eventTeam === t && { color: Colors.white }]}>
+                  <Text style={[styles.teamSelectText, eventTeam === t && { color: colors.white }]}>
                     {t === 'A' ? (match.teamA?.name || 'Team A') : (match.teamB?.name || 'Team B')}
                   </Text>
                 </Pressable>
@@ -876,7 +881,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
             <TextInput
               style={styles.modalInput}
               placeholder="Enter player name..."
-              placeholderTextColor={Colors.neutral400}
+              placeholderTextColor={colors.neutral400}
               value={eventPlayer}
               onChangeText={setEventPlayer}
             />
@@ -898,35 +903,35 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Record Ball</Text>
               <Pressable onPress={() => setCricketModal(false)}>
-                <X color={Colors.text} size={20} strokeWidth={2.5} />
+                <X color={colors.text} size={20} strokeWidth={2.5} />
               </Pressable>
             </View>
 
             <Text style={styles.modalLabel}>Runs scored</Text>
             <View style={styles.runsRow}>
               {[0, 1, 2, 3, 4, 6].map((r) => (
-                <Pressable key={r} style={[styles.runBtn, { backgroundColor: Colors.cricket }]} onPress={() => addCricketBall({ runs: r })}>
+                <Pressable key={r} style={[styles.runBtn, { backgroundColor: colors.cricket }]} onPress={() => addCricketBall({ runs: r })}>
                   <Text style={styles.runBtnText}>{r}</Text>
                 </Pressable>
               ))}
             </View>
 
             <View style={styles.cricketSpecialRow}>
-              <Pressable style={[styles.specialBtn, { backgroundColor: Colors.liveRed }]} onPress={() => addCricketBall({ isWicket: true })}>
+              <Pressable style={[styles.specialBtn, { backgroundColor: colors.liveRed }]} onPress={() => addCricketBall({ isWicket: true })}>
                 <Text style={styles.specialBtnText}>🔴 WICKET</Text>
               </Pressable>
-              <Pressable style={[styles.specialBtn, { backgroundColor: Colors.neutral600 }]} onPress={() => addCricketBall({ isWide: true, runs: 1 })}>
+              <Pressable style={[styles.specialBtn, { backgroundColor: colors.neutral600 }]} onPress={() => addCricketBall({ isWide: true, runs: 1 })}>
                 <Text style={styles.specialBtnText}>⚪ WIDE</Text>
               </Pressable>
-              <Pressable style={[styles.specialBtn, { backgroundColor: Colors.warning }]} onPress={() => addCricketBall({ isNoBall: true, runs: 1 })}>
+              <Pressable style={[styles.specialBtn, { backgroundColor: colors.warning }]} onPress={() => addCricketBall({ isNoBall: true, runs: 1 })}>
                 <Text style={styles.specialBtnText}>🟠 NO BALL</Text>
               </Pressable>
             </View>
 
             <Text style={styles.modalLabel}>Batsman</Text>
-            <TextInput style={styles.modalInput} placeholder="Batsman name..." placeholderTextColor={Colors.neutral400} value={currentBatsman} onChangeText={setCurrentBatsman} />
+            <TextInput style={styles.modalInput} placeholder="Batsman name..." placeholderTextColor={colors.neutral400} value={currentBatsman} onChangeText={setCurrentBatsman} />
             <Text style={styles.modalLabel}>Bowler</Text>
-            <TextInput style={styles.modalInput} placeholder="Bowler name..." placeholderTextColor={Colors.neutral400} value={currentBowler} onChangeText={setCurrentBowler} />
+            <TextInput style={styles.modalInput} placeholder="Bowler name..." placeholderTextColor={colors.neutral400} value={currentBowler} onChangeText={setCurrentBowler} />
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -935,62 +940,62 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
   );
 }
 
-const styles = StyleSheet.create({
-  flex1: { flex: 1, backgroundColor: Colors.background },
-  loadingScreen: { flex: 1, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontSize: 14, color: Colors.textSecondary },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  flex1: { flex: 1, backgroundColor: colors.background },
+  loadingScreen: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingText: { fontSize: 14, color: colors.textSecondary },
 
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
   backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   headerCenter: { flex: 1, alignItems: 'center', gap: 6 },
-  headerTitle: { fontSize: 16, fontWeight: '800', color: Colors.white },
+  headerTitle: { fontSize: 16, fontWeight: '800', color: colors.white },
   statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 },
-  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.liveRed },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.liveRed },
   statusText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
 
   sportSelectorRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 12 },
   sportSelectorChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20,
-    backgroundColor: Colors.white, borderWidth: 1.5, borderColor: Colors.neutral200, flex: 1, justifyContent: 'center',
+    backgroundColor: colors.cardBg, borderWidth: 1.5, borderColor: colors.neutral200, flex: 1, justifyContent: 'center',
   },
   sportSelectorEmoji: { fontSize: 14 },
-  sportSelectorText: { fontSize: 11, fontWeight: '700', color: Colors.text },
+  sportSelectorText: { fontSize: 11, fontWeight: '700', color: colors.text },
 
   scoreboardWrapper: { margin: 16 },
 
   scoreboard: { borderRadius: 24, paddingVertical: 28, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   teamColumn: { flex: 1, alignItems: 'center', gap: 6 },
   teamEmoji: { fontSize: 32 },
-  teamName: { fontSize: 13, fontWeight: '700', color: Colors.white, textAlign: 'center' },
-  scoreText: { fontSize: 52, fontWeight: '900', color: Colors.white, marginVertical: 4 },
-  setsLabel: { fontSize: 11, color: Colors.white + '80', fontWeight: '600' },
+  teamName: { fontSize: 13, fontWeight: '700', color: colors.white, textAlign: 'center' },
+  scoreText: { fontSize: 52, fontWeight: '900', color: colors.white, marginVertical: 4 },
+  setsLabel: { fontSize: 11, color: colors.white + '80', fontWeight: '600' },
   stepperRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
   stepperMinus: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
   stepperPlus: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   vsDivider: { alignItems: 'center', gap: 8 },
   vsLabel: { fontSize: 14, fontWeight: '900', color: 'rgba(255,255,255,0.4)' },
   liveIndicator: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  liveText: { fontSize: 10, fontWeight: '800', color: Colors.liveRed },
+  liveText: { fontSize: 10, fontWeight: '800', color: colors.liveRed },
 
   rallyBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20, marginTop: 4 },
-  rallyBtnText: { fontSize: 12, fontWeight: '700', color: Colors.white },
+  rallyBtnText: { fontSize: 12, fontWeight: '700', color: colors.white },
 
   // Cricket scoreboard
   cricketBoard: { borderRadius: 24, padding: 20 },
   cricketHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  cricketInningsLabel: { fontSize: 11, fontWeight: '800', color: Colors.white + '80', letterSpacing: 0.5 },
-  cricketOvers: { fontSize: 12, color: Colors.white + '80', fontWeight: '600' },
+  cricketInningsLabel: { fontSize: 11, fontWeight: '800', color: colors.white + '80', letterSpacing: 0.5 },
+  cricketOvers: { fontSize: 12, color: colors.white + '80', fontWeight: '600' },
   cricketScoreRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 4 },
-  cricketRunsText: { fontSize: 56, fontWeight: '900', color: Colors.white },
-  cricketWicketsText: { fontSize: 32, fontWeight: '700', color: Colors.white + 'AA', marginBottom: 6, marginLeft: 4 },
-  cricketBattingLabel: { fontSize: 13, color: Colors.white + 'CC', marginBottom: 8 },
+  cricketRunsText: { fontSize: 56, fontWeight: '900', color: colors.white },
+  cricketWicketsText: { fontSize: 32, fontWeight: '700', color: colors.white + 'AA', marginBottom: 6, marginLeft: 4 },
+  cricketBattingLabel: { fontSize: 13, color: colors.white + 'CC', marginBottom: 8 },
   cricketExtrasRow: {},
-  cricketExtrasLabel: { fontSize: 11, color: Colors.white + '70' },
+  cricketExtrasLabel: { fontSize: 11, color: colors.white + '70' },
   cricketTeamsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)' },
   cricketTeamSummary: { alignItems: 'center', gap: 4 },
-  cricketTeamName: { fontSize: 12, color: Colors.white + 'CC', fontWeight: '600' },
-  cricketTeamScore: { fontSize: 22, fontWeight: '800', color: Colors.white },
+  cricketTeamName: { fontSize: 12, color: colors.white + 'CC', fontWeight: '600' },
+  cricketTeamScore: { fontSize: 22, fontWeight: '800', color: colors.white },
 
   // Pickleball
   pickleballSetLabel: { fontSize: 11, color: 'rgba(255,255,255,0.5)' },
@@ -998,105 +1003,105 @@ const styles = StyleSheet.create({
   // Viewer/owner cards
   viewerCard: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: Colors.primaryLight, marginHorizontal: 16, borderRadius: 12,
-    padding: 12, marginBottom: 8, borderWidth: 1, borderColor: Colors.primary + '30',
+    backgroundColor: colors.primaryLight, marginHorizontal: 16, borderRadius: 12,
+    padding: 12, marginBottom: 8, borderWidth: 1, borderColor: colors.primary + '30',
   },
-  viewerText: { fontSize: 13, color: Colors.primary, fontWeight: '500' },
+  viewerText: { fontSize: 13, color: colors.primary, fontWeight: '500' },
 
   actionButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
     borderRadius: 16, paddingVertical: 15, marginHorizontal: 16, marginBottom: 12,
   },
-  actionButtonText: { fontSize: 15, fontWeight: '700', color: Colors.white },
+  actionButtonText: { fontSize: 15, fontWeight: '700', color: colors.white },
   ownerActionsRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginBottom: 12 },
   actionButtonSmall: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, borderRadius: 14, paddingVertical: 12,
   },
-  actionButtonSmallText: { fontSize: 13, fontWeight: '700', color: Colors.white },
+  actionButtonSmallText: { fontSize: 13, fontWeight: '700', color: colors.white },
 
   completedBanner: {
-    alignItems: 'center', backgroundColor: Colors.success + '15',
+    alignItems: 'center', backgroundColor: colors.success + '15',
     marginHorizontal: 16, borderRadius: 16, padding: 20, gap: 6, marginBottom: 12,
-    borderWidth: 1, borderColor: Colors.success + '40',
+    borderWidth: 1, borderColor: colors.success + '40',
   },
-  completedTitle: { fontSize: 20, fontWeight: '900', color: Colors.text },
-  completedSub: { fontSize: 14, color: Colors.textSecondary },
+  completedTitle: { fontSize: 20, fontWeight: '900', color: colors.text },
+  completedSub: { fontSize: 14, color: colors.textSecondary },
 
   // Tabs
-  tabBar: { flexDirection: 'row', backgroundColor: Colors.white, marginHorizontal: 16, borderRadius: 14, padding: 4, marginBottom: 4, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
+  tabBar: { flexDirection: 'row', backgroundColor: colors.cardBg, marginHorizontal: 16, borderRadius: 14, padding: 4, marginBottom: 4, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
   tabItem: { flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabText: { fontSize: 12, fontWeight: '700', color: Colors.neutral400 },
+  tabText: { fontSize: 12, fontWeight: '700', color: colors.neutral400 },
   tabContent: { paddingBottom: 40 },
 
   // Events section
   eventsSection: { paddingHorizontal: 16, paddingTop: 8 },
-  eventsTitle: { fontSize: 16, fontWeight: '800', color: Colors.text, marginBottom: 12 },
+  eventsTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 12 },
   minuteRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   minuteControl: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  minuteBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  minuteText: { fontSize: 14, fontWeight: '700', color: Colors.primary, minWidth: 32, textAlign: 'center' },
+  minuteBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
+  minuteText: { fontSize: 14, fontWeight: '700', color: colors.primary, minWidth: 32, textAlign: 'center' },
   addEventBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 12, paddingVertical: 11, marginBottom: 12 },
-  addEventBtnText: { fontSize: 14, fontWeight: '700', color: Colors.white },
+  addEventBtnText: { fontSize: 14, fontWeight: '700', color: colors.white },
   emptyEvents: { alignItems: 'center', paddingVertical: 32, gap: 10 },
   emptyEventsEmoji: { fontSize: 40 },
-  emptyEventsText: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center' },
-  eventRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.white, borderRadius: 12, padding: 12, marginBottom: 8, borderLeftWidth: 3 },
-  eventBadge: { backgroundColor: Colors.neutral100, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 },
-  eventBadgeText: { fontSize: 10, fontWeight: '700', color: Colors.text },
+  emptyEventsText: { fontSize: 13, color: colors.textSecondary, textAlign: 'center' },
+  eventRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.cardBg, borderRadius: 12, padding: 12, marginBottom: 8, borderLeftWidth: 3 },
+  eventBadge: { backgroundColor: colors.neutral100, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 },
+  eventBadgeText: { fontSize: 10, fontWeight: '700', color: colors.text },
   eventIcon: {},
   eventIconText: { fontSize: 18 },
   eventInfo: { flex: 1 },
-  eventType: { fontSize: 13, fontWeight: '700', color: Colors.text },
-  eventPlayer: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+  eventType: { fontSize: 13, fontWeight: '700', color: colors.text },
+  eventPlayer: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
 
   // Cricket events
   runsRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
   runBtn: { flex: 1, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  runBtnText: { fontSize: 16, fontWeight: '800', color: Colors.white },
+  runBtnText: { fontSize: 16, fontWeight: '800', color: colors.white },
   cricketSpecialRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
   specialBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center' },
-  specialBtnText: { fontSize: 11, fontWeight: '700', color: Colors.white },
+  specialBtnText: { fontSize: 11, fontWeight: '700', color: colors.white },
 
   // Pickleball game history
-  pickleballGameRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.white, borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: Colors.neutral200 },
-  pickleballGameRowActive: { borderColor: Colors.pickleball, borderWidth: 2 },
-  pickleballGameLabel: { fontSize: 13, fontWeight: '700', color: Colors.text, flex: 1 },
+  pickleballGameRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.cardBg, borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: colors.neutral200 },
+  pickleballGameRowActive: { borderColor: colors.pickleball, borderWidth: 2 },
+  pickleballGameLabel: { fontSize: 13, fontWeight: '700', color: colors.text, flex: 1 },
   pickleballGameScores: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  pickleballScore: { fontSize: 18, fontWeight: '800', color: Colors.text },
-  pickleballScoreWinner: { color: Colors.success },
-  pickleballScoreDash: { fontSize: 14, color: Colors.textMuted },
+  pickleballScore: { fontSize: 18, fontWeight: '800', color: colors.text },
+  pickleballScoreWinner: { color: colors.success },
+  pickleballScoreDash: { fontSize: 14, color: colors.textMuted },
   pickleballWinner: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 12 },
-  pickleballWinnerText: { fontSize: 11, fontWeight: '600', color: Colors.warning },
+  pickleballWinnerText: { fontSize: 11, fontWeight: '600', color: colors.warning },
 
   // Stats tab
-  statsTeamHeader: { backgroundColor: Colors.primaryLight, borderRadius: 10, padding: 10, marginBottom: 8 },
-  statsTeamName: { fontSize: 14, fontWeight: '700', color: Colors.primary },
-  playerStatRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.white, borderRadius: 12, padding: 12, marginBottom: 8 },
-  playerStatAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  playerStatAvatarText: { fontSize: 13, fontWeight: '700', color: Colors.primary },
-  playerStatName: { flex: 1, fontSize: 13, fontWeight: '600', color: Colors.text },
+  statsTeamHeader: { backgroundColor: colors.primaryLight, borderRadius: 10, padding: 10, marginBottom: 8 },
+  statsTeamName: { fontSize: 14, fontWeight: '700', color: colors.primary },
+  playerStatRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.cardBg, borderRadius: 12, padding: 12, marginBottom: 8 },
+  playerStatAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
+  playerStatAvatarText: { fontSize: 13, fontWeight: '700', color: colors.primary },
+  playerStatName: { flex: 1, fontSize: 13, fontWeight: '600', color: colors.text },
   playerStatBadges: { flexDirection: 'row', gap: 6 },
-  statBadge: { backgroundColor: Colors.neutral100, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  statBadgeText: { fontSize: 11, fontWeight: '600', color: Colors.text },
+  statBadge: { backgroundColor: colors.neutral100, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  statBadgeText: { fontSize: 11, fontWeight: '600', color: colors.text },
 
   // Futsal modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36 },
+  modalCard: { backgroundColor: colors.cardBg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: Colors.text },
-  modalLabel: { fontSize: 12, fontWeight: '700', color: Colors.text, marginBottom: 8, marginTop: 12 },
-  eventTypeChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, backgroundColor: Colors.neutral100, borderWidth: 1, borderColor: Colors.neutral200, marginRight: 8 },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
+  modalLabel: { fontSize: 12, fontWeight: '700', color: colors.text, marginBottom: 8, marginTop: 12 },
+  eventTypeChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, backgroundColor: colors.neutral100, borderWidth: 1, borderColor: colors.neutral200, marginRight: 8 },
   eventTypeEmoji: { fontSize: 14 },
-  eventTypeText: { fontSize: 12, fontWeight: '600', color: Colors.text },
+  eventTypeText: { fontSize: 12, fontWeight: '600', color: colors.text },
   teamSelectRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
-  teamSelectBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.neutral100, alignItems: 'center', borderWidth: 1, borderColor: Colors.neutral200 },
-  teamSelectText: { fontSize: 13, fontWeight: '700', color: Colors.text },
-  modalInput: { backgroundColor: Colors.neutral100, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: Colors.text, marginBottom: 4 },
+  teamSelectBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: colors.neutral100, alignItems: 'center', borderWidth: 1, borderColor: colors.neutral200 },
+  teamSelectText: { fontSize: 13, fontWeight: '700', color: colors.text },
+  modalInput: { backgroundColor: colors.neutral100, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: colors.text, marginBottom: 4 },
   modalSubmitBtn: { borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 16 },
-  modalSubmitText: { fontSize: 15, fontWeight: '700', color: Colors.white },
+  modalSubmitText: { fontSize: 15, fontWeight: '700', color: colors.white },
 
   celebrateOverlay: { position: 'absolute', top: '35%', left: 0, right: 0, alignItems: 'center', gap: 12 },
-  celebrateText: { fontSize: 24, fontWeight: '900', color: Colors.warning },
-  celebrateSub: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  celebrateText: { fontSize: 24, fontWeight: '900', color: colors.warning },
+  celebrateSub: { fontSize: 16, fontWeight: '700', color: colors.text },
 });

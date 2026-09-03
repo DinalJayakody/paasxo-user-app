@@ -13,7 +13,8 @@ import {
   View,
 } from 'react-native';
 import { Image as ImageIcon, Send, X } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { socialMediaApi } from '../api/socialMediaApi';
 import { useAuth } from '../context/AuthContext';
 import { CommentItem } from '../types/api';
@@ -28,6 +29,8 @@ interface CommentSheetProps {
 }
 
 export function CommentSheet({ postId, visible, onClose }: CommentSheetProps) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const { user } = useAuth();
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -92,12 +95,12 @@ export function CommentSheet({ postId, visible, onClose }: CommentSheetProps) {
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Comments</Text>
             <Pressable onPress={onClose} style={styles.closeBtn}>
-              <X color={Colors.text} size={20} strokeWidth={2.5} />
+              <X color={colors.text} size={20} strokeWidth={2.5} />
             </Pressable>
           </View>
 
           {loading ? (
-            <ActivityIndicator color={Colors.primary} style={{ marginVertical: 24 }} />
+            <ActivityIndicator color={colors.primary} style={{ marginVertical: 24 }} />
           ) : (
             <FlatList
               data={comments}
@@ -134,12 +137,12 @@ export function CommentSheet({ postId, visible, onClose }: CommentSheetProps) {
 
           <View style={styles.inputRow}>
             <Pressable style={styles.gifBtn} onPress={() => setGifPickerVisible(true)} disabled={submitting}>
-              <ImageIcon color={Colors.primary} size={20} strokeWidth={2} />
+              <ImageIcon color={colors.primary} size={20} strokeWidth={2} />
             </Pressable>
             <TextInput
               style={styles.input}
               placeholder="Add a comment..."
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={colors.textMuted}
               value={text}
               onChangeText={setText}
               multiline
@@ -151,9 +154,9 @@ export function CommentSheet({ postId, visible, onClose }: CommentSheetProps) {
               disabled={!text.trim() || submitting}
             >
               {submitting ? (
-                <ActivityIndicator size="small" color={Colors.white} />
+                <ActivityIndicator size="small" color={colors.white} />
               ) : (
-                <Send color={Colors.white} size={16} strokeWidth={2.5} />
+                <Send color={colors.white} size={16} strokeWidth={2.5} />
               )}
             </Pressable>
           </View>
@@ -169,49 +172,49 @@ export function CommentSheet({ postId, visible, onClose }: CommentSheetProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     height: '75%',
     paddingHorizontal: 20,
   },
   handle: {
-    width: 40, height: 4, backgroundColor: Colors.neutral200, borderRadius: 2,
+    width: 40, height: 4, backgroundColor: colors.neutral200, borderRadius: 2,
     alignSelf: 'center', marginTop: 12, marginBottom: 16,
   },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: Colors.text },
+  headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: colors.text },
   closeBtn: { padding: 4 },
   commentsList: { flex: 1 },
   list: { paddingBottom: 12, flexGrow: 1 },
-  emptyText: { textAlign: 'center', color: Colors.textMuted, fontSize: 13, marginTop: 24 },
+  emptyText: { textAlign: 'center', color: colors.textMuted, fontSize: 13, marginTop: 24 },
   commentRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
   avatar: { width: 34, height: 34, borderRadius: 17 },
-  avatarFallback: { backgroundColor: Colors.primary + '22', alignItems: 'center', justifyContent: 'center' },
-  avatarInitial: { fontSize: 13, fontWeight: '700', color: Colors.primary },
+  avatarFallback: { backgroundColor: colors.primary + '22', alignItems: 'center', justifyContent: 'center' },
+  avatarInitial: { fontSize: 13, fontWeight: '700', color: colors.primary },
   commentBody: { flex: 1 },
-  commentAuthor: { fontSize: 13, fontWeight: '700', color: Colors.text, marginBottom: 2 },
-  commentText: { fontSize: 13, color: Colors.text, lineHeight: 18 },
-  commentGif: { width: 140, height: 140, borderRadius: 10, marginTop: 2, backgroundColor: Colors.neutral100 },
-  commentTime: { fontSize: 11, color: Colors.textMuted, marginTop: 4 },
+  commentAuthor: { fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 2 },
+  commentText: { fontSize: 13, color: colors.text, lineHeight: 18 },
+  commentGif: { width: 140, height: 140, borderRadius: 10, marginTop: 2, backgroundColor: colors.neutral100 },
+  commentTime: { fontSize: 11, color: colors.textMuted, marginTop: 4 },
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 8,
-    paddingVertical: 10, borderTopWidth: 1, borderTopColor: Colors.neutral100,
+    paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.neutral100,
   },
   gifBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primary + '15',
+    width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary + '15',
     alignItems: 'center', justifyContent: 'center',
   },
   input: {
-    flex: 1, maxHeight: 90, backgroundColor: Colors.neutral100, borderRadius: 18,
-    paddingHorizontal: 14, paddingVertical: 8, fontSize: 14, color: Colors.text,
+    flex: 1, maxHeight: 90, backgroundColor: colors.neutral100, borderRadius: 18,
+    paddingHorizontal: 14, paddingVertical: 8, fontSize: 14, color: colors.text,
   },
   sendBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primary,
+    width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary,
     alignItems: 'center', justifyContent: 'center',
   },
   sendBtnDisabled: { opacity: 0.4 },

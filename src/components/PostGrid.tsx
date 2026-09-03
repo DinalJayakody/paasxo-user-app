@@ -2,7 +2,8 @@ import React from 'react';
 import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Heart, MessageCircle, X } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { Colors, ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { PostSummary } from '../types/api';
 import { parseMediaUrl } from '../utils/postFormat';
 import { usePostInteraction } from '../stores/postInteractionStore';
@@ -20,7 +21,7 @@ interface PostGridProps {
   onCloseDetail: () => void;
 }
 
-function GridTile({ post, onPress }: { post: PostSummary; onPress: () => void }) {
+function GridTile({ post, onPress, styles }: { post: PostSummary; onPress: () => void; styles: ReturnType<typeof createStyles> }) {
   const interaction = usePostInteraction(post);
   const imgUri = parseMediaUrl(post.mediaUrl);
 
@@ -46,13 +47,15 @@ function GridTile({ post, onPress }: { post: PostSummary; onPress: () => void })
 }
 
 export function PostGrid({ posts, selectedPostId, onSelectPost, onCloseDetail }: PostGridProps) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const selectedPost = posts.find((p) => p.id === selectedPostId) ?? null;
 
   return (
     <>
       <View style={styles.grid}>
         {posts.map((post) => (
-          <GridTile key={post.id} post={post} onPress={() => onSelectPost(post)} />
+          <GridTile key={post.id} post={post} onPress={() => onSelectPost(post)} styles={styles} />
         ))}
       </View>
 
@@ -60,7 +63,7 @@ export function PostGrid({ posts, selectedPostId, onSelectPost, onCloseDetail }:
         <SafeAreaView style={styles.modalSafe} edges={['top', 'bottom']}>
           <View style={styles.modalHeader}>
             <Pressable onPress={onCloseDetail} style={styles.modalBackBtn}>
-              <X color={Colors.text} size={20} strokeWidth={2.5} />
+              <X color={colors.text} size={20} strokeWidth={2.5} />
             </Pressable>
             <Text style={styles.modalHeaderTitle}>Post</Text>
             <View style={{ width: 36 }} />
@@ -79,7 +82,7 @@ export function PostGrid({ posts, selectedPostId, onSelectPost, onCloseDetail }:
 const NUM_COLUMNS = 3;
 const TILE_GAP = 3;
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -96,23 +99,23 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
     borderRadius: 14,
     overflow: 'hidden',
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
   },
   tileImage: { width: '100%', height: '100%' },
   tilePlaceholder: { alignItems: 'center', justifyContent: 'center', padding: 8 },
-  tilePlaceholderText: { fontSize: 11, color: Colors.textSecondary, textAlign: 'center' },
+  tilePlaceholderText: { fontSize: 11, color: colors.textSecondary, textAlign: 'center' },
   tileMeta: {
     position: 'absolute', bottom: 6, left: 6,
     flexDirection: 'row', alignItems: 'center', gap: 4,
   },
-  tileMetaText: { fontSize: 11, fontWeight: '700', color: Colors.white },
+  tileMetaText: { fontSize: 11, fontWeight: '700', color: colors.white },
 
-  modalSafe: { flex: 1, backgroundColor: Colors.background },
+  modalSafe: { flex: 1, backgroundColor: colors.background },
   modalHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 12,
   },
   modalBackBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  modalHeaderTitle: { fontSize: 16, fontWeight: '800', color: Colors.text },
+  modalHeaderTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
   modalContent: { flex: 1, paddingHorizontal: 16 },
 });

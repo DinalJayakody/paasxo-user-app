@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,7 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, Clock, Lock, Pause, Play, RotateCcw, Square, Zap } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { Colors, ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
 import { bookingApi } from '../api/bookingApi';
 import { AuthContext } from '../context/AuthContext';
@@ -26,6 +27,7 @@ import { FutsalScoringControls } from '../components/scoring/FutsalScoringContro
 import { CricketScoringControls } from '../components/scoring/CricketScoringControls';
 import { RacketScoringControls } from '../components/scoring/RacketScoringControls';
 import { LoadingScreen } from '../components/LoadingScreen';
+import ScreenGlow from '../components/ScreenGlow';
 
 const SPORT_ACCENT: Record<string, string> = {
   FUTSAL: Colors.futsal,
@@ -41,6 +43,8 @@ interface MatchScoreboardScreenProps {
 }
 
 export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreenProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const { user } = useContext(AuthContext);
   const { active: isPro, loading: subLoading } = useSubscription();
@@ -68,7 +72,7 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
 
   const isOwner = !!user?.firebaseUid && !!match?.creatorId && user.firebaseUid === match.creatorId;
   const sport = (match?.sportType || 'FUTSAL').toUpperCase();
-  const accent = SPORT_ACCENT[sport] || Colors.primary;
+  const accent = SPORT_ACCENT[sport] || colors.primary;
   // A freshly created match stays PENDING_VENDOR until the venue accepts it —
   // scoring (and everything else about "the match is happening") only makes
   // sense once that's confirmed. Enforced here too, not just on the button
@@ -94,7 +98,7 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
   if (!isOwner) {
     return (
       <SafeAreaView style={styles.centerScreen}>
-        <Lock color={Colors.neutral400} size={40} strokeWidth={1.6} />
+        <Lock color={colors.neutral400} size={40} strokeWidth={1.6} />
         <Text style={styles.centerTitle}>Organizer Only</Text>
         <Text style={styles.centerText}>Only the player who created this match can score it.</Text>
         <Button title="Go Back" onPress={() => router.back()} style={{ marginTop: 16 }} />
@@ -106,7 +110,7 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
     return (
       <SafeAreaView style={styles.centerScreen}>
         <View style={[styles.proLockIcon, { backgroundColor: '#EA580C' }]}>
-          <Clock color={Colors.white} size={26} strokeWidth={2.2} />
+          <Clock color={colors.white} size={26} strokeWidth={2.2} />
         </View>
         <Text style={styles.centerTitle}>Awaiting Venue Approval</Text>
         <Text style={styles.centerText}>
@@ -120,8 +124,8 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
   if (!isPro) {
     return (
       <SafeAreaView style={styles.centerScreen}>
-        <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.proLockIcon}>
-          <Zap color={Colors.white} size={26} strokeWidth={2.4} fill={Colors.white} />
+        <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.proLockIcon}>
+          <Zap color={colors.white} size={26} strokeWidth={2.4} fill={colors.white} />
         </LinearGradient>
         <Text style={styles.centerTitle}>Pro Feature</Text>
         <Text style={styles.centerText}>Scoring live matches is a Paasxo Pro feature. Upgrade to start scoring this match for everyone watching.</Text>
@@ -160,9 +164,10 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <ScreenGlow />
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.headerIconBtn} hitSlop={8}>
-          <ArrowLeft color={Colors.neutral900} size={20} strokeWidth={2.2} />
+          <ArrowLeft color={colors.neutral900} size={20} strokeWidth={2.2} />
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>{match.title || 'Match Scoring'}</Text>
         <View style={{ width: 40 }} />
@@ -182,12 +187,12 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
               onPress={() => startMatch().catch(() => {})}
               disabled={actionLoading}
             >
-              <LinearGradient colors={[accent, Colors.primaryDark]} style={styles.startBtnGrad}>
+              <LinearGradient colors={[accent, colors.primaryDark]} style={styles.startBtnGrad}>
                 {actionLoading ? (
-                  <ActivityIndicator color={Colors.white} />
+                  <ActivityIndicator color={colors.white} />
                 ) : (
                   <>
-                    <Play color={Colors.white} size={18} strokeWidth={2.6} fill={Colors.white} />
+                    <Play color={colors.white} size={18} strokeWidth={2.6} fill={colors.white} />
                     <Text style={styles.startBtnText}>Start Match</Text>
                   </>
                 )}
@@ -198,19 +203,19 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
           {(isLive || isPaused) && (
             <View style={styles.controlBar}>
               <Pressable
-                style={[styles.controlBtn, { backgroundColor: isPaused ? Colors.success : Colors.warning }]}
+                style={[styles.controlBtn, { backgroundColor: isPaused ? colors.success : colors.warning }]}
                 onPress={() => (isPaused ? resumeTimer() : pauseTimer()).catch(() => {})}
                 disabled={actionLoading}
               >
                 {isPaused ? (
-                  <Play color={Colors.white} size={16} strokeWidth={2.6} fill={Colors.white} />
+                  <Play color={colors.white} size={16} strokeWidth={2.6} fill={colors.white} />
                 ) : (
-                  <Pause color={Colors.white} size={16} strokeWidth={2.6} fill={Colors.white} />
+                  <Pause color={colors.white} size={16} strokeWidth={2.6} fill={colors.white} />
                 )}
                 <Text style={styles.controlBtnText}>{isPaused ? 'Resume' : 'Pause'}</Text>
               </Pressable>
-              <Pressable style={[styles.controlBtn, { backgroundColor: Colors.liveRed }]} onPress={handleEnd} disabled={actionLoading}>
-                <Square color={Colors.white} size={14} strokeWidth={2.6} fill={Colors.white} />
+              <Pressable style={[styles.controlBtn, { backgroundColor: colors.liveRed }]} onPress={handleEnd} disabled={actionLoading}>
+                <Square color={colors.white} size={14} strokeWidth={2.6} fill={colors.white} />
                 <Text style={styles.controlBtnText}>End Match</Text>
               </Pressable>
             </View>
@@ -218,7 +223,7 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
 
           {(isLive || isPaused) && (
             <Pressable style={styles.resetLink} onPress={handleReset} disabled={actionLoading} hitSlop={6}>
-              <RotateCcw color={Colors.textMuted} size={13} strokeWidth={2.2} />
+              <RotateCcw color={colors.textMuted} size={13} strokeWidth={2.2} />
               <Text style={styles.resetLinkText}>Reset scoring to initial state</Text>
             </Pressable>
           )}
@@ -275,16 +280,16 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: Colors.background },
-  centerScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 6, backgroundColor: Colors.background },
-  centerTitle: { fontSize: 18, fontWeight: '800', color: Colors.neutral900, marginTop: 10 },
-  centerText: { fontSize: 13.5, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  centerScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 6, backgroundColor: colors.background },
+  centerTitle: { fontSize: 18, fontWeight: '800', color: colors.neutral900, marginTop: 10 },
+  centerText: { fontSize: 13.5, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
   proLockIcon: {
     width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center',
-    shadowColor: Colors.primary, shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 6,
+    shadowColor: colors.primary, shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 6,
   },
-  linkText: { color: Colors.primary, fontSize: 13.5, fontWeight: '700' },
+  linkText: { color: colors.primary, fontSize: 13.5, fontWeight: '700' },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -292,34 +297,34 @@ const styles = StyleSheet.create({
   },
   headerIconBtn: {
     width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.neutral200,
+    backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.neutral200,
   },
-  title: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '800', color: Colors.neutral900, marginHorizontal: 8 },
+  title: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '800', color: colors.neutral900, marginHorizontal: 8 },
 
   scroll: { paddingHorizontal: 18, paddingBottom: 48, gap: 16 },
-  errorText: { color: Colors.error, fontSize: 13, textAlign: 'center', marginTop: 10 },
+  errorText: { color: colors.error, fontSize: 13, textAlign: 'center', marginTop: 10 },
 
   startBtn: { marginTop: 16, borderRadius: 18, overflow: 'hidden' },
   startBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 16 },
-  startBtnText: { color: Colors.white, fontSize: 15, fontWeight: '800' },
+  startBtnText: { color: colors.white, fontSize: 15, fontWeight: '800' },
 
   controlBar: { flexDirection: 'row', gap: 10, marginTop: 16 },
   resetLink: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     marginTop: 12, paddingVertical: 6,
   },
-  resetLinkText: { fontSize: 12.5, fontWeight: '600', color: Colors.textMuted },
+  resetLinkText: { fontSize: 12.5, fontWeight: '600', color: colors.textMuted },
   controlBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
     borderRadius: 14, paddingVertical: 12,
   },
-  controlBtnText: { color: Colors.white, fontSize: 13, fontWeight: '800' },
+  controlBtnText: { color: colors.white, fontSize: 13, fontWeight: '800' },
 
   panelWrap: { marginTop: 18 },
-  unscoreableCard: { marginTop: 16, backgroundColor: Colors.white, borderRadius: 16, padding: 18 },
-  unscoreableText: { textAlign: 'center', fontSize: 13, color: Colors.textSecondary, lineHeight: 19 },
+  unscoreableCard: { marginTop: 16, backgroundColor: colors.cardBg, borderRadius: 16, padding: 18 },
+  unscoreableText: { textAlign: 'center', fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
 
-  doneCard: { marginTop: 18, backgroundColor: Colors.white, borderRadius: 18, padding: 20, alignItems: 'center', gap: 6 },
-  doneTitle: { fontSize: 16, fontWeight: '800', color: Colors.neutral900 },
-  doneSubtitle: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 19 },
+  doneCard: { marginTop: 18, backgroundColor: colors.cardBg, borderRadius: 18, padding: 20, alignItems: 'center', gap: 6 },
+  doneTitle: { fontSize: 16, fontWeight: '800', color: colors.neutral900 },
+  doneSubtitle: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19 },
 });

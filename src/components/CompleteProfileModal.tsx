@@ -10,7 +10,8 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { Button } from './Button';
 import { InputField } from './InputField';
 import { SPORTS } from '../constants/sports';
@@ -31,6 +32,8 @@ export const CompleteProfileModal: React.FC<CompleteProfileModalProps> = ({
   onSubmit,
   onSignOut,
 }) => {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const [selectedSports, setSelectedSports] = useState<string[]>([]);
   const [referralCode, setReferralCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -98,7 +101,7 @@ export const CompleteProfileModal: React.FC<CompleteProfileModalProps> = ({
                       activeOpacity={0.8}
                     >
                       <Icon
-                        color={active ? Colors.primary : Colors.textSecondary}
+                        color={active ? colors.primary : colors.textSecondary}
                         size={14}
                         strokeWidth={2}
                       />
@@ -145,10 +148,10 @@ export const CompleteProfileModal: React.FC<CompleteProfileModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
   },
   scroll: {
     paddingHorizontal: 20,
@@ -158,18 +161,18 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '800',
-    color: Colors.text,
+    color: colors.text,
     marginBottom: 8,
     letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     lineHeight: 20,
     marginBottom: 24,
   },
   card: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 20,
     padding: 16,
     marginBottom: 12,
@@ -183,7 +186,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.5,
-    color: Colors.neutral500,
+    color: colors.neutral500,
     textTransform: 'uppercase',
     marginBottom: 10,
   },
@@ -200,23 +203,23 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 999,
     borderWidth: 1.5,
-    borderColor: Colors.neutral200,
-    backgroundColor: Colors.tagBg,
+    borderColor: colors.neutral200,
+    backgroundColor: colors.tagBg,
   },
   sportTagActive: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.tagBgSelected,
+    borderColor: colors.primary,
+    backgroundColor: colors.tagBgSelected,
   },
   sportTagText: {
     fontSize: 13,
     fontWeight: '600',
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   sportTagTextActive: {
-    color: Colors.primary,
+    color: colors.primary,
   },
   generalError: {
-    color: Colors.error,
+    color: colors.error,
     fontSize: 13,
     textAlign: 'center',
     marginBottom: 8,
@@ -232,6 +235,6 @@ const styles = StyleSheet.create({
   signOutText: {
     fontSize: 13,
     fontWeight: '600',
-    color: Colors.textMuted,
+    color: colors.textMuted,
   },
 });

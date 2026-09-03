@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
+import React, { useState, useEffect, useContext, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -34,9 +34,12 @@ import {
 } from 'lucide-react-native';
 import { notificationApi } from '../api/notificationApi';
 import * as Location from 'expo-location';
-import { Colors } from '../styles/colors';
+import { Colors, ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
 import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
+import HeaderIconButton from '../components/HeaderIconButton';
+import ScreenGlow from '../components/ScreenGlow';
 import { PaasxoLogoLoader } from '../components/PaasxoLogoLoader';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
@@ -114,16 +117,23 @@ function SportIcon({ sport, size = 28, color }: { sport: string; size?: number; 
   return <Activity color={color ?? Colors.cricket} size={size} strokeWidth={2} />;
 }
 
-const SPORT_MASCOTS = [
-  { sport: 'FUTSAL',           label: 'Futsal',    bg: Colors.futsalLight,      color: Colors.futsal },
-  { sport: 'CRICKET',          label: 'Cricket',   bg: Colors.cricketLight,     color: Colors.cricket },
-  { sport: 'PICKLEBALL',       label: 'Pickleball',bg: Colors.pickleballLight,  color: Colors.pickleball },
-  { sport: 'PADDLEBALL',       label: 'Paddleball',bg: Colors.paddleballLight,  color: Colors.paddleball },
-  { sport: 'TRAINER_GYM',      label: 'Trainer',   bg: Colors.trainerLight,     color: Colors.trainer },
-  { sport: 'WALKING_RUNNING',  label: 'Walk/Run',  bg: Colors.walkRunLight,     color: Colors.walkRun },
+// Module-scope helper — can't call useTheme() here, so `colors` is threaded
+// in as a parameter from the component at render time. Uses the theme-aware
+// palette so the tiles' tint flips to the dark-navy variants in dark mode
+// instead of always resolving to the light-only static Colors.
+const getSportMascots = (colors: ThemeColors) => [
+  { sport: 'FUTSAL',           label: 'Futsal',    bg: colors.futsalLight,      color: colors.futsal },
+  { sport: 'CRICKET',          label: 'Cricket',   bg: colors.cricketLight,     color: colors.cricket },
+  { sport: 'PICKLEBALL',       label: 'Pickleball',bg: colors.pickleballLight,  color: colors.pickleball },
+  { sport: 'PADDLEBALL',       label: 'Paddleball',bg: colors.paddleballLight,  color: colors.paddleball },
+  { sport: 'TRAINER_GYM',      label: 'Trainer',   bg: colors.trainerLight,     color: colors.trainer },
+  { sport: 'WALKING_RUNNING',  label: 'Walk/Run',  bg: colors.walkRunLight,     color: colors.walkRun },
 ];
 
 export default function HomeScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const sportMascots = useMemo(() => getSportMascots(colors), [colors]);
   const navBarHeight = useBottomNavBarHeight();
   const [searchText, setSearchText] = useState('');
   const [matches, setMatches] = useState<MatchCard[]>([]);
@@ -360,7 +370,7 @@ export default function HomeScreen() {
               tournamentApi.listMatches(String(t.id)),
             ]);
             const overrides = await tournamentStorage.getMatchOverrides(String(t.id));
-            const teamsUI = teamRecords.map((tr: any) => ({ ...tr, players: [], color: Colors.primary, emoji: '⚽' }));
+            const teamsUI = teamRecords.map((tr: any) => ({ ...tr, players: [], color: colors.primary, emoji: '⚽' }));
             const teamMap = new Map(teamsUI.map((tm: any) => [tm.id, tm]));
             const matchesUI = matchRecords.map((m: any) => ({
               ...m,
@@ -431,7 +441,7 @@ export default function HomeScreen() {
       >
         <View style={styles.matchCardHeader}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-            <View style={[styles.sportTag, { backgroundColor: Colors.primaryLight }]}>
+            <View style={[styles.sportTag, { backgroundColor: colors.primaryLight }]}>
               <Text style={styles.sportTagText}>{item.sportType?.toUpperCase()}</Text>
             </View>
             {/* Vendor status badge — shown in My Bookings */}
@@ -473,7 +483,7 @@ export default function HomeScreen() {
         {item.images && item.images.length > 0 ? (
           <Image source={{ uri: item.images[0] }} style={styles.matchImage} resizeMode="cover" />
         ) : (
-          <LinearGradient colors={[Colors.primary + '30', Colors.primaryDark + '20']} style={styles.matchImagePlaceholder}>
+          <LinearGradient colors={[colors.primary + '30', colors.primaryDark + '20']} style={styles.matchImagePlaceholder}>
             <Text style={styles.matchImagePlaceholderEmoji}>{sportEmoji}</Text>
             <Text style={styles.matchImagePlaceholderText}>{item.title}</Text>
           </LinearGradient>
@@ -486,22 +496,22 @@ export default function HomeScreen() {
             onPress={() => {/* could open maps */ }}
             style={styles.matchMeta}
           >
-            <MapPin color={Colors.primary} size={13} strokeWidth={2} />
-            <Text style={[styles.matchMetaText, { color: Colors.primary }]}>{item.locationName}</Text>
+            <MapPin color={colors.primary} size={13} strokeWidth={2} />
+            <Text style={[styles.matchMetaText, { color: colors.primary }]}>{item.locationName}</Text>
           </TouchableOpacity>
           <View style={styles.matchMetaRow}>
             <View style={styles.matchMeta}>
-              <Calendar color={Colors.textMuted} size={13} strokeWidth={2} />
+              <Calendar color={colors.textMuted} size={13} strokeWidth={2} />
               <Text style={styles.matchMetaText}>{formatDateTime(item.startDate)}</Text>
             </View>
             <View style={styles.matchMeta}>
-              <Users color={Colors.textMuted} size={13} strokeWidth={2} />
+              <Users color={colors.textMuted} size={13} strokeWidth={2} />
               <Text style={styles.matchMetaText}>{spotsLabel}</Text>
             </View>
           </View>
           {item.minPlayers != null && (
             <View style={styles.matchMeta}>
-              <Navigation color={Colors.textMuted} size={13} strokeWidth={2} />
+              <Navigation color={colors.textMuted} size={13} strokeWidth={2} />
               <Text style={styles.matchMetaText}>Min {item.minPlayers} players to confirm</Text>
             </View>
           )}
@@ -566,40 +576,51 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* Blue header */}
-      <Animated.View style={[styles.topHeader, { opacity: headerOpacity, transform: [{ scale: headerScale }] }]}>
-        {logoError ? (
-          <View style={[styles.logoImage, styles.logoFallback]}>
-            <Text style={styles.logoFallbackText}>P.</Text>
-          </View>
-        ) : (
-          <Image
-            source={require('../../assets/logo.jpeg')}
-            style={styles.logoImage}
-            resizeMode="contain"
-            onError={() => setLogoError(true)}
+      <ScreenGlow />
+      {/* Floating glass-gradient header */}
+      <Animated.View style={[styles.topHeaderShadow, { opacity: headerOpacity, transform: [{ scale: headerScale }] }]}>
+        <View style={styles.topHeader}>
+          <LinearGradient
+            colors={[colors.primaryAccent, colors.primary, colors.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
           />
-        )}
-        <View style={styles.headerTextContainer}>
-          <Text style={styles.headerGreeting}>{greeting}, {firstName}</Text>
-          <Text style={styles.headerSubtitle}>Ready to play today?</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.notificationBell}
-          onPress={() => router.push('/notifications?category=GENERAL' as any)}
-        >
-          <Bell color={Colors.white} size={20} strokeWidth={2} />
-          {unreadNotifications > 0 && (
-            <View style={styles.bellBadge}>
-              <Text style={styles.bellBadgeText}>
-                {unreadNotifications > 9 ? '9+' : unreadNotifications}
-              </Text>
+          <View style={styles.headerGlassStroke} pointerEvents="none" />
+
+          {logoError ? (
+            <View style={[styles.logoImage, styles.logoFallback]}>
+              <Text style={styles.logoFallbackText}>P.</Text>
             </View>
+          ) : (
+            <Image
+              source={require('../../assets/logo-mark.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+              onError={() => setLogoError(true)}
+            />
           )}
-        </TouchableOpacity>
-        <View style={styles.streakBadge}>
-          <Zap color={Colors.warning} size={14} strokeWidth={2.5} fill={Colors.warning} />
-          <Text style={styles.streakText}>3</Text>
+          <View style={styles.headerTextContainer}>
+            <Text style={styles.headerGreeting}>{greeting}, {firstName}</Text>
+            <Text style={styles.headerSubtitle}>Ready to play today?</Text>
+          </View>
+          <HeaderIconButton
+            onPress={() => router.push('/notifications?category=GENERAL' as any)}
+            style={styles.notificationBell}
+          >
+            <Bell color={colors.white} size={19} strokeWidth={2} />
+            {unreadNotifications > 0 && (
+              <View style={styles.bellBadge}>
+                <Text style={styles.bellBadgeText}>
+                  {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                </Text>
+              </View>
+            )}
+          </HeaderIconButton>
+          <View style={styles.streakBadge}>
+            <Zap color={colors.warning} size={14} strokeWidth={2.5} fill={colors.warning} />
+            <Text style={styles.streakText}>3</Text>
+          </View>
         </View>
       </Animated.View>
 
@@ -613,11 +634,11 @@ export default function HomeScreen() {
       >
         {/* Search + Filter */}
         <View style={styles.searchContainer}>
-          <Search color={Colors.textMuted} size={18} strokeWidth={2} />
+          <Search color={colors.textMuted} size={18} strokeWidth={2} />
           <TextInput
             style={styles.searchInput}
             placeholder="Find games, venues, coaches..."
-            placeholderTextColor={Colors.textMuted}
+            placeholderTextColor={colors.textMuted}
             value={searchText}
             onChangeText={setSearchText}
           />
@@ -626,13 +647,13 @@ export default function HomeScreen() {
             activeOpacity={0.8}
             style={styles.searchFilterBtn}
           >
-            <Filter color={Colors.primary} size={18} strokeWidth={2.5} />
+            <Filter color={colors.primary} size={18} strokeWidth={2.5} />
           </TouchableOpacity>
         </View>
 
         {/* Sport filter chips */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sportRow}>
-          {SPORT_MASCOTS.map((s) => {
+          {sportMascots.map((s) => {
             const active = selectedSportFilters.includes(s.sport);
             return (
               <TouchableOpacity
@@ -646,9 +667,9 @@ export default function HomeScreen() {
                 activeOpacity={0.8}
               >
                 <View style={styles.sportIconWrap}>
-                  <SportIcon sport={s.sport} size={26} color={active ? Colors.white : s.color} />
+                  <SportIcon sport={s.sport} size={26} color={active ? colors.white : s.color} />
                 </View>
-                <Text style={[styles.sportMascotLabel, { color: active ? Colors.white : s.color }]}>
+                <Text style={[styles.sportMascotLabel, { color: active ? colors.white : s.color }]}>
                   {s.label}
                 </Text>
               </TouchableOpacity>
@@ -661,19 +682,19 @@ export default function HomeScreen() {
           <View style={styles.tabBar}>
             <Animated.View style={[styles.tabIndicator, styles.tabIndicator4, { left: tabIndicatorLeft }]} />
             <TouchableOpacity style={styles.tabBtn} onPress={() => switchTab('MATCHES')} activeOpacity={0.8}>
-              <Trophy color={activeTab === 'MATCHES' ? Colors.primary : Colors.neutral400} size={16} strokeWidth={2.5} />
+              <Trophy color={activeTab === 'MATCHES' ? colors.primary : colors.neutral400} size={16} strokeWidth={2.5} />
               <Text numberOfLines={1} style={[styles.tabLabel, activeTab === 'MATCHES' && styles.tabLabelActive]}>Matches</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.tabBtn} onPress={() => switchTab('TOURNAMENTS')} activeOpacity={0.8}>
-              <Activity color={activeTab === 'TOURNAMENTS' ? Colors.primary : Colors.neutral400} size={16} strokeWidth={2.5} />
+              <Activity color={activeTab === 'TOURNAMENTS' ? colors.primary : colors.neutral400} size={16} strokeWidth={2.5} />
               <Text numberOfLines={1} style={[styles.tabLabel, activeTab === 'TOURNAMENTS' && styles.tabLabelActive]}>Tournaments</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.tabBtn} onPress={() => switchTab('TRAINER_SESSIONS')} activeOpacity={0.8}>
-              <Dumbbell color={activeTab === 'TRAINER_SESSIONS' ? Colors.trainer : Colors.neutral400} size={16} strokeWidth={2.5} />
+              <Dumbbell color={activeTab === 'TRAINER_SESSIONS' ? colors.trainer : colors.neutral400} size={16} strokeWidth={2.5} />
               <Text numberOfLines={1} style={[styles.tabLabel, activeTab === 'TRAINER_SESSIONS' && styles.tabLabelTrainer]}>Trainer</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.tabBtn} onPress={() => switchTab('WALKING_RUNNING')} activeOpacity={0.8}>
-              <PersonStanding color={activeTab === 'WALKING_RUNNING' ? Colors.walkRun : Colors.neutral400} size={16} strokeWidth={2.5} />
+              <PersonStanding color={activeTab === 'WALKING_RUNNING' ? colors.walkRun : colors.neutral400} size={16} strokeWidth={2.5} />
               <Text numberOfLines={1} style={[styles.tabLabel, activeTab === 'WALKING_RUNNING' && styles.tabLabelWalk]}>Walk/Run</Text>
             </TouchableOpacity>
           </View>
@@ -683,10 +704,15 @@ export default function HomeScreen() {
         {activeTab === 'MATCHES' && (
           <>
             {/* Pro banner */}
+            {/* Fixed dark gradient (not theme-reactive) — this is a permanent
+                "premium/dark" promo card whose text (proBannerTitle) is fixed
+                white, so the backdrop must stay dark in both themes rather
+                than flipping to near-white the way colors.neutral800/900
+                (text-oriented tokens) do in dark mode. */}
             {!isPro && (
-              <LinearGradient colors={[Colors.neutral800, Colors.neutral900]} style={styles.proBanner}>
+              <LinearGradient colors={['#1E293B', '#0F172A']} style={styles.proBanner}>
                 <View style={styles.proBannerContent}>
-                  <Zap color={Colors.warning} size={22} strokeWidth={2.5} fill={Colors.warning} />
+                  <Zap color={colors.warning} size={22} strokeWidth={2.5} fill={colors.warning} />
                   <View style={styles.proBannerText}>
                     <Text style={styles.proBannerLabel}>PRO MEMBER EXCLUSIVE</Text>
                     <Text style={styles.proBannerTitle}>Unlock Your Full Potential</Text>
@@ -716,7 +742,7 @@ export default function HomeScreen() {
               >
                 <MapPin
                   size={11}
-                  color={matchView === 'NEARBY' ? Colors.white : Colors.textMuted}
+                  color={matchView === 'NEARBY' ? colors.white : colors.textMuted}
                   strokeWidth={2}
                 />
                 <Text style={[styles.segmentText, matchView === 'NEARBY' && styles.segmentTextActive]}>
@@ -731,7 +757,7 @@ export default function HomeScreen() {
               >
                 <BookOpen
                   size={11}
-                  color={matchView === 'MY_BOOKINGS' ? Colors.white : Colors.textMuted}
+                  color={matchView === 'MY_BOOKINGS' ? colors.white : colors.textMuted}
                   strokeWidth={2}
                 />
                 <Text style={[styles.segmentText, matchView === 'MY_BOOKINGS' && styles.segmentTextActive]}>
@@ -746,7 +772,7 @@ export default function HomeScreen() {
               >
                 <UserCheck
                   size={11}
-                  color={matchView === 'JOINED' ? Colors.white : Colors.textMuted}
+                  color={matchView === 'JOINED' ? colors.white : colors.textMuted}
                   strokeWidth={2}
                 />
                 <Text style={[styles.segmentText, matchView === 'JOINED' && styles.segmentTextActive]}>
@@ -765,7 +791,7 @@ export default function HomeScreen() {
             ) : (
               <View style={styles.emptyState}>
                 <View style={styles.emptyIconWrap}>
-                  <Trophy color={Colors.neutral400} size={36} strokeWidth={1.5} />
+                  <Trophy color={colors.neutral400} size={36} strokeWidth={1.5} />
                 </View>
                 <Text style={styles.emptyStateTitle}>
                   {matchView === 'JOINED' ? 'No joined matches' : 'No active bookings'}
@@ -785,7 +811,7 @@ export default function HomeScreen() {
                     onPress={() => router.push('/create-match' as any)}
                     activeOpacity={0.85}
                   >
-                    <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.emptyActionGrad}>
+                    <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.emptyActionGrad}>
                       <Text style={styles.emptyActionText}>Create a Match</Text>
                     </LinearGradient>
                   </TouchableOpacity>
@@ -810,7 +836,7 @@ export default function HomeScreen() {
 
             {loadingTournaments ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator size="small" color={Colors.primary} />
+                <ActivityIndicator size="small" color={colors.primary} />
                 <Text style={styles.loadingText}>Finding tournaments...</Text>
               </View>
             ) : filteredTournaments.length > 0 ? (
@@ -827,13 +853,13 @@ export default function HomeScreen() {
                 activeOpacity={0.88}
                 onPress={() => router.push('/create-tournament' as any)}
               >
-                <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.createTournamentGrad}>
-                  <Trophy color={Colors.white} size={28} strokeWidth={2} />
+                <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.createTournamentGrad}>
+                  <Trophy color={colors.white} size={28} strokeWidth={2} />
                   <View>
                     <Text style={styles.createTournamentTitle}>Host a Tournament</Text>
                     <Text style={styles.createTournamentSubtitle}>Create your own and invite teams</Text>
                   </View>
-                  <ChevronRight color={Colors.white} size={20} strokeWidth={2.5} />
+                  <ChevronRight color={colors.white} size={20} strokeWidth={2.5} />
                 </LinearGradient>
               </TouchableOpacity>
             )}
@@ -854,20 +880,20 @@ export default function HomeScreen() {
             </View>
 
             {loadingTrainers ? (
-              <ActivityIndicator color={Colors.trainer} style={{ marginTop: 24 }} />
+              <ActivityIndicator color={colors.trainer} style={{ marginTop: 24 }} />
             ) : nearbyTrainers.length === 0 ? (
               <TouchableOpacity
                 style={styles.createTournamentPrompt}
                 activeOpacity={0.88}
                 onPress={() => router.push('/explore' as any)}
               >
-                <LinearGradient colors={[Colors.trainer, Colors.primaryDark]} style={styles.createTournamentGrad}>
-                  <Dumbbell color={Colors.white} size={28} strokeWidth={2} />
+                <LinearGradient colors={[colors.trainer, colors.primaryDark]} style={styles.createTournamentGrad}>
+                  <Dumbbell color={colors.white} size={28} strokeWidth={2} />
                   <View>
                     <Text style={styles.createTournamentTitle}>Find a Trainer</Text>
                     <Text style={styles.createTournamentSubtitle}>Personal &amp; group sessions available</Text>
                   </View>
-                  <ChevronRight color={Colors.white} size={20} strokeWidth={2.5} />
+                  <ChevronRight color={colors.white} size={20} strokeWidth={2.5} />
                 </LinearGradient>
               </TouchableOpacity>
             ) : (
@@ -881,8 +907,8 @@ export default function HomeScreen() {
                   {t.imageUri ? (
                     <Image source={{ uri: t.imageUri }} style={styles.trainerCardImage} />
                   ) : (
-                    <LinearGradient colors={[Colors.trainerLight, Colors.trainerLight]} style={styles.trainerCardImage}>
-                      <Dumbbell color={Colors.trainer} size={22} strokeWidth={2} />
+                    <LinearGradient colors={[colors.trainerLight, colors.trainerLight]} style={styles.trainerCardImage}>
+                      <Dumbbell color={colors.trainer} size={22} strokeWidth={2} />
                     </LinearGradient>
                   )}
                   <View style={styles.trainerCardBody}>
@@ -890,7 +916,7 @@ export default function HomeScreen() {
                     {!!t.specialty && <Text style={styles.trainerCardSpecialty} numberOfLines={1}>{t.specialty}</Text>}
                     {!!t.location && (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                        <MapPin color={Colors.textMuted} size={11} strokeWidth={2} />
+                        <MapPin color={colors.textMuted} size={11} strokeWidth={2} />
                         <Text style={styles.trainerCardMeta} numberOfLines={1}>{t.location}</Text>
                       </View>
                     )}
@@ -898,7 +924,7 @@ export default function HomeScreen() {
                   {t.hourlyRate != null && (
                     <Text style={styles.trainerCardPrice}>LKR {t.hourlyRate}</Text>
                   )}
-                  <ChevronRight color={Colors.trainer} size={16} strokeWidth={2.5} />
+                  <ChevronRight color={colors.trainer} size={16} strokeWidth={2.5} />
                 </TouchableOpacity>
               ))
             )}
@@ -975,7 +1001,7 @@ export default function HomeScreen() {
                   ? `${Math.round(act.distanceMeters)} m`
                   : `${(act.distanceMeters / 1000).toFixed(2)} km`;
                 const mins = Math.floor(act.durationSeconds / 60);
-                const color = ACT_COLOR[act.type] ?? Colors.walkRun;
+                const color = ACT_COLOR[act.type] ?? colors.walkRun;
                 return (
                   <TouchableOpacity
                     key={act.localId}
@@ -1001,7 +1027,7 @@ export default function HomeScreen() {
                         <Text style={styles.recentActStat}>{act.avgSpeedKmh.toFixed(1)} km/h</Text>
                       </View>
                     </View>
-                    <ChevronRight color={Colors.neutral400} size={16} style={{ marginRight: 12, alignSelf: 'center' }} />
+                    <ChevronRight color={colors.neutral400} size={16} style={{ marginRight: 12, alignSelf: 'center' }} />
                   </TouchableOpacity>
                 );
               })
@@ -1016,24 +1042,46 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.background },
 
+  topHeaderShadow: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    marginBottom: 2,
+    borderRadius: 26,
+    shadowColor: colors.primaryDark,
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
   topHeader: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 14,
-    backgroundColor: Colors.primary,
+    borderRadius: 26,
+    overflow: 'hidden',
     gap: 12,
   },
-  logoImage: { width: 44, height: 44, borderRadius: 12, backgroundColor: Colors.white },
+  headerGlassStroke: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  logoImage: { width: 44, height: 44 },
   logoFallback: { alignItems: 'center', justifyContent: 'center' },
-  logoFallbackText: { fontSize: 18, fontWeight: '900', color: Colors.primary },
+  logoFallbackText: { fontSize: 18, fontWeight: '900', color: colors.white },
   headerTextContainer: { flex: 1 },
-  headerGreeting: { fontSize: 18, fontWeight: '800', color: Colors.white },
-  headerSubtitle: { fontSize: 12, color: Colors.white + 'CC', marginTop: 2 },
+  headerGreeting: { fontSize: 18, fontWeight: '800', color: colors.white },
+  headerSubtitle: { fontSize: 12, color: colors.white + 'CC', marginTop: 2 },
   notificationBell: {
-    position: 'relative',
-    padding: 6,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
   },
   bellBadge: {
     position: 'absolute',
@@ -1042,22 +1090,24 @@ const styles = StyleSheet.create({
     minWidth: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: Colors.error,
+    backgroundColor: colors.error,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
   },
   bellBadgeText: {
     fontSize: 9,
     fontWeight: '800',
-    color: Colors.white,
+    color: colors.white,
   },
   streakBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: Colors.white + '20', paddingHorizontal: 10, paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 10, paddingVertical: 8,
     borderRadius: 20,
   },
-  streakText: { fontSize: 14, fontWeight: '800', color: Colors.white },
+  streakText: { fontSize: 14, fontWeight: '800', color: colors.white },
 
   scroll: { flex: 1 },
   refreshableArea: { flex: 1, position: 'relative' },
@@ -1065,16 +1115,16 @@ const styles = StyleSheet.create({
 
   searchContainer: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.white, borderRadius: 14,
+    backgroundColor: colors.inputBg, borderRadius: 14,
     paddingHorizontal: 14, paddingVertical: 11,
-    marginBottom: 14, borderWidth: 1, borderColor: Colors.neutral200,
+    marginBottom: 14, borderWidth: 1, borderColor: colors.neutral200,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
-  searchInput: { flex: 1, marginLeft: 8, fontSize: 14, color: Colors.text },
+  searchInput: { flex: 1, marginLeft: 8, fontSize: 14, color: colors.text },
   searchFilterBtn: {
     width: 34, height: 34, borderRadius: 10,
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center', justifyContent: 'center',
     marginLeft: 6,
   },
@@ -1095,7 +1145,7 @@ const styles = StyleSheet.create({
   tabBarWrap: { marginBottom: 20 },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 18,
     padding: 5,
     position: 'relative',
@@ -1110,12 +1160,12 @@ const styles = StyleSheet.create({
     top: 5,
     bottom: 5,
     width: '50%',
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     borderRadius: 14,
   },
   tabIndicator4: { width: '25%' },
-  tabLabelTrainer: { color: Colors.trainer },
-  tabLabelWalk: { color: Colors.walkRun },
+  tabLabelTrainer: { color: colors.trainer },
+  tabLabelWalk: { color: colors.walkRun },
   tabBtn: {
     flex: 1,
     alignItems: 'center',
@@ -1126,26 +1176,26 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     zIndex: 1,
   },
-  tabLabel: { fontSize: 10.5, fontWeight: '700', color: Colors.neutral400, letterSpacing: 0.1 },
-  tabLabelActive: { color: Colors.primary },
+  tabLabel: { fontSize: 10.5, fontWeight: '700', color: colors.neutral400, letterSpacing: 0.1 },
+  tabLabelActive: { color: colors.primary },
 
   proBanner: {
     borderRadius: 18, padding: 16, marginBottom: 22, gap: 12,
   },
   proBannerContent: { flexDirection: 'row', gap: 12 },
   proBannerText: { flex: 1, gap: 4 },
-  proBannerLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 1.2, color: Colors.warning, textTransform: 'uppercase' },
-  proBannerTitle: { fontSize: 16, fontWeight: '800', color: Colors.white },
-  proBannerDesc: { fontSize: 12, color: Colors.neutral300, lineHeight: 17 },
+  proBannerLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 1.2, color: colors.warning, textTransform: 'uppercase' },
+  proBannerTitle: { fontSize: 16, fontWeight: '800', color: colors.white },
+  proBannerDesc: { fontSize: 12, color: '#CBD5E1', lineHeight: 17 },
   upgradeBtn: { width: '100%' },
 
   sectionHeader: {
     flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
     marginBottom: 12, marginTop: 4,
   },
-  sectionTitle: { fontSize: 17, fontWeight: '800', color: Colors.text },
-  sectionSubtitle: { fontSize: 11, color: Colors.textMuted, marginTop: 2, fontWeight: '500' },
-  seeAllText: { fontSize: 13, fontWeight: '600', color: Colors.primary, marginTop: 4 },
+  sectionTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
+  sectionSubtitle: { fontSize: 11, color: colors.textMuted, marginTop: 2, fontWeight: '500' },
+  seeAllText: { fontSize: 13, fontWeight: '600', color: colors.primary, marginTop: 4 },
 
   // 3-way segment control
   matchSegment: {
@@ -1162,78 +1212,78 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     paddingHorizontal: 10,
     borderRadius: 22,
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
     borderWidth: 1,
-    borderColor: Colors.neutral200,
+    borderColor: colors.neutral200,
   },
   segmentPillActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   segmentText: {
     fontSize: 12,
     fontWeight: '700',
-    color: Colors.textMuted,
+    color: colors.textMuted,
   },
   segmentTextActive: {
-    color: Colors.white,
+    color: colors.white,
   },
 
   createTournamentPrompt: { borderRadius: 18, overflow: 'hidden', marginBottom: 14 },
   createTournamentGrad: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 18 },
-  createTournamentTitle: { fontSize: 15, fontWeight: '800', color: Colors.white },
-  createTournamentSubtitle: { fontSize: 12, color: Colors.white + 'CC', marginTop: 2 },
+  createTournamentTitle: { fontSize: 15, fontWeight: '800', color: colors.white },
+  createTournamentSubtitle: { fontSize: 12, color: colors.white + 'CC', marginTop: 2 },
 
   matchCard: {
-    backgroundColor: Colors.white, borderRadius: 18, marginBottom: 14,
+    backgroundColor: colors.cardBg, borderRadius: 18, marginBottom: 14,
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.07, shadowRadius: 12, elevation: 3, overflow: 'hidden',
   },
   trainerCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.white,
+    flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.cardBg,
     borderRadius: 16, padding: 10, marginBottom: 12,
     shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
   trainerCardImage: { width: 52, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   trainerCardBody: { flex: 1 },
-  trainerCardName: { fontSize: 14.5, fontWeight: '700', color: Colors.text },
-  trainerCardSpecialty: { fontSize: 12, color: Colors.trainer, fontWeight: '600', marginTop: 1 },
-  trainerCardMeta: { fontSize: 11.5, color: Colors.textMuted },
-  trainerCardPrice: { fontSize: 13, fontWeight: '800', color: Colors.trainer, marginRight: 2 },
+  trainerCardName: { fontSize: 14.5, fontWeight: '700', color: colors.text },
+  trainerCardSpecialty: { fontSize: 12, color: colors.trainer, fontWeight: '600', marginTop: 1 },
+  trainerCardMeta: { fontSize: 11.5, color: colors.textMuted },
+  trainerCardPrice: { fontSize: 13, fontWeight: '800', color: colors.trainer, marginRight: 2 },
   matchCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14, paddingBottom: 10, gap: 8 },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1 },
   statusBadgeText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
   sportTag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  sportTagText: { fontSize: 10, fontWeight: '800', color: Colors.primary, letterSpacing: 0.6 },
-  matchPrice: { fontSize: 14, fontWeight: '700', color: Colors.primaryDark },
-  matchPriceLabel: { fontSize: 10, color: Colors.textMuted, marginTop: -2 },
+  sportTagText: { fontSize: 10, fontWeight: '800', color: colors.primary, letterSpacing: 0.6 },
+  matchPrice: { fontSize: 14, fontWeight: '700', color: colors.primaryDark },
+  matchPriceLabel: { fontSize: 10, color: colors.textMuted, marginTop: -2 },
   matchImage: { width: '100%', height: 140 },
   matchImagePlaceholder: {
     width: '100%', height: 120, alignItems: 'center', justifyContent: 'center',
     gap: 8, paddingVertical: 16,
   },
   matchImagePlaceholderEmoji: { fontSize: 36 },
-  matchImagePlaceholderText: { fontSize: 13, color: Colors.primary, fontWeight: '600' },
+  matchImagePlaceholderText: { fontSize: 13, color: colors.primary, fontWeight: '600' },
   matchDetails: { padding: 14, gap: 8 },
-  matchTitle: { fontSize: 16, fontWeight: '800', color: Colors.text },
+  matchTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
   matchMetaRow: { flexDirection: 'row', gap: 16, flexWrap: 'wrap' },
   matchMeta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  matchMetaText: { fontSize: 12, color: Colors.textMuted },
+  matchMetaText: { fontSize: 12, color: colors.textMuted },
   joinBtn: { height: 42, marginTop: 4 },
 
   loadingContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24, gap: 8 },
-  loadingText: { fontSize: 13, color: Colors.textMuted },
+  loadingText: { fontSize: 13, color: colors.textMuted },
   emptyState: { alignItems: 'center', paddingVertical: 32, gap: 12 },
   emptyIconWrap: {
     width: 80, height: 80, borderRadius: 40,
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
     alignItems: 'center', justifyContent: 'center',
   },
-  emptyStateTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
-  emptyStateText: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', lineHeight: 19 },
+  emptyStateTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  emptyStateText: { fontSize: 13, color: colors.textMuted, textAlign: 'center', lineHeight: 19 },
   emptyActionBtn: { borderRadius: 14, overflow: 'hidden', marginTop: 4 },
   emptyActionGrad: { paddingHorizontal: 28, paddingVertical: 14 },
-  emptyActionText: { fontSize: 14, fontWeight: '700', color: Colors.white },
+  emptyActionText: { fontSize: 14, fontWeight: '700', color: colors.white },
 
   // Walk/Run/Cycling tab
   activityHero: {
@@ -1242,12 +1292,12 @@ const styles = StyleSheet.create({
   },
   activityHeroLeft: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   activityHeroEmoji: { fontSize: 40 },
-  activityHeroTitle: { fontSize: 20, fontWeight: '900', color: Colors.white },
+  activityHeroTitle: { fontSize: 20, fontWeight: '900', color: colors.white },
   activityHeroSub: { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 2, fontWeight: '600' },
   activityHeroRight: {},
   activityStartCircle: {
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     alignItems: 'center', justifyContent: 'center',
   },
 
@@ -1255,36 +1305,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row', gap: 10, marginBottom: 20,
   },
   activityTypeChip: {
-    flex: 1, backgroundColor: Colors.white,
+    flex: 1, backgroundColor: colors.cardBg,
     borderRadius: 16, paddingVertical: 14,
     alignItems: 'center', gap: 6,
     shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 }, elevation: 2,
-    borderWidth: 1.5, borderColor: Colors.neutral200,
+    borderWidth: 1.5, borderColor: colors.neutral200,
   },
-  activityTypeChipLabel: { fontSize: 13, fontWeight: '800', color: Colors.neutral700 },
+  activityTypeChipLabel: { fontSize: 13, fontWeight: '800', color: colors.neutral700 },
 
   activityEmptyBox: {
-    backgroundColor: Colors.white, borderRadius: 18,
+    backgroundColor: colors.cardBg, borderRadius: 18,
     padding: 24, alignItems: 'center', marginBottom: 16,
-    borderWidth: 1.5, borderColor: Colors.neutral200,
+    borderWidth: 1.5, borderColor: colors.neutral200,
   },
-  activityEmptyTitle: { fontSize: 16, fontWeight: '800', color: Colors.text, marginBottom: 8 },
+  activityEmptyTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 8 },
   activityEmptyBody: {
-    fontSize: 13, color: Colors.textMuted, textAlign: 'center', lineHeight: 19,
+    fontSize: 13, color: colors.textMuted, textAlign: 'center', lineHeight: 19,
   },
 
   recentActCard: {
     flexDirection: 'row', alignItems: 'stretch',
-    backgroundColor: Colors.white, borderRadius: 16,
+    backgroundColor: colors.cardBg, borderRadius: 16,
     marginBottom: 10, overflow: 'hidden',
-    borderWidth: 1.5, borderColor: Colors.neutral200,
+    borderWidth: 1.5, borderColor: colors.neutral200,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 }, elevation: 1,
   },
   recentActBar: { width: 5 },
   recentActType: { fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
-  recentActTitle: { fontSize: 14, fontWeight: '800', color: Colors.text },
-  recentActDate: { fontSize: 11, color: Colors.textMuted, fontWeight: '600' },
-  recentActStat: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
+  recentActTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
+  recentActDate: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
+  recentActStat: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
 });

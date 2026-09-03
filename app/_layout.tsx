@@ -3,27 +3,26 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { AuthProvider } from '@/src/context/AuthContext';
-import { Colors } from '@/src/styles/colors';
+import { ThemeProvider, useTheme } from '@/src/context/ThemeContext';
 
-export default function RootLayout() {
-  useFrameworkReady();
+function RootLayoutNav() {
+  const { colors, resolvedTheme } = useTheme();
 
   return (
-    <AuthProvider>
-      <SafeAreaProvider>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            animation: 'slide_from_right',
-            // An opaque background here matters: with a transparent content
-            // style, the outgoing screen can show through underneath the
-            // incoming one for the duration of the slide transition, which
-            // reads as a jarring "screens combining" glitch. Every screen in
-            // this app paints its own opaque background anyway, so this only
-            // ever shows for the transition's duration.
-            contentStyle: { backgroundColor: Colors.background },
-          }}
-        >
+    <SafeAreaProvider>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          // An opaque background here matters: with a transparent content
+          // style, the outgoing screen can show through underneath the
+          // incoming one for the duration of the slide transition, which
+          // reads as a jarring "screens combining" glitch. Every screen in
+          // this app paints its own opaque background anyway, so this only
+          // ever shows for the transition's duration.
+          contentStyle: { backgroundColor: colors.background },
+        }}
+      >
           <Stack.Screen name="index" />
           <Stack.Screen name="sign-in" />
           <Stack.Screen name="sign-up" />
@@ -57,8 +56,19 @@ export default function RootLayout() {
           <Stack.Screen name="+not-found" />
         </Stack>
 
-        <StatusBar style="dark" />
-      </SafeAreaProvider>
-    </AuthProvider>
+        <StatusBar style={resolvedTheme === 'dark' ? 'light' : 'dark'} />
+    </SafeAreaProvider>
+  );
+}
+
+export default function RootLayout() {
+  useFrameworkReady();
+
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <RootLayoutNav />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

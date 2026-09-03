@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useTheme } from '../context/ThemeContext';
 import {
   ActivityIndicator,
   FlatList,
@@ -11,10 +12,11 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   ArrowLeft,
-  Bell,
+  BellRing,
   Heart,
   MessageCircle,
   Play,
@@ -29,7 +31,8 @@ import {
 import { useSubscription } from '../hooks/useSubscription';
 import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
 import { SearchBar } from '../components/SearchBar';
-import { Colors } from '../styles/colors';
+import HeaderIconButton from '../components/HeaderIconButton';
+import { ThemeColors } from '../styles/colors';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import { socialMediaApi } from '../api/socialMediaApi';
@@ -40,6 +43,7 @@ import { tournamentApi } from '../api/tournamentApi';
 import { StoryReel } from '../components/StoryReel';
 import { resolveAvatarUri } from '../utils/mediaUrl';
 import { notificationApi } from '../api/notificationApi';
+import ScreenGlow from '../components/ScreenGlow';
 
 const communityCards = [
   {
@@ -88,6 +92,8 @@ const getTournamentLifecycle = (t: any): 'UPCOMING' | 'LIVE' | 'COMPLETED' => {
 };
 
 const FeedScreen = () => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const navBarHeight = useBottomNavBarHeight();
   const router = useRouter();
   const { active: isPro } = useSubscription();
@@ -295,12 +301,22 @@ const FeedScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <ScreenGlow />
+      {/* Floating glass-gradient header */}
+      <View style={styles.topHeaderShadow}>
       <View style={styles.topBar}>
+        <LinearGradient
+          colors={[colors.primaryAccent, colors.primary, colors.primaryDark]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={styles.headerGlassStroke} pointerEvents="none" />
         <View style={styles.topBarRow}>
           <View style={styles.brandContainer}>
             <View style={styles.logoStack}>
               <Image
-                source={require('../../assets/logo.jpeg')}
+                source={require('../../assets/logo-mark.png')}
                 style={styles.logoImage}
                 resizeMode="contain"
               />
@@ -314,23 +330,23 @@ const FeedScreen = () => {
             <Text style={styles.brandLabel}>Paasxo</Text>
           </View>
           <View style={styles.topBarActions}>
-            <Pressable
+            <HeaderIconButton
               onPress={() => setSearchOpen((value) => !value)}
               style={styles.iconButton}
             >
-              <Search color={Colors.white} size={20} />
-            </Pressable>
-            <Pressable
+              <Search color={colors.white} size={20} />
+            </HeaderIconButton>
+            <HeaderIconButton
               style={[styles.iconButton, styles.topBarActionButton]}
               onPress={() => router.push('/notifications?category=SOCIAL' as any)}
             >
-              <Bell color={Colors.white} size={20} />
+              <BellRing color={colors.white} size={20} />
               {unreadSocial > 0 && (
                 <View style={styles.bellBadge}>
                   <Text style={styles.bellBadgeText}>{unreadSocial > 9 ? '9+' : unreadSocial}</Text>
                 </View>
               )}
-            </Pressable>
+            </HeaderIconButton>
           </View>
         </View>
 
@@ -399,6 +415,7 @@ const FeedScreen = () => {
           </View>
         )} */}
       </View>
+      </View>
 
       <View style={styles.refreshableArea}>
       <PaasxoRefreshLogo refreshing={refreshing} />
@@ -413,7 +430,7 @@ const FeedScreen = () => {
             return (
               <View style={styles.tournamentAdWrap}>
                 <View style={styles.tournamentAdLabel}>
-                  <Trophy color={Colors.primary} size={12} strokeWidth={2.5} />
+                  <Trophy color={colors.primary} size={12} strokeWidth={2.5} />
                   <Text style={styles.tournamentAdLabelText}>FEATURED TOURNAMENT</Text>
                 </View>
                 <TournamentFeedCard
@@ -510,7 +527,7 @@ const FeedScreen = () => {
               <View style={styles.sponsoredHeader}>
                 <Text style={styles.sponsoredLabel}>SPONSORED</Text>
                 <Pressable style={styles.closeButton}>
-                  <X color={Colors.neutral500} size={18} strokeWidth={2.5} />
+                  <X color={colors.neutral500} size={18} strokeWidth={2.5} />
                 </Pressable>
               </View>
 
@@ -534,7 +551,7 @@ const FeedScreen = () => {
               <View style={styles.featuredHeader}>
                 <Text style={styles.featuredBadge}>FEATURED EVENT</Text>
                 <View style={styles.featuredIconBox}>
-                  <Trophy color={Colors.white} size={18} strokeWidth={2.5} />
+                  <Trophy color={colors.white} size={18} strokeWidth={2.5} />
                 </View>
               </View>
 
@@ -564,7 +581,7 @@ const FeedScreen = () => {
             {/* <View style={styles.unlockCard}>
         <View style={styles.unlockHeader}>
           <View style={styles.unlockBadge}>
-            <Star color={Colors.primary} size={16} strokeWidth={2.5} />
+            <Star color={colors.primary} size={16} strokeWidth={2.5} />
           </View>
           <View>
             <Text style={styles.unlockTitle}>PAASXO ELITE</Text>
@@ -574,7 +591,7 @@ const FeedScreen = () => {
 
         <View style={styles.unlockBody}>
           <View style={styles.lockIconBox}>
-            <Sparkles color={Colors.primary} size={22} strokeWidth={2.5} />
+            <Sparkles color={colors.primary} size={22} strokeWidth={2.5} />
           </View>
 
           <Text style={styles.unlockHeading}>
@@ -621,25 +638,39 @@ const FeedScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   refreshableArea: { flex: 1, position: 'relative' },
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
   },
   content: {
     paddingHorizontal: 18,
     paddingTop: 18,
     paddingBottom: 130,
   },
+  topHeaderShadow: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    marginBottom: 18,
+    borderRadius: 26,
+    shadowColor: colors.primaryDark,
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
   topBar: {
-    backgroundColor: Colors.logoBlue,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
+    borderRadius: 26,
+    overflow: 'hidden',
     paddingVertical: 16,
     paddingHorizontal: 18,
-    marginHorizontal: -18,
-    marginBottom: 18,
+  },
+  headerGlassStroke: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
   },
   topBarRow: {
     flexDirection: 'row',
@@ -651,7 +682,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   brandLabel: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 18,
     fontWeight: '800',
     marginLeft: 10,
@@ -682,7 +713,7 @@ const styles = StyleSheet.create({
     minWidth: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: Colors.error,
+    backgroundColor: colors.error,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 3,
@@ -690,7 +721,7 @@ const styles = StyleSheet.create({
   bellBadgeText: {
     fontSize: 9,
     fontWeight: '800',
-    color: Colors.white,
+    color: colors.white,
   },
   searchWrapper: {
     marginTop: 14,
@@ -702,12 +733,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   resultsTitle: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 13,
     fontWeight: '700',
   },
   resultsCount: {
-    color: Colors.primaryLight,
+    color: colors.primaryLight,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -719,7 +750,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   resultName: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -737,12 +768,12 @@ const styles = StyleSheet.create({
   brandLogo: {
     fontSize: 18,
     fontWeight: '900',
-    color: Colors.white,
+    color: colors.white,
   },
   brandTitle: {
     fontSize: 18,
     fontWeight: '900',
-    color: Colors.white,
+    color: colors.white,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -753,12 +784,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '900',
-    color: Colors.neutral900,
+    color: colors.neutral900,
   },
   sectionAction: {
     fontSize: 12,
     fontWeight: '700',
-    color: Colors.primary,
+    color: colors.primary,
     letterSpacing: 0.8,
   },
   liveCardsRow: {
@@ -768,17 +799,17 @@ const styles = StyleSheet.create({
   },
   liveCard: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 28,
     padding: 18,
-    shadowColor: Colors.neutral900,
+    shadowColor: colors.neutral900,
     shadowOpacity: 0.12,
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 14 },
     elevation: 4,
   },
   finishedCard: {
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
   },
   liveBadgeRow: {
     flexDirection: 'row',
@@ -793,12 +824,12 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   livePillText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 10,
     fontWeight: '700',
   },
   finishedLabel: {
-    color: Colors.neutral500,
+    color: colors.neutral500,
     fontSize: 10,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -806,7 +837,7 @@ const styles = StyleSheet.create({
   liveLeague: {
     fontSize: 10,
     fontWeight: '700',
-    color: Colors.neutral500,
+    color: colors.neutral500,
     textTransform: 'uppercase',
   },
   scoreRow: {
@@ -820,13 +851,13 @@ const styles = StyleSheet.create({
   scoreAbbr: {
     fontSize: 11,
     fontWeight: '900',
-    color: Colors.primary,
+    color: colors.primary,
     marginBottom: 4,
   },
   scoreValue: {
     fontSize: 26,
     fontWeight: '900',
-    color: Colors.neutral900,
+    color: colors.neutral900,
   },
   scoreCenter: {
     alignItems: 'center',
@@ -834,21 +865,21 @@ const styles = StyleSheet.create({
   scoreResult: {
     fontSize: 24,
     fontWeight: '900',
-    color: Colors.neutral900,
+    color: colors.neutral900,
     marginBottom: 4,
   },
   scoreLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: Colors.neutral500,
+    color: colors.neutral500,
     textTransform: 'uppercase',
   },
   sponsoredCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 28,
     padding: 18,
     marginBottom: 22,
-    shadowColor: Colors.neutral900,
+    shadowColor: colors.neutral900,
     shadowOpacity: 0.08,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 12 },
@@ -863,64 +894,64 @@ const styles = StyleSheet.create({
   sponsoredLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: Colors.neutral500,
+    color: colors.neutral500,
     letterSpacing: 1.2,
   },
   closeButton: {
     width: 32,
     height: 32,
     borderRadius: 12,
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
     alignItems: 'center',
     justifyContent: 'center',
   },
   sponsoredBanner: {
     height: 130,
     borderRadius: 22,
-    backgroundColor: Colors.neutral900,
+    backgroundColor: colors.neutral900,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
     padding: 18,
   },
   sponsoredBannerTitle: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 22,
     fontWeight: '900',
     letterSpacing: 1.2,
   },
   sponsoredBannerTitleAlt: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 24,
     fontWeight: '900',
     letterSpacing: 1.2,
   },
   sponsoredBannerSubtitle: {
     marginTop: 8,
-    color: Colors.primary,
+    color: colors.primary,
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1.4,
   },
   sponsoredText: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     lineHeight: 20,
     marginBottom: 16,
   },
   sponsoredButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderRadius: 16,
     paddingVertical: 14,
     alignItems: 'center',
   },
   sponsoredButtonText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 13,
     fontWeight: '800',
   },
   featuredCard: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderRadius: 28,
     padding: 20,
     marginBottom: 22,
@@ -934,7 +965,7 @@ const styles = StyleSheet.create({
   featuredBadge: {
     fontSize: 10,
     fontWeight: '700',
-    color: Colors.primaryLight,
+    color: colors.primaryLight,
     letterSpacing: 1.6,
     textTransform: 'uppercase',
   },
@@ -942,12 +973,12 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 14,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   featuredTitle: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 20,
     fontWeight: '900',
     marginBottom: 18,
@@ -966,34 +997,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   featuredStatValue: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 18,
     fontWeight: '900',
     marginBottom: 8,
   },
   featuredStatLabel: {
-    color: Colors.primaryLight,
+    color: colors.primaryLight,
     fontSize: 11,
     fontWeight: '700',
     textAlign: 'center',
   },
   featuredButton: {
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     borderRadius: 18,
     paddingVertical: 14,
     alignItems: 'center',
   },
   featuredButtonText: {
-    color: Colors.neutral900,
+    color: colors.neutral900,
     fontSize: 13,
     fontWeight: '900',
   },
   postCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 28,
     padding: 18,
     marginBottom: 22,
-    shadowColor: Colors.neutral900,
+    shadowColor: colors.neutral900,
     shadowOpacity: 0.08,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 12 },
@@ -1021,18 +1052,18 @@ const styles = StyleSheet.create({
   postName: {
     fontSize: 15,
     fontWeight: '900',
-    color: Colors.neutral900,
+    color: colors.neutral900,
   },
   postSubtitle: {
     fontSize: 12,
-    color: Colors.neutral500,
+    color: colors.neutral500,
     marginTop: 2,
   },
   iconButtonSmall: {
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1045,7 +1076,7 @@ const styles = StyleSheet.create({
   postLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: Colors.neutral500,
+    color: colors.neutral500,
     letterSpacing: 1.2,
     textTransform: 'uppercase',
   },
@@ -1074,7 +1105,7 @@ const styles = StyleSheet.create({
   },
   postText: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     lineHeight: 20,
     marginBottom: 18,
   },
@@ -1091,13 +1122,13 @@ const styles = StyleSheet.create({
   postStatText: {
     fontSize: 12,
     fontWeight: '700',
-    color: Colors.neutral600,
+    color: colors.neutral600,
   },
   shareAction: {
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1107,16 +1138,16 @@ const styles = StyleSheet.create({
     marginBottom: 6, paddingHorizontal: 4,
   },
   tournamentAdLabelText: {
-    fontSize: 10, fontWeight: '800', color: Colors.primary,
+    fontSize: 10, fontWeight: '800', color: colors.primary,
     letterSpacing: 0.8, textTransform: 'uppercase',
   },
 
   unlockCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 28,
     padding: 20,
     marginBottom: 22,
-    shadowColor: Colors.neutral900,
+    shadowColor: colors.neutral900,
     shadowOpacity: 0.08,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 12 },
@@ -1132,14 +1163,14 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 16,
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   unlockTitle: {
     fontSize: 16,
     fontWeight: '900',
-    color: Colors.neutral900,
+    color: colors.neutral900,
     marginBottom: 6,
   },
   unlockSubtitle: {
@@ -1147,7 +1178,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 1.4,
-    color: Colors.primary,
+    color: colors.primary,
   },
   unlockBody: {
     alignItems: 'center',
@@ -1156,7 +1187,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 22,
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 18,
@@ -1164,32 +1195,32 @@ const styles = StyleSheet.create({
   unlockHeading: {
     fontSize: 18,
     fontWeight: '900',
-    color: Colors.neutral900,
+    color: colors.neutral900,
     textAlign: 'center',
     marginBottom: 12,
   },
   unlockCopy: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 18,
   },
   unlockButton: {
     borderRadius: 18,
-    backgroundColor: Colors.neutral900,
+    backgroundColor: colors.neutral900,
     paddingVertical: 14,
     paddingHorizontal: 32,
   },
   unlockButtonText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 13,
     fontWeight: '900',
   },
   discoverTitle: {
     fontSize: 18,
     fontWeight: '900',
-    color: Colors.neutral900,
+    color: colors.neutral900,
     marginBottom: 16,
   },
   communityGrid: {
@@ -1216,7 +1247,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 16,
     bottom: 16,
-    color: Colors.white,
+    color: colors.white,
     fontSize: 14,
     fontWeight: '900',
   },
@@ -1227,7 +1258,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
-    backgroundColor: Colors.warning,
+    backgroundColor: colors.warning,
     borderRadius: 5,
     paddingHorizontal: 5,
     paddingVertical: 2,

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MapPin, Trophy } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { Colors, ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
+import ScreenGlow from '../components/ScreenGlow';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -52,6 +54,8 @@ const SLIDES = [
 const GRADIENT_COLORS = [Colors.primary, '#5B9BFF', Colors.primary];
 
 export default function WelcomeScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -120,6 +124,7 @@ export default function WelcomeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <ScreenGlow />
       {/* Header */}
       <View style={styles.header}>
         <View style={{ width: 36 }} />
@@ -170,9 +175,9 @@ export default function WelcomeScreen() {
               {/* Single corner badge */}
               <View style={styles.badge}>
                 {slide.badge.includes('mi') ? (
-                  <MapPin color={Colors.white} size={13} strokeWidth={2.2} />
+                  <MapPin color={colors.white} size={13} strokeWidth={2.2} />
                 ) : (
-                  <Trophy color={Colors.white} size={13} strokeWidth={2.2} />
+                  <Trophy color={colors.white} size={13} strokeWidth={2.2} />
                 )}
                 <Text style={styles.badgeText}>{slide.badge}</Text>
               </View>
@@ -265,10 +270,10 @@ function AnimatedLinearGradient({
 
 const LOGO_SIZE = 96;
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -280,7 +285,7 @@ const styles = StyleSheet.create({
   skipText: {
     fontSize: 15,
     fontWeight: '500',
-    color: Colors.neutral500,
+    color: colors.neutral500,
   },
 
   // ---- Hero / Logo section ----
@@ -295,12 +300,12 @@ const styles = StyleSheet.create({
     height: LOGO_SIZE,
     borderRadius: 24,
     overflow: 'hidden',
-    shadowColor: Colors.primary,
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.25,
     shadowRadius: 14,
     elevation: 6,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
   },
   logo: {
     width: '100%',
@@ -312,7 +317,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     letterSpacing: 1.5,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textTransform: 'uppercase',
   },
 
@@ -328,7 +333,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     height: 300,
-    backgroundColor: Colors.neutral200,
+    backgroundColor: colors.neutral200,
     position: 'relative',
   },
   mapImage: {
@@ -356,7 +361,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   badgeText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.5,
@@ -371,7 +376,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 26,
     fontWeight: '800',
-    color: Colors.text,
+    color: colors.text,
     textAlign: 'center',
     lineHeight: 34,
     letterSpacing: -0.5,
@@ -380,7 +385,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 15,
     fontWeight: '400',
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 24,
   },
@@ -404,11 +409,11 @@ const styles = StyleSheet.create({
   },
   dotActive: {
     width: 28,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
   },
   dotInactive: {
     width: 8,
-    backgroundColor: Colors.neutral300,
+    backgroundColor: colors.neutral300,
   },
 
   // CTA
@@ -416,7 +421,7 @@ const styles = StyleSheet.create({
     width: '100%',
     borderRadius: 18,
     overflow: 'hidden',
-    shadowColor: Colors.primary,
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
@@ -430,7 +435,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
   },
   ctaText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 17,
     fontWeight: '700',
     letterSpacing: 0.3,

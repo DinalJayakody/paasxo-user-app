@@ -16,16 +16,20 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { ArrowLeft, Camera, MapPin, Phone, User } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { InputField } from '../components/InputField';
 import { AvatarActionSheet } from '../components/AvatarActionSheet';
 import { FullScreenImageViewer } from '../components/FullScreenImageViewer';
+import HeaderIconButton from '../components/HeaderIconButton';
 import { useAuth } from '../context/AuthContext';
 import { userApi } from '../api/userApi';
 import { resolveAvatarUri } from '../utils/mediaUrl';
 import { SPORTS } from '../constants/sports';
+import ScreenGlow from '../components/ScreenGlow';
 
 const SKILL_LEVELS: { id: string; label: string }[] = [
   { id: 'BEGINNER', label: 'Beginner' },
@@ -36,6 +40,8 @@ const SKILL_LEVELS: { id: string; label: string }[] = [
 const BIO_MAX_LENGTH = 150;
 
 export default function EditProfileScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const { user, updateUser } = useAuth();
 
@@ -161,26 +167,38 @@ export default function EditProfileScreen() {
   return (
     <>
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.headerIconBtn} hitSlop={8}>
-          <ArrowLeft color={Colors.neutral900} size={20} strokeWidth={2.2} />
-        </Pressable>
-        <Text style={styles.title}>Edit Profile</Text>
-        <Animated.View style={{ transform: [{ scale: saveScale }] }}>
-          <Pressable
-            onPress={handleSave}
-            onPressIn={() => animateSave(0.94)}
-            onPressOut={() => animateSave(1)}
-            disabled={saving}
-            style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
-          >
-            {saving ? (
-              <ActivityIndicator color={Colors.white} size="small" />
-            ) : (
-              <Text style={styles.saveBtnText}>Save</Text>
-            )}
-          </Pressable>
-        </Animated.View>
+      <ScreenGlow />
+      {/* Floating glass-gradient header */}
+      <View style={styles.topHeaderShadow}>
+        <View style={styles.header}>
+          <LinearGradient
+            colors={[colors.primaryAccent, colors.primary, colors.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.headerGlassStroke} pointerEvents="none" />
+
+          <HeaderIconButton onPress={() => router.back()} style={styles.headerIconBtn} hitSlop={8}>
+            <ArrowLeft color={colors.white} size={20} strokeWidth={2.2} />
+          </HeaderIconButton>
+          <Text style={styles.title}>Edit Profile</Text>
+          <Animated.View style={{ transform: [{ scale: saveScale }] }}>
+            <Pressable
+              onPress={handleSave}
+              onPressIn={() => animateSave(0.94)}
+              onPressOut={() => animateSave(1)}
+              disabled={saving}
+              style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+            >
+              {saving ? (
+                <ActivityIndicator color={colors.primary} size="small" />
+              ) : (
+                <Text style={styles.saveBtnText}>Save</Text>
+              )}
+            </Pressable>
+          </Animated.View>
+        </View>
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -195,7 +213,7 @@ export default function EditProfileScreen() {
               <View style={styles.avatarWrap}>
                 <Image source={{ uri: profileImageUri }} style={styles.avatar} />
                 <View style={styles.avatarCameraBadge}>
-                  <Camera color={Colors.white} size={15} strokeWidth={2.4} />
+                  <Camera color={colors.white} size={15} strokeWidth={2.4} />
                 </View>
               </View>
             </Pressable>
@@ -219,7 +237,7 @@ export default function EditProfileScreen() {
               placeholder="Your name"
               value={displayName}
               onChangeText={setDisplayName}
-              leftIcon={<User color={Colors.neutral400} size={18} />}
+              leftIcon={<User color={colors.neutral400} size={18} />}
               containerStyle={styles.fieldGap}
             />
             <InputField
@@ -227,7 +245,7 @@ export default function EditProfileScreen() {
               value={phoneNumber}
               onChangeText={setPhoneNumber}
               keyboardType="phone-pad"
-              leftIcon={<Phone color={Colors.neutral400} size={18} />}
+              leftIcon={<Phone color={colors.neutral400} size={18} />}
             />
           </View>
 
@@ -240,7 +258,7 @@ export default function EditProfileScreen() {
             <TextInput
               style={styles.bioInput}
               placeholder="Tell other players about yourself..."
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={colors.textMuted}
               value={bio}
               onChangeText={(t) => setBio(t.slice(0, BIO_MAX_LENGTH))}
               multiline
@@ -262,7 +280,7 @@ export default function EditProfileScreen() {
                     style={[styles.chip, active && styles.chipActive]}
                     onPress={() => toggleSport(sport.id)}
                   >
-                    <Icon color={active ? Colors.primary : Colors.textSecondary} size={14} strokeWidth={2} />
+                    <Icon color={active ? colors.primary : colors.textSecondary} size={14} strokeWidth={2} />
                     <Text style={[styles.chipText, active && styles.chipTextActive]}>{sport.label}</Text>
                   </Pressable>
                 );
@@ -293,7 +311,7 @@ export default function EditProfileScreen() {
           <View style={[styles.card, styles.locationRow]}>
             <View style={styles.locationLeft}>
               <View style={styles.locationIconWrap}>
-                <MapPin color={Colors.primary} size={18} strokeWidth={2.2} />
+                <MapPin color={colors.primary} size={18} strokeWidth={2.2} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.locationTitle}>Location Access</Text>
@@ -303,8 +321,8 @@ export default function EditProfileScreen() {
             <Switch
               value={locationAccess}
               onValueChange={setLocationAccess}
-              trackColor={{ false: Colors.neutral200, true: Colors.primaryLight }}
-              thumbColor={locationAccess ? Colors.primary : Colors.white}
+              trackColor={{ false: colors.neutral200, true: colors.primaryLight }}
+              thumbColor={locationAccess ? colors.primary : colors.white}
             />
           </View>
 
@@ -334,55 +352,74 @@ export default function EditProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  topHeaderShadow: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    marginBottom: 2,
+    borderRadius: 26,
+    shadowColor: colors.primaryDark,
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    borderRadius: 26,
+    overflow: 'hidden',
+  },
+  headerGlassStroke: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
   },
   headerIconBtn: {
-    width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.neutral200,
+    width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
   },
-  title: { fontSize: 17, fontWeight: '800', color: Colors.neutral900 },
+  title: { fontSize: 17, fontWeight: '800', color: colors.white },
   saveBtn: {
     paddingHorizontal: 20, height: 38, borderRadius: 19,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primary,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white,
     minWidth: 72,
   },
   saveBtnDisabled: { opacity: 0.7 },
-  saveBtnText: { color: Colors.white, fontSize: 14, fontWeight: '800' },
+  saveBtnText: { color: colors.primary, fontSize: 14, fontWeight: '800' },
 
   scroll: { paddingHorizontal: 20, paddingBottom: 48, paddingTop: 8 },
 
   avatarSection: { alignItems: 'center', marginBottom: 20 },
   avatarWrap: {
     width: 104, height: 104, borderRadius: 52,
-    borderWidth: 3, borderColor: Colors.white, backgroundColor: Colors.neutral100,
-    shadowColor: Colors.primary, shadowOpacity: 0.25, shadowRadius: 14,
+    borderWidth: 3, borderColor: colors.white, backgroundColor: colors.neutral100,
+    shadowColor: colors.primary, shadowOpacity: 0.25, shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 }, elevation: 6,
   },
   avatar: { width: '100%', height: '100%', borderRadius: 50 },
   avatarCameraBadge: {
     position: 'absolute', bottom: 0, right: 0,
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2.5, borderColor: Colors.white,
+    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2.5, borderColor: colors.white,
   },
-  changePhotoText: { marginTop: 10, fontSize: 13, fontWeight: '700', color: Colors.primary },
+  changePhotoText: { marginTop: 10, fontSize: 13, fontWeight: '700', color: colors.primary },
   pendingBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     marginTop: 10, paddingHorizontal: 12, paddingVertical: 6,
-    borderRadius: 999, backgroundColor: Colors.success + '18',
+    borderRadius: 999, backgroundColor: colors.success + '18',
   },
-  pendingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.success },
-  pendingBadgeText: { fontSize: 11.5, fontWeight: '700', color: Colors.successDark },
+  pendingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success },
+  pendingBadgeText: { fontSize: 11.5, fontWeight: '700', color: colors.successDark },
 
   card: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 20,
     padding: 16,
     marginBottom: 14,
@@ -394,42 +431,42 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     fontSize: 10.5, fontWeight: '700', letterSpacing: 1.4,
-    color: Colors.neutral500, textTransform: 'uppercase', marginBottom: 12,
+    color: colors.neutral500, textTransform: 'uppercase', marginBottom: 12,
   },
   fieldGap: { marginBottom: 12 },
 
   bioHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  bioCounter: { fontSize: 11, fontWeight: '600', color: Colors.textMuted, marginBottom: 12 },
+  bioCounter: { fontSize: 11, fontWeight: '600', color: colors.textMuted, marginBottom: 12 },
   bioInput: {
     minHeight: 88,
-    backgroundColor: Colors.inputBg,
+    backgroundColor: colors.inputBg,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: Colors.inputBorder,
+    borderColor: colors.inputBorder,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
-    color: Colors.text,
+    color: colors.text,
   },
 
   chipsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
-    borderWidth: 1.5, borderColor: Colors.neutral200, backgroundColor: Colors.tagBg,
+    borderWidth: 1.5, borderColor: colors.neutral200, backgroundColor: colors.tagBg,
   },
-  chipActive: { borderColor: Colors.primary, backgroundColor: Colors.tagBgSelected },
-  chipText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
-  chipTextActive: { color: Colors.primary },
+  chipActive: { borderColor: colors.primary, backgroundColor: colors.tagBgSelected },
+  chipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  chipTextActive: { color: colors.primary },
 
   locationRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   locationLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, marginRight: 12 },
   locationIconWrap: {
     width: 38, height: 38, borderRadius: 12,
-    backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center',
   },
-  locationTitle: { fontSize: 14, fontWeight: '700', color: Colors.neutral900 },
-  locationSubtitle: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  locationTitle: { fontSize: 14, fontWeight: '700', color: colors.neutral900 },
+  locationSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
 
-  errorText: { color: Colors.error, fontSize: 13, textAlign: 'center', marginTop: 4 },
+  errorText: { color: colors.error, fontSize: 13, textAlign: 'center', marginTop: 4 },
 });

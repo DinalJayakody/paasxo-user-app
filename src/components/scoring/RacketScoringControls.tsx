@@ -1,7 +1,8 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Minus, Plus } from 'lucide-react-native';
-import { Colors } from '../../styles/colors';
+import { ThemeColors } from '../../styles/colors';
+import { useTheme } from '../../context/ThemeContext';
 import { MatchScoreState } from '../../types/api';
 
 interface RacketScoringControlsProps {
@@ -23,6 +24,8 @@ function isGameOver(pointsA: number, pointsB: number, target: number): 'A' | 'B'
 }
 
 export function RacketScoringControls({ score, teamAName, teamBName, accent, updating, onUpdateState }: RacketScoringControlsProps) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const setsA: number = score.state?.setsA ?? 0;
   const setsB: number = score.state?.setsB ?? 0;
   const pointsToWin: number = score.state?.pointsToWin ?? DEFAULT_POINTS_TO_WIN;
@@ -84,14 +87,14 @@ export function RacketScoringControls({ score, teamAName, teamBName, accent, upd
                 onPress={() => adjustPoint(team, -1)}
                 disabled={updating}
               >
-                <Minus color={Colors.neutral600} size={16} strokeWidth={2.5} />
+                <Minus color={colors.neutral600} size={16} strokeWidth={2.5} />
               </Pressable>
               <Pressable
                 style={[styles.plusBtn, { backgroundColor: accent }]}
                 onPress={() => addPoint(team)}
                 disabled={updating}
               >
-                <Plus color={Colors.white} size={22} strokeWidth={3} />
+                <Plus color={colors.white} size={22} strokeWidth={3} />
               </Pressable>
             </View>
           </View>
@@ -114,22 +117,22 @@ export function RacketScoringControls({ score, teamAName, teamBName, accent, upd
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   wrap: { gap: 14 },
   setsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20 },
   setsBadge: { alignItems: 'center', gap: 2 },
-  setsLabel: { fontSize: 11, fontWeight: '700', color: Colors.neutral500, maxWidth: 100 },
+  setsLabel: { fontSize: 11, fontWeight: '700', color: colors.neutral500, maxWidth: 100 },
   setsValue: { fontSize: 22, fontWeight: '900' },
-  setsVs: { fontSize: 10, fontWeight: '800', color: Colors.neutral300, letterSpacing: 1 },
-  raceLabel: { textAlign: 'center', fontSize: 12, fontWeight: '600', color: Colors.textSecondary },
+  setsVs: { fontSize: 10, fontWeight: '800', color: colors.neutral300, letterSpacing: 1 },
+  raceLabel: { textAlign: 'center', fontSize: 12, fontWeight: '600', color: colors.textSecondary },
 
   pointsRow: { flexDirection: 'row', gap: 14 },
-  teamColumn: { flex: 1, alignItems: 'center', gap: 8, backgroundColor: Colors.white, borderRadius: 18, paddingVertical: 16 },
-  teamName: { fontSize: 12, fontWeight: '700', color: Colors.neutral600, maxWidth: '90%' },
+  teamColumn: { flex: 1, alignItems: 'center', gap: 8, backgroundColor: colors.cardBg, borderRadius: 18, paddingVertical: 16 },
+  teamName: { fontSize: 12, fontWeight: '700', color: colors.neutral600, maxWidth: '90%' },
   pointsValue: { fontSize: 36, fontWeight: '900', fontVariant: ['tabular-nums'] },
   pointBtnRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   minusBtn: {
-    width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.neutral100,
+    width: 34, height: 34, borderRadius: 17, backgroundColor: colors.neutral100,
     alignItems: 'center', justifyContent: 'center',
   },
   plusBtn: {
@@ -137,9 +140,9 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4,
   },
 
-  historyCard: { backgroundColor: Colors.white, borderRadius: 16, padding: 14, gap: 8 },
-  historyTitle: { fontSize: 11, fontWeight: '800', color: Colors.neutral500, letterSpacing: 1, textTransform: 'uppercase' },
+  historyCard: { backgroundColor: colors.cardBg, borderRadius: 16, padding: 14, gap: 8 },
+  historyTitle: { fontSize: 11, fontWeight: '800', color: colors.neutral500, letterSpacing: 1, textTransform: 'uppercase' },
   historyRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  historyChip: { backgroundColor: Colors.neutral100, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 },
-  historyChipText: { fontSize: 12.5, fontWeight: '700', color: Colors.neutral700 },
+  historyChip: { backgroundColor: colors.neutral100, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 },
+  historyChipText: { fontSize: 12.5, fontWeight: '700', color: colors.neutral700 },
 });

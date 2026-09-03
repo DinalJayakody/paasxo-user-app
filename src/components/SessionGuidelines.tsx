@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { HeartPulse, Clock, Droplets, Shirt } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { TrainerCategory } from '../types/api';
 
 const EQUIPMENT_TIP: Record<TrainerCategory, string> = {
@@ -52,6 +53,8 @@ interface Props {
 }
 
 export function SessionGuidelines({ category, variant = 'full' }: Props) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const items = getSessionGuidelines(category);
   const visible = variant === 'compact' ? items.slice(0, 2) : items;
 
@@ -60,7 +63,7 @@ export function SessionGuidelines({ category, variant = 'full' }: Props) {
       {visible.map((item) => (
         <View key={item.title} style={styles.row}>
           <View style={styles.iconWrap}>
-            <item.Icon color={Colors.trainer} size={17} strokeWidth={2.2} />
+            <item.Icon color={colors.trainer} size={17} strokeWidth={2.2} />
           </View>
           <View style={styles.flex1}>
             <Text style={styles.itemTitle}>{item.title}</Text>
@@ -72,14 +75,14 @@ export function SessionGuidelines({ category, variant = 'full' }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   list: { gap: 14 },
   row: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
   flex1: { flex: 1 },
   iconWrap: {
-    width: 34, height: 34, borderRadius: 11, backgroundColor: Colors.trainerLight,
+    width: 34, height: 34, borderRadius: 11, backgroundColor: colors.trainerLight,
     alignItems: 'center', justifyContent: 'center', marginTop: 1,
   },
-  itemTitle: { fontSize: 13.5, fontWeight: '700', color: Colors.text, marginBottom: 2 },
-  itemDesc: { fontSize: 12.5, color: Colors.textSecondary, lineHeight: 18 },
+  itemTitle: { fontSize: 13.5, fontWeight: '700', color: colors.text, marginBottom: 2 },
+  itemDesc: { fontSize: 12.5, color: colors.textSecondary, lineHeight: 18 },
 });

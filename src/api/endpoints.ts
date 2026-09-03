@@ -26,7 +26,7 @@ const TUNNEL_URL = 'https://centres-station-chicago-dot.trycloudflare.com/api';
 // Set to undefined to disable the probe entirely (e.g. while testing a feature,
 // like Trainer, that only exists on the local backend and hasn't been deployed
 // to Hostinger yet) — axios.ts skips the probe and goes straight to local.
-export const HOSTINGER_URL: string | undefined = 'https://www.paasxo.com/api';
+export const HOSTINGER_URL: string | undefined = undefined;
 
 export const HOSTINGER_PROBE_TIMEOUT_MS = 3000;
 
@@ -180,6 +180,11 @@ export const ENDPOINTS = {
     UNREAD_COUNT: '/notifications/unread-count',
     MARK_READ: (id: string) => `/notifications/${id}/read`,
     MARK_ALL_READ: '/notifications/read-all',
+  },
+
+  SUPPORT: {
+    CREATE_TICKET: '/support/tickets',
+    MY_TICKETS: '/support/tickets/my',
   },
 
   TOURNAMENTS_GLOBAL: {

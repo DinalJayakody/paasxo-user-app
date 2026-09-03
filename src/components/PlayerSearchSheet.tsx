@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,7 +14,8 @@ import {
 } from 'react-native';
 import { AlertCircle, Check, Search, UserCheck, UserPlus, X } from 'lucide-react-native';
 import { socialMediaApi } from '../api/socialMediaApi';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { extractApiError } from '../utils/apiError';
 import { resolveMediaUrl } from '../utils/mediaUrl';
 
@@ -44,6 +47,8 @@ export function PlayerSearchSheet({
   excludeUids = [],
   title = 'Invite Players',
 }: PlayerSearchSheetProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchedPlayer[]>([]);
   const [loading, setLoading] = useState(false);
@@ -136,27 +141,31 @@ export function PlayerSearchSheet({
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <Pressable style={styles.backdrop} onPress={onClose} />
-        <View style={styles.sheet}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+          style={styles.sheet}
+        >
           <View style={styles.handle} />
 
           <View style={styles.header}>
             <Text style={styles.headerTitle}>{title}</Text>
             <Pressable onPress={onClose} style={styles.closeBtn}>
-              <X color={Colors.text} size={20} strokeWidth={2.5} />
+              <X color={colors.text} size={20} strokeWidth={2.5} />
             </Pressable>
           </View>
 
           <View style={styles.searchBox}>
-            <Search color={Colors.textMuted} size={15} strokeWidth={2} />
+            <Search color={colors.textMuted} size={15} strokeWidth={2} />
             <TextInput
               style={styles.searchInput}
               placeholder="Search by name..."
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={colors.textMuted}
               value={query}
               onChangeText={setQuery}
               autoFocus
             />
-            {loading && <ActivityIndicator size="small" color={Colors.primary} />}
+            {loading && <ActivityIndicator size="small" color={colors.primary} />}
           </View>
 
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
@@ -193,7 +202,7 @@ export function PlayerSearchSheet({
                             style={styles.requestBtn}
                             onPress={() => handleRequest(player)}
                           >
-                            <UserPlus color={Colors.white} size={12} strokeWidth={2.5} />
+                            <UserPlus color={colors.white} size={12} strokeWidth={2.5} />
                             <Text style={styles.btnText}>Invite</Text>
                           </Pressable>
                           {onDirectAdd && (
@@ -201,25 +210,25 @@ export function PlayerSearchSheet({
                               style={styles.addBtn}
                               onPress={() => handleDirectAdd(player)}
                             >
-                              <UserCheck color={Colors.white} size={12} strokeWidth={2.5} />
+                              <UserCheck color={colors.white} size={12} strokeWidth={2.5} />
                               <Text style={styles.btnText}>Add</Text>
                             </Pressable>
                           )}
                         </>
                       )}
                       {(state === 'loading_request' || state === 'loading_add') && (
-                        <ActivityIndicator size="small" color={Colors.primary} />
+                        <ActivityIndicator size="small" color={colors.primary} />
                       )}
                       {state === 'request_sent' && (
                         <View style={styles.sentBadge}>
-                          <Check color={Colors.primary} size={12} strokeWidth={2.5} />
+                          <Check color={colors.primary} size={12} strokeWidth={2.5} />
                           <Text style={styles.sentText}>Sent</Text>
                         </View>
                       )}
                       {state === 'added' && (
                         <View style={styles.addedBadge}>
-                          <Check color={Colors.success} size={12} strokeWidth={2.5} />
-                          <Text style={[styles.sentText, { color: Colors.success }]}>Added</Text>
+                          <Check color={colors.success} size={12} strokeWidth={2.5} />
+                          <Text style={[styles.sentText, { color: colors.success }]}>Added</Text>
                         </View>
                       )}
                     </View>
@@ -228,7 +237,7 @@ export function PlayerSearchSheet({
                   {/* Inline error below the player row */}
                   {errorMsg && (
                     <View style={styles.errorRow}>
-                      <AlertCircle color={Colors.error} size={12} strokeWidth={2} />
+                      <AlertCircle color={colors.error} size={12} strokeWidth={2} />
                       <Text style={styles.errorText}>{errorMsg}</Text>
                     </View>
                   )}
@@ -239,23 +248,23 @@ export function PlayerSearchSheet({
 
           <View style={styles.legend}>
             <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: Colors.primary }]} />
+              <View style={[styles.legendDot, { backgroundColor: colors.primary }]} />
               <Text style={styles.legendText}>Invite — player receives a notification and must accept</Text>
             </View>
             {onDirectAdd && (
               <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: Colors.success }]} />
+                <View style={[styles.legendDot, { backgroundColor: colors.success }]} />
                 <Text style={styles.legendText}>Add — added immediately (if you've confirmed with them)</Text>
               </View>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -265,7 +274,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)',
   },
   sheet: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '80%',
@@ -275,7 +284,7 @@ const styles = StyleSheet.create({
   handle: {
     width: 40,
     height: 4,
-    backgroundColor: Colors.neutral200,
+    backgroundColor: colors.neutral200,
     borderRadius: 2,
     alignSelf: 'center',
     marginTop: 12,
@@ -290,7 +299,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 18,
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
   },
   closeBtn: {
     padding: 4,
@@ -299,7 +308,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -308,11 +317,11 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 14,
-    color: Colors.text,
+    color: colors.text,
   },
   emptyText: {
     textAlign: 'center',
-    color: Colors.textMuted,
+    color: colors.textMuted,
     fontSize: 13,
     marginTop: 24,
   },
@@ -338,14 +347,14 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.primary + '22',
+    backgroundColor: colors.primary + '22',
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarInitial: {
     fontSize: 16,
     fontWeight: '700',
-    color: Colors.primary,
+    color: colors.primary,
   },
   playerInfo: {
     flex: 1,
@@ -354,11 +363,11 @@ const styles = StyleSheet.create({
   playerName: {
     fontSize: 14,
     fontWeight: '600',
-    color: Colors.text,
+    color: colors.text,
   },
   playerSub: {
     fontSize: 11,
-    color: Colors.textMuted,
+    color: colors.textMuted,
     marginTop: 1,
   },
   actionButtons: {
@@ -370,7 +379,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 6,
@@ -379,13 +388,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: Colors.success,
+    backgroundColor: colors.success,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 6,
   },
   btnText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 11,
     fontWeight: '600',
   },
@@ -404,7 +413,7 @@ const styles = StyleSheet.create({
   sentText: {
     fontSize: 12,
     fontWeight: '600',
-    color: Colors.primary,
+    color: colors.primary,
   },
   errorRow: {
     flexDirection: 'row',
@@ -413,11 +422,11 @@ const styles = StyleSheet.create({
     paddingLeft: 50,
     paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.neutral100,
+    borderBottomColor: colors.neutral100,
   },
   errorText: {
     fontSize: 12,
-    color: Colors.error,
+    color: colors.error,
     flex: 1,
     flexWrap: 'wrap',
   },
@@ -425,7 +434,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: Colors.neutral100,
+    borderTopColor: colors.neutral100,
     marginTop: 4,
   },
   legendItem: {
@@ -440,6 +449,6 @@ const styles = StyleSheet.create({
   },
   legendText: {
     fontSize: 11,
-    color: Colors.textMuted,
+    color: colors.textMuted,
   },
 });

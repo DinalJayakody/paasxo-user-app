@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -18,16 +18,17 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   ArrowLeft,
-  LogIn,
   UserPlus,
   Trophy,
 } from 'lucide-react-native';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleAuthProvider, signInWithCredential, signInWithRedirect } from 'firebase/auth';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
 import { InputField } from '../components/InputField';
+import AuthTabBar from '../components/AuthTabBar';
 import { useContext, useRef, useEffect } from 'react';
 import { AuthContext, useAuth } from '../context/AuthContext';
 import { RegisterPayload } from '../types/api';
@@ -35,6 +36,7 @@ import { SPORTS } from '../constants/sports';
 import { GOOGLE_CLIENT_IDS, GOOGLE_CONFIGURED } from '../config/googleAuth';
 import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
 import { APPLE_SIGN_IN_AVAILABLE, performAppleSignIn } from '../utils/appleSignIn';
+import ScreenGlow from '../components/ScreenGlow';
 
 // Required by expo-auth-session on web to close the auth popup and return
 // the result to the app. Harmless to call from multiple screens/modules.
@@ -45,6 +47,8 @@ const isValidEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const isValidPhone = (v: string) => /^\+?[\d\s\-()]{7,}$/.test(v);
 
 export default function SignUpScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
 
   // Auth context (used for signUp/google/apple placeholders)
@@ -289,6 +293,7 @@ await auth.signUp(payload);
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <ScreenGlow />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -302,16 +307,16 @@ await auth.signUp(payload);
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
-              <ArrowLeft color={Colors.primary} size={22} strokeWidth={2.5} />
+              <ArrowLeft color={colors.primary} size={22} strokeWidth={2.5} />
             </TouchableOpacity>
             <Image source={require('../../assets/logo.jpeg')} style={{width:40, height:40}} resizeMode="contain" />
             <View style={{ width: 40 }} />
           </View>
 
           {/* Colorful gradient hero band */}
-          <LinearGradient colors={[Colors.primaryLight, Colors.background]} style={styles.heroGradient}>
+          <LinearGradient colors={[colors.primaryLight, colors.background]} style={styles.heroGradient}>
             <Animated.View style={[styles.heroBadge, { transform: [{ scale: badgePulse }] }]}>
-              <Trophy color={Colors.primary} size={30} strokeWidth={2} />
+              <Trophy color={colors.primary} size={30} strokeWidth={2} />
             </Animated.View>
           </LinearGradient>
 
@@ -334,7 +339,7 @@ await auth.signUp(payload);
                 disabled={googleLoading}
                 icon={
                   googleLoading ? (
-                    <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 8 }} />
+                    <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: 8 }} />
                   ) : (
                     <Image source={{ uri: 'https://img.icons8.com/color/48/000000/google-logo.png' }} style={styles.socialIcon} />
                   )
@@ -353,7 +358,7 @@ await auth.signUp(payload);
                   disabled={appleLoading}
                   icon={
                     appleLoading ? (
-                      <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 8 }} />
+                      <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: 8 }} />
                     ) : (
                       <Image source={{ uri: 'https://img.icons8.com/ios-filled/50/000000/mac-os.png' }} style={styles.socialIcon} />
                     )
@@ -376,12 +381,12 @@ await auth.signUp(payload);
                       <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
                     ) : (
                       <View style={styles.avatarPlaceholder}>
-                        <UserPlus color={Colors.neutral400} size={34} />
+                        <UserPlus color={colors.neutral400} size={34} />
                       </View>
                     )}
                   </View>
                   <View style={styles.plusBadge}>
-                    <Text style={{ color: Colors.white, fontWeight: '800' }}>+</Text>
+                    <Text style={{ color: colors.white, fontWeight: '800' }}>+</Text>
                   </View>
                 </Animated.View>
               </TouchableOpacity>
@@ -449,7 +454,7 @@ await auth.signUp(payload);
                     activeOpacity={0.8}
                   >
                     <Icon
-                      color={active ? Colors.primary : Colors.textSecondary}
+                      color={active ? colors.primary : colors.textSecondary}
                       size={14}
                       strokeWidth={2}
                     />
@@ -478,7 +483,7 @@ await auth.signUp(payload);
 
           {/* Motivational banner - solid gradient, no network image dependency */}
           <LinearGradient
-            colors={[Colors.primary, Colors.primaryDark]}
+            colors={[colors.primary, colors.primaryDark]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.motivationBanner}
@@ -510,65 +515,15 @@ await auth.signUp(payload);
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Login / Register tab bar - a normal flex sibling (not absolutely
-          positioned) so it always sits above Android's gesture/button nav
-          bar and never overlaps/steals touches from scrolled content. */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={styles.tab}
-          onPress={() => router.push('/sign-in')}
-          activeOpacity={0.7}
-        >
-          <LogIn color={Colors.neutral400} size={20} strokeWidth={2} />
-          <Text style={styles.tabLabel}>LOGIN</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, styles.tabActive]}
-          onPress={() => {}}
-          activeOpacity={0.9}
-        >
-          <UserPlus color={Colors.primary} size={20} strokeWidth={2} />
-          <Text style={styles.tabLabelActive}>REGISTER</Text>
-        </TouchableOpacity>
-      </View>
+      <AuthTabBar active="register" />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
-  },
-  tabBar: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: Colors.divider,
-    backgroundColor: Colors.white,
-    paddingBottom: 8,
-  },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 10,
-    paddingBottom: 4,
-    gap: 4,
-  },
-  tabActive: {
-    backgroundColor: Colors.primaryLight,
-  },
-  tabLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
-    color: Colors.neutral400,
-  },
-  tabLabelActive: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
-    color: Colors.primary,
+    backgroundColor: colors.background,
   },
   scroll: {
     paddingHorizontal: 20,
@@ -585,9 +540,9 @@ const styles = StyleSheet.create({
   },
   heroBadge: {
     width: 64, height: 64, borderRadius: 32,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: Colors.neutral900, shadowOpacity: 0.1, shadowRadius: 12,
+    shadowColor: colors.neutral900, shadowOpacity: 0.1, shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 }, elevation: 4,
   },
   header: {
@@ -605,26 +560,26 @@ const styles = StyleSheet.create({
   brandName: {
     fontSize: 18,
     fontWeight: '900',
-    color: Colors.primaryDark,
+    color: colors.primaryDark,
     letterSpacing: 2,
   },
   title: {
     fontSize: 36,
     fontWeight: '800',
-    color: Colors.text,
+    color: colors.text,
     lineHeight: 44,
     letterSpacing: -0.8,
     marginBottom: 10,
   },
   subtitle: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     lineHeight: 22,
     marginBottom: 24,
     textAlign: 'center',
   },
   card: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 20,
     padding: 16,
     marginBottom: 12,
@@ -664,10 +619,10 @@ const styles = StyleSheet.create({
     borderRadius: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderWidth: 2,
-    borderColor: Colors.primary,
-    shadowColor: Colors.neutral900,
+    borderColor: colors.primary,
+    shadowColor: colors.neutral900,
     shadowOpacity: 0.08,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
@@ -682,7 +637,7 @@ const styles = StyleSheet.create({
     width: 90,
     height: 90,
     borderRadius: 45,
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -693,17 +648,17 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: Colors.white,
+    borderColor: colors.white,
   },
   sectionLabel: {
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.5,
-    color: Colors.neutral500,
+    color: colors.neutral500,
     textTransform: 'uppercase',
     marginBottom: 10,
   },
@@ -723,24 +678,24 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 999,
     borderWidth: 1.5,
-    borderColor: Colors.neutral200,
-    backgroundColor: Colors.tagBg,
+    borderColor: colors.neutral200,
+    backgroundColor: colors.tagBg,
   },
   sportTagActive: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.tagBgSelected,
+    borderColor: colors.primary,
+    backgroundColor: colors.tagBgSelected,
   },
   sportTagText: {
     fontSize: 13,
     fontWeight: '600',
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   sportTagTextActive: {
-    color: Colors.primary,
+    color: colors.primary,
   },
   skillRow: {
     flexDirection: 'row',
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
     borderRadius: 12,
     padding: 4,
     marginBottom: 10,
@@ -752,7 +707,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   skillTabActive: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
@@ -762,15 +717,15 @@ const styles = StyleSheet.create({
   skillTabText: {
     fontSize: 13,
     fontWeight: '600',
-    color: Colors.neutral400,
+    color: colors.neutral400,
   },
   skillTabTextActive: {
-    color: Colors.primary,
+    color: colors.primary,
     fontWeight: '700',
   },
   skillDesc: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     marginTop: 4,
   },
@@ -785,7 +740,7 @@ const styles = StyleSheet.create({
   locationTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
   },
   motivationBanner: {
     borderRadius: 20,
@@ -793,37 +748,37 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 20,
     marginTop: 8,
-    shadowColor: Colors.primaryDark,
+    shadowColor: colors.primaryDark,
     shadowOpacity: 0.25,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
     elevation: 5,
   },
   motivationText: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 18,
     fontWeight: '800',
     marginBottom: 4,
   },
   motivationSubtext: {
-    color: Colors.white,
+    color: colors.white,
     opacity: 0.85,
     fontSize: 13,
     fontWeight: '500',
   },
   fieldError: {
-    color: Colors.error,
+    color: colors.error,
     fontSize: 12,
     marginBottom: 6,
   },
   generalError: {
-    color: Colors.error,
+    color: colors.error,
     fontSize: 13,
     textAlign: 'center',
     marginBottom: 8,
   },
   socialError: {
-    color: Colors.error,
+    color: colors.error,
     fontSize: 12,
     textAlign: 'center',
     marginTop: -4,
@@ -840,11 +795,11 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   footerLink: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.primary,
+    color: colors.primary,
   },
 });

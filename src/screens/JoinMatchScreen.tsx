@@ -30,7 +30,8 @@ import {
 } from 'lucide-react-native';
 import { PlayerSearchSheet } from '../components/PlayerSearchSheet';
 import { invitationApi } from '../api/invitationApi';
-import { Colors } from '../styles/colors';
+import { Colors, ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { bookingApi } from '../api/bookingApi';
 import { socialMediaApi } from '../api/socialMediaApi';
 import { MatchDetails } from '../types/api';
@@ -38,6 +39,8 @@ import { parseMatchDetails } from '../utils/parseMatch';
 import { AuthContext } from '../context/AuthContext';
 import { resolveMediaUrl } from '../utils/mediaUrl';
 import { LoadingScreen } from '../components/LoadingScreen';
+import HeaderIconButton from '../components/HeaderIconButton';
+import ScreenGlow from '../components/ScreenGlow';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,11 +78,13 @@ function PlayerAvatar({
   size = 44,
   index = 0,
   overlap = true,
+  styles,
 }: {
   player: PlayerProfile;
   size?: number;
   index?: number;
   overlap?: boolean;
+  styles: ReturnType<typeof createStyles>;
 }) {
   return (
     <View
@@ -104,10 +109,12 @@ function AvatarRow({
   players,
   maxVisible = 5,
   onPress,
+  styles,
 }: {
   players: PlayerProfile[];
   maxVisible?: number;
   onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
 }) {
   const visible = players.slice(0, maxVisible);
   const extra = players.length - visible.length;
@@ -117,7 +124,7 @@ function AvatarRow({
   return (
     <TouchableOpacity activeOpacity={0.75} onPress={onPress} style={styles.avatarRow}>
       {visible.map((p, i) => (
-        <PlayerAvatar key={p.firebaseUid} player={p} index={i} />
+        <PlayerAvatar key={p.firebaseUid} player={p} index={i} styles={styles} />
       ))}
       {extra > 0 && (
         <View style={[styles.avatarCircle, styles.avatarExtra, { marginLeft: -12 }]}>
@@ -134,11 +141,13 @@ function ParticipantsModal({
   players,
   onClose,
   onPlayerPress,
+  styles,
 }: {
   visible: boolean;
   players: PlayerProfile[];
   onClose: () => void;
   onPlayerPress: (p: PlayerProfile) => void;
+  styles: ReturnType<typeof createStyles>;
 }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -193,6 +202,8 @@ interface JoinMatchScreenProps {
 }
 
 export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useContext(AuthContext);
@@ -329,6 +340,7 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
 
   return (
     <SafeAreaView style={styles.flex1} edges={['top']}>
+      <ScreenGlow />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 + insets.bottom }}>
 
         {/* Hero */}
@@ -336,12 +348,12 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
           {heroUri
             ? <Image source={{ uri: heroUri }} style={styles.heroImage} resizeMode="cover" />
             : <View style={[styles.heroImage, styles.heroPlaceholder]}>
-                <Users color={Colors.textMuted} size={52} strokeWidth={1.5} />
+                <Users color={colors.textMuted} size={52} strokeWidth={1.5} />
               </View>
           }
-          <Pressable style={styles.backBtn} onPress={() => router.back()}>
-            <ArrowLeft color={Colors.white} size={22} strokeWidth={2.5} />
-          </Pressable>
+          <HeaderIconButton style={styles.backBtn} onPress={() => router.back()}>
+            <ArrowLeft color={colors.white} size={22} strokeWidth={2.5} />
+          </HeaderIconButton>
           {match.sportType && (
             <View style={styles.sportBadge}>
               <Text style={styles.sportBadgeText}>{match.sportType.replace(/_/g, ' ')}</Text>
@@ -356,7 +368,7 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
           {/* Spots pill */}
           {maxSpots != null && (
             <View style={[styles.spotsPill, isFull && styles.spotsPillFull]}>
-              <Users color={isFull ? Colors.error : Colors.primary} size={14} strokeWidth={2} />
+              <Users color={isFull ? colors.error : colors.primary} size={14} strokeWidth={2} />
               <Text style={[styles.spotsText, isFull && styles.spotsTextFull]}>
                 {joinedCount}/{maxSpots} Players{isFull ? '  ·  Full' : spotsLeft != null ? `  ·  ${spotsLeft} spots left` : ''}
               </Text>
@@ -366,17 +378,17 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
           {/* Date / Time / Venue */}
           <View style={styles.infoCard}>
             <View style={styles.infoRow}>
-              <View style={styles.infoIcon}><Calendar color={Colors.primary} size={16} strokeWidth={2} /></View>
+              <View style={styles.infoIcon}><Calendar color={colors.primary} size={16} strokeWidth={2} /></View>
               <Text style={styles.infoText}>{dateLabel}</Text>
             </View>
             {timeLabel ? (
               <View style={styles.infoRow}>
-                <View style={styles.infoIcon}><Clock color={Colors.primary} size={16} strokeWidth={2} /></View>
+                <View style={styles.infoIcon}><Clock color={colors.primary} size={16} strokeWidth={2} /></View>
                 <Text style={styles.infoText}>{timeLabel}{slotCount > 1 ? `  ·  ${slotCount} slots` : ''}</Text>
               </View>
             ) : null}
             <View style={styles.infoRow}>
-              <View style={styles.infoIcon}><MapPin color={Colors.primary} size={16} strokeWidth={2} /></View>
+              <View style={styles.infoIcon}><MapPin color={colors.primary} size={16} strokeWidth={2} /></View>
               <Text style={styles.infoText}>
                 {match.venue?.name ?? 'Venue TBD'}{match.venue?.city ? `\n${match.venue.city}` : ''}
               </Text>
@@ -409,7 +421,7 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
                   )}
                 </MapView>
                 <View style={styles.mapNavBadge}>
-                  <Navigation color={Colors.white} size={13} strokeWidth={2.4} />
+                  <Navigation color={colors.white} size={13} strokeWidth={2.4} />
                   <Text style={styles.mapNavBadgeText}>Tap to navigate</Text>
                 </View>
               </Pressable>
@@ -430,7 +442,7 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
                 {perPlayer != null && (
                   <View style={styles.priceRow}>
                     <Text style={styles.priceLabel}>Per Player</Text>
-                    <Text style={[styles.priceValue, { color: Colors.primary }]}>
+                    <Text style={[styles.priceValue, { color: colors.primary }]}>
                       {sym}{Number(perPlayer).toFixed(2)}
                     </Text>
                   </View>
@@ -452,6 +464,7 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
                 players={playerProfiles}
                 maxVisible={5}
                 onPress={() => setShowModal(true)}
+                styles={styles}
               />
             </View>
           ) : (
@@ -465,13 +478,13 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
             <View style={styles.addPlayersSection}>
               <Text style={styles.sectionTitle}>Invite Players</Text>
               <Pressable style={styles.searchTrigger} onPress={() => setShowInviteSheet(true)}>
-                <UserPlus color={Colors.primary} size={16} strokeWidth={2} />
+                <UserPlus color={colors.primary} size={16} strokeWidth={2} />
                 <Text style={styles.searchTriggerText}>Search &amp; invite friends</Text>
-                <ChevronRight color={Colors.textMuted} size={14} strokeWidth={2} style={{ marginLeft: 'auto' as any }} />
+                <ChevronRight color={colors.textMuted} size={14} strokeWidth={2} style={{ marginLeft: 'auto' as any }} />
               </Pressable>
               {spotsLeft != null && spotsLeft <= 3 && (
                 <View style={styles.warningRow}>
-                  <AlertCircle color={Colors.warning} size={14} strokeWidth={2} />
+                  <AlertCircle color={colors.warning} size={14} strokeWidth={2} />
                   <Text style={styles.warningText}>Only {spotsLeft} spot(s) remaining!</Text>
                 </View>
               )}
@@ -511,6 +524,7 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
         players={playerProfiles}
         onClose={() => setShowModal(false)}
         onPlayerPress={handlePlayerPress}
+        styles={styles}
       />
 
       {/* Invite sheet */}
@@ -535,32 +549,37 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  flex1: { flex: 1, backgroundColor: Colors.background },
-  loadingScreen: { flex: 1, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  flex1: { flex: 1, backgroundColor: colors.background },
+  loadingScreen: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
 
   // Hero
   heroContainer: { position: 'relative', height: 240 },
   heroImage: { width: '100%', height: 240 },
-  heroPlaceholder: { backgroundColor: Colors.neutral200, alignItems: 'center', justifyContent: 'center' },
-  backBtn: { position: 'absolute', top: 14, left: 16, backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 20, padding: 8 },
-  sportBadge: { position: 'absolute', bottom: 14, right: 14, backgroundColor: Colors.primary, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
-  sportBadgeText: { fontSize: 12, fontWeight: '700', color: Colors.white, textTransform: 'uppercase' },
+  heroPlaceholder: { backgroundColor: colors.neutral200, alignItems: 'center', justifyContent: 'center' },
+  backBtn: {
+    position: 'absolute', top: 14, left: 16,
+    width: 38, height: 38, borderRadius: 19,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  sportBadge: { position: 'absolute', bottom: 14, right: 14, backgroundColor: colors.primary, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
+  sportBadgeText: { fontSize: 12, fontWeight: '700', color: colors.white, textTransform: 'uppercase' },
 
   content: { padding: 20 },
-  title: { fontSize: 22, fontWeight: '800', color: Colors.text, marginBottom: 10 },
+  title: { fontSize: 22, fontWeight: '800', color: colors.text, marginBottom: 10 },
 
-  spotsPill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primaryLight, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, alignSelf: 'flex-start', marginBottom: 16 },
+  spotsPill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.primaryLight, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, alignSelf: 'flex-start', marginBottom: 16 },
   spotsPillFull: { backgroundColor: '#FFE5E5' },
-  spotsText: { fontSize: 13, fontWeight: '600', color: Colors.primary },
-  spotsTextFull: { color: Colors.error },
+  spotsText: { fontSize: 13, fontWeight: '600', color: colors.primary },
+  spotsTextFull: { color: colors.error },
 
-  infoCard: { backgroundColor: Colors.white, borderRadius: 14, padding: 14, gap: 10, marginBottom: 20 },
+  infoCard: { backgroundColor: colors.cardBg, borderRadius: 14, padding: 14, gap: 10, marginBottom: 20 },
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  infoIcon: { width: 30, height: 30, borderRadius: 8, backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  infoText: { flex: 1, fontSize: 14, color: Colors.text, fontWeight: '500', paddingTop: 5 },
+  infoIcon: { width: 30, height: 30, borderRadius: 8, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
+  infoText: { flex: 1, fontSize: 14, color: colors.text, fontWeight: '500', paddingTop: 5 },
 
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: Colors.text, marginBottom: 10 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 10 },
 
   mapSection: { marginBottom: 20 },
   mapContainer: { borderRadius: 14, overflow: 'hidden', height: 190 },
@@ -569,74 +588,74 @@ const styles = StyleSheet.create({
     position: 'absolute', right: 10, bottom: 10, flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: 'rgba(20,20,20,0.72)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6,
   },
-  mapNavBadgeText: { color: Colors.white, fontSize: 11, fontWeight: '700' },
+  mapNavBadgeText: { color: colors.white, fontSize: 11, fontWeight: '700' },
 
-  pricingCard: { backgroundColor: Colors.white, borderRadius: 14, padding: 16, marginBottom: 20 },
+  pricingCard: { backgroundColor: colors.cardBg, borderRadius: 14, padding: 16, marginBottom: 20 },
   priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },
-  priceLabel: { fontSize: 14, color: Colors.textSecondary },
-  priceValue: { fontSize: 15, fontWeight: '700', color: Colors.text },
+  priceLabel: { fontSize: 14, color: colors.textSecondary },
+  priceValue: { fontSize: 15, fontWeight: '700', color: colors.text },
 
   // Participants
   participantsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  participantCount: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
-  participantsCard: { backgroundColor: Colors.white, borderRadius: 14, padding: 14, marginBottom: 20 },
-  emptyParticipants: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', paddingVertical: 8 },
+  participantCount: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  participantsCard: { backgroundColor: colors.cardBg, borderRadius: 14, padding: 14, marginBottom: 20 },
+  emptyParticipants: { fontSize: 14, color: colors.textMuted, textAlign: 'center', paddingVertical: 8 },
 
   // Avatar row (same tokens as MatchDetailsScreen)
   avatarRow: { flexDirection: 'row', alignItems: 'center' },
   avatarCircle: {
     overflow: 'hidden',
     borderWidth: 2,
-    borderColor: Colors.white,
-    backgroundColor: Colors.primary,
+    borderColor: colors.white,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarImage: { width: '100%', height: '100%' },
-  avatarInitial: { fontWeight: '700', color: Colors.white },
-  avatarExtra: { backgroundColor: Colors.neutral200 },
-  avatarExtraText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
+  avatarInitial: { fontWeight: '700', color: colors.white },
+  avatarExtra: { backgroundColor: colors.neutral200 },
+  avatarExtraText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
 
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingBottom: 32, paddingTop: 12 },
-  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.neutral300, alignSelf: 'center', marginBottom: 16 },
+  modalSheet: { backgroundColor: colors.cardBg, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingBottom: 32, paddingTop: 12 },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.neutral300, alignSelf: 'center', marginBottom: 16 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  modalTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
-  modalEmpty: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', paddingVertical: 24 },
-  modalPlayerRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.neutral100 },
-  modalPlayerName: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  modalPlayerSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  modalTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
+  modalEmpty: { fontSize: 14, color: colors.textMuted, textAlign: 'center', paddingVertical: 24 },
+  modalPlayerRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.neutral100 },
+  modalPlayerName: { fontSize: 15, fontWeight: '700', color: colors.text },
+  modalPlayerSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
 
   // Add players
   addPlayersSection: { marginBottom: 16 },
-  searchTrigger: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.white, borderRadius: 12, padding: 13, marginBottom: 8 },
-  searchTriggerText: { fontSize: 14, fontWeight: '600', color: Colors.text },
-  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.white, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8, borderWidth: 1.5, borderColor: Colors.primary },
-  searchInput: { flex: 1, fontSize: 14, color: Colors.text },
-  playerList: { backgroundColor: Colors.white, borderRadius: 12, overflow: 'hidden', marginBottom: 10 },
-  playerOption: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderBottomWidth: 1, borderBottomColor: Colors.neutral100 },
+  searchTrigger: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.inputBg, borderRadius: 12, padding: 13, marginBottom: 8 },
+  searchTriggerText: { fontSize: 14, fontWeight: '600', color: colors.text },
+  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.inputBg, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8, borderWidth: 1.5, borderColor: colors.primary },
+  searchInput: { flex: 1, fontSize: 14, color: colors.text },
+  playerList: { backgroundColor: colors.cardBg, borderRadius: 12, overflow: 'hidden', marginBottom: 10 },
+  playerOption: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderBottomWidth: 1, borderBottomColor: colors.neutral100 },
   searchAvatarWrap: { width: 36, height: 36, borderRadius: 18, overflow: 'hidden' },
   searchAvatarImg: { width: '100%', height: '100%' },
-  searchAvatarFallback: { width: '100%', height: '100%', backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
-  searchAvatarInitial: { fontSize: 13, fontWeight: '700', color: Colors.white },
-  playerName: { flex: 1, fontSize: 14, fontWeight: '600', color: Colors.text },
+  searchAvatarFallback: { width: '100%', height: '100%', backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  searchAvatarInitial: { fontSize: 13, fontWeight: '700', color: colors.white },
+  playerName: { flex: 1, fontSize: 14, fontWeight: '600', color: colors.text },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
-  playerChip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primaryLight, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
-  chipText: { fontSize: 12, fontWeight: '600', color: Colors.primary },
+  playerChip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.primaryLight, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
+  chipText: { fontSize: 12, fontWeight: '600', color: colors.primary },
   warningRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
-  warningText: { fontSize: 12, fontWeight: '600', color: Colors.warning },
+  warningText: { fontSize: 12, fontWeight: '600', color: colors.warning },
 
   // Already joined
-  joinedBanner: { backgroundColor: '#E8F5E9', borderRadius: 12, padding: 14, alignItems: 'center', marginBottom: 10 },
-  joinedBannerText: { fontSize: 14, fontWeight: '700', color: '#2E7D32' },
+  joinedBanner: { backgroundColor: colors.success + '20', borderRadius: 12, padding: 14, alignItems: 'center', marginBottom: 10 },
+  joinedBannerText: { fontSize: 14, fontWeight: '700', color: colors.successDark },
 
   // Bottom bar
-  bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: Colors.white, paddingHorizontal: 20, paddingTop: 12, paddingBottom: Platform.OS === 'ios' ? 28 : 16, borderTopWidth: 1, borderTopColor: Colors.neutral200 },
+  bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: colors.cardBg, paddingHorizontal: 20, paddingTop: 12, paddingBottom: Platform.OS === 'ios' ? 28 : 16, borderTopWidth: 1, borderTopColor: colors.neutral200 },
   bottomPriceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  bottomPriceLabel: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
-  bottomPrice: { fontSize: 20, fontWeight: '800', color: Colors.text },
-  joinBtn: { backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 16, alignItems: 'center' },
-  joinBtnDisabled: { backgroundColor: Colors.neutral300 },
-  joinBtnText: { fontSize: 16, fontWeight: '700', color: Colors.white },
+  bottomPriceLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
+  bottomPrice: { fontSize: 20, fontWeight: '800', color: colors.text },
+  joinBtn: { backgroundColor: colors.primary, borderRadius: 16, paddingVertical: 16, alignItems: 'center' },
+  joinBtnDisabled: { backgroundColor: colors.neutral300 },
+  joinBtnText: { fontSize: 16, fontWeight: '700', color: colors.white },
 });

@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { WifiOff } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { PaasxoLogoLoader } from './PaasxoLogoLoader';
 
 const DEFAULT_MESSAGES = [
@@ -41,6 +42,8 @@ interface LoadingScreenProps {
  * a "this is taking a while" connection hint once it actually has.
  */
 export function LoadingScreen({ message, messages, inline = false }: LoadingScreenProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const pool = messages && messages.length > 0 ? messages : DEFAULT_MESSAGES;
   const [messageIndex, setMessageIndex] = useState(0);
   const [showSlowNotice, setShowSlowNotice] = useState(false);
@@ -81,10 +84,10 @@ export function LoadingScreen({ message, messages, inline = false }: LoadingScre
   // Inline mode sits on the host screen's own (typically light) background,
   // so it needs dark-on-light text — the white/translucent styling below is
   // only legible against the gradient the full-screen variant paints itself.
-  const messageColor = inline ? Colors.textSecondary : Colors.white;
-  const noticeIconColor = inline ? Colors.textMuted : 'rgba(255,255,255,0.85)';
-  const noticeBg = inline ? Colors.neutral100 : 'rgba(0,0,0,0.18)';
-  const noticeTextColor = inline ? Colors.textSecondary : 'rgba(255,255,255,0.9)';
+  const messageColor = inline ? colors.textSecondary : colors.white;
+  const noticeIconColor = inline ? colors.textMuted : 'rgba(255,255,255,0.85)';
+  const noticeBg = inline ? colors.neutral100 : 'rgba(0,0,0,0.18)';
+  const noticeTextColor = inline ? colors.textSecondary : 'rgba(255,255,255,0.9)';
 
   const body = (
     <Animated.View style={[styles.center, { opacity: bodyFade }]}>
@@ -107,7 +110,7 @@ export function LoadingScreen({ message, messages, inline = false }: LoadingScre
   // footprint as the real thing, nothing branded on it yet, so a fast load
   // just reads as an ordinary screen change rather than a loading flash.
   if (!visible) {
-    return <View style={[styles.flex1, !inline && { backgroundColor: Colors.background }]} />;
+    return <View style={[styles.flex1, !inline && { backgroundColor: colors.background }]} />;
   }
 
   if (inline) {
@@ -115,13 +118,13 @@ export function LoadingScreen({ message, messages, inline = false }: LoadingScre
   }
 
   return (
-    <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.flex1}>
+    <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.flex1}>
       <SafeAreaView style={styles.flex1}>{body}</SafeAreaView>
     </LinearGradient>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   flex1: { flex: 1 },
   inlineWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: 18 },

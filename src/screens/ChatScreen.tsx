@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput,
   TouchableOpacity, KeyboardAvoidingView, Platform,
@@ -11,7 +11,10 @@ import {
   ArrowLeft, Send, MoreHorizontal, Phone, Video,
   Image as ImageIcon, Smile, Mic,
 } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
+import HeaderIconButton from '../components/HeaderIconButton';
+import ScreenGlow from '../components/ScreenGlow';
 
 interface Message {
   id: string;
@@ -41,6 +44,8 @@ const DEMO_PROFILES: Record<string, { name: string; avatar: string; sport: strin
 };
 
 export default function ChatScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const params = useLocalSearchParams<{ userId: string; name?: string }>();
   const userId = params.userId ?? 'default';
@@ -113,31 +118,42 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      {/* Header */}
-      <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerBack} activeOpacity={0.8}>
-          <ArrowLeft color={Colors.white} size={22} strokeWidth={2.5} />
-        </TouchableOpacity>
+      <ScreenGlow />
+      {/* Floating glass-gradient header */}
+      <View style={styles.topHeaderShadow}>
+        <View style={styles.topHeader}>
+          <LinearGradient
+            colors={[colors.primaryAccent, colors.primary, colors.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.headerGlassStroke} pointerEvents="none" />
 
-        <Image source={{ uri: profile.avatar }} style={styles.headerAvatar} />
-        <View style={styles.headerInfo}>
-          <Text style={styles.headerName}>{params.name ?? profile.name}</Text>
-          <View style={styles.onlineRow}>
-            <View style={[styles.onlineDot, { backgroundColor: profile.online ? Colors.success : Colors.neutral400 }]} />
-            <Text style={styles.onlineText}>{profile.online ? 'Active now' : 'Offline'}</Text>
-            <Text style={styles.sportBadge}>{profile.sport}</Text>
+          <HeaderIconButton onPress={() => router.back()} style={styles.headerBack}>
+            <ArrowLeft color={colors.white} size={22} strokeWidth={2.5} />
+          </HeaderIconButton>
+
+          <Image source={{ uri: profile.avatar }} style={styles.headerAvatar} />
+          <View style={styles.headerInfo}>
+            <Text style={styles.headerName}>{params.name ?? profile.name}</Text>
+            <View style={styles.onlineRow}>
+              <View style={[styles.onlineDot, { backgroundColor: profile.online ? colors.success : colors.neutral400 }]} />
+              <Text style={styles.onlineText}>{profile.online ? 'Active now' : 'Offline'}</Text>
+              <Text style={styles.sportBadge}>{profile.sport}</Text>
+            </View>
+          </View>
+
+          <View style={styles.headerActions}>
+            <HeaderIconButton onPress={() => {}} style={styles.headerActionBtn}>
+              <Phone color={colors.white} size={19} strokeWidth={2} />
+            </HeaderIconButton>
+            <HeaderIconButton onPress={() => {}} style={styles.headerActionBtn}>
+              <Video color={colors.white} size={19} strokeWidth={2} />
+            </HeaderIconButton>
           </View>
         </View>
-
-        <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerActionBtn} activeOpacity={0.8}>
-            <Phone color={Colors.white} size={19} strokeWidth={2} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerActionBtn} activeOpacity={0.8}>
-            <Video color={Colors.white} size={19} strokeWidth={2} />
-          </TouchableOpacity>
-        </View>
-      </LinearGradient>
+      </View>
 
       {/* Messages */}
       <KeyboardAvoidingView
@@ -165,7 +181,7 @@ export default function ChatScreen() {
         {/* Input bar */}
         <View style={styles.inputBar}>
           <TouchableOpacity style={styles.inputSideBtn} activeOpacity={0.8}>
-            <ImageIcon color={Colors.neutral500} size={20} strokeWidth={2} />
+            <ImageIcon color={colors.neutral500} size={20} strokeWidth={2} />
           </TouchableOpacity>
 
           <View style={styles.inputWrap}>
@@ -175,27 +191,27 @@ export default function ChatScreen() {
               value={inputText}
               onChangeText={setInputText}
               placeholder="Message..."
-              placeholderTextColor={Colors.neutral400}
+              placeholderTextColor={colors.neutral400}
               multiline
               maxLength={1000}
               returnKeyType="default"
             />
             <TouchableOpacity style={styles.emojiBtn} activeOpacity={0.8}>
-              <Smile color={Colors.neutral400} size={18} strokeWidth={2} />
+              <Smile color={colors.neutral400} size={18} strokeWidth={2} />
             </TouchableOpacity>
           </View>
 
           {inputText.trim() ? (
             <Animated.View style={{ transform: [{ scale: sendScale }] }}>
               <TouchableOpacity style={styles.sendBtn} onPress={handleSend} activeOpacity={0.88}>
-                <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.sendBtnGrad}>
-                  <Send color={Colors.white} size={18} strokeWidth={2.5} />
+                <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.sendBtnGrad}>
+                  <Send color={colors.white} size={18} strokeWidth={2.5} />
                 </LinearGradient>
               </TouchableOpacity>
             </Animated.View>
           ) : (
             <TouchableOpacity style={styles.inputSideBtn} activeOpacity={0.8}>
-              <Mic color={Colors.neutral500} size={20} strokeWidth={2} />
+              <Mic color={colors.neutral500} size={20} strokeWidth={2} />
             </TouchableOpacity>
           )}
         </View>
@@ -204,42 +220,62 @@ export default function ChatScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.background },
 
   // Header
-  header: {
+  topHeaderShadow: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    marginBottom: 2,
+    borderRadius: 26,
+    shadowColor: colors.primaryDark,
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
+  topHeader: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 12, paddingVertical: 12, gap: 10,
+    paddingHorizontal: 12, paddingVertical: 12,
+    borderRadius: 26,
+    overflow: 'hidden',
+    gap: 10,
+  },
+  headerGlassStroke: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
   },
   headerBack: {
     width: 38, height: 38, borderRadius: 12,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.white + '18',
+    backgroundColor: colors.white + '18',
   },
-  headerAvatar: { width: 42, height: 42, borderRadius: 14, borderWidth: 2, borderColor: Colors.white + '50' },
+  headerAvatar: { width: 42, height: 42, borderRadius: 14, borderWidth: 2, borderColor: colors.white + '50' },
   headerInfo: { flex: 1 },
-  headerName: { fontSize: 16, fontWeight: '800', color: Colors.white },
+  headerName: { fontSize: 16, fontWeight: '800', color: colors.white },
   onlineRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
   onlineDot: { width: 7, height: 7, borderRadius: 4 },
-  onlineText: { fontSize: 11, color: Colors.white + 'BB', fontWeight: '600' },
+  onlineText: { fontSize: 11, color: colors.white + 'BB', fontWeight: '600' },
   sportBadge: {
-    fontSize: 9, fontWeight: '800', color: Colors.primaryLight,
-    backgroundColor: Colors.white + '20', paddingHorizontal: 6, paddingVertical: 2,
+    fontSize: 9, fontWeight: '800', color: colors.primaryLight,
+    backgroundColor: colors.white + '20', paddingHorizontal: 6, paddingVertical: 2,
     borderRadius: 6, letterSpacing: 0.5,
   },
   headerActions: { flexDirection: 'row', gap: 6 },
   headerActionBtn: {
     width: 38, height: 38, borderRadius: 12,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.white + '18',
+    backgroundColor: colors.white + '18',
   },
 
   // Messages
   messagesList: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 12, gap: 4 },
   chatDateHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16, marginTop: 4 },
-  chatDateLine: { flex: 1, height: 1, backgroundColor: Colors.neutral200 },
-  chatDateText: { fontSize: 11, fontWeight: '700', color: Colors.neutral400 },
+  chatDateLine: { flex: 1, height: 1, backgroundColor: colors.neutral200 },
+  chatDateText: { fontSize: 11, fontWeight: '700', color: colors.neutral400 },
 
   msgRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginVertical: 2 },
   msgRowMe: { justifyContent: 'flex-end' },
@@ -254,39 +290,39 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 1,
   },
   msgBubbleMe: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderBottomRightRadius: 4,
   },
   msgBubbleThem: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderBottomLeftRadius: 4,
   },
   msgText: { fontSize: 15, lineHeight: 21 },
-  msgTextMe: { color: Colors.white },
-  msgTextThem: { color: Colors.text },
+  msgTextMe: { color: colors.white },
+  msgTextThem: { color: colors.text },
   msgTime: { fontSize: 10, marginTop: 4, fontWeight: '600' },
-  msgTimeMe: { color: Colors.white + 'AA', textAlign: 'right' },
-  msgTimeThem: { color: Colors.neutral400 },
+  msgTimeMe: { color: colors.white + 'AA', textAlign: 'right' },
+  msgTimeThem: { color: colors.neutral400 },
 
   // Input
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 8,
     paddingHorizontal: 12, paddingVertical: 10,
-    backgroundColor: Colors.white,
-    borderTopWidth: 1, borderTopColor: Colors.neutral200,
+    backgroundColor: colors.cardBg,
+    borderTopWidth: 1, borderTopColor: colors.neutral200,
   },
   inputSideBtn: {
     width: 40, height: 40, borderRadius: 14,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
   },
   inputWrap: {
     flex: 1, flexDirection: 'row', alignItems: 'flex-end',
-    backgroundColor: Colors.neutral100, borderRadius: 20,
+    backgroundColor: colors.neutral100, borderRadius: 20,
     paddingHorizontal: 14, paddingVertical: 8, minHeight: 40,
   },
   input: {
-    flex: 1, fontSize: 15, color: Colors.text,
+    flex: 1, fontSize: 15, color: colors.text,
     maxHeight: 100, lineHeight: 20,
   },
   emojiBtn: { paddingLeft: 6, paddingBottom: 2 },

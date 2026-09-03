@@ -89,10 +89,75 @@ const drainQueue = (error: unknown, newToken: string | null = null) => {
 
 const clearAuthAndLogout = async () => {
   try {
-    await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'user']);
+    await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'user', 'tokenIssuedAt']);
   } catch { /* ignore storage errors */ }
   delete axiosInstance.defaults.headers.common['Authorization'];
   DeviceEventEmitter.emit(AUTH_LOGOUT_EVENT);
+};
+
+// Firebase ID tokens are fixed at a 1-hour lifetime, set server-side — not
+// configurable here. Refreshing at 45 minutes leaves a safety margin so a
+// proactive refresh always lands before the token would actually expire.
+const PROACTIVE_REFRESH_AFTER_MS = 45 * 60 * 1000;
+
+/** Shared by the reactive 401 path and the proactive foreground check below —
+ *  performs the actual refresh call, persists the new tokens, and updates the
+ *  default Authorization header. Callers handle the isRefreshing/waitingQueue
+ *  dedupe themselves (see the response interceptor and refreshTokenIfNeeded). */
+const performRefresh = async (): Promise<string> => {
+  const storedRefresh = await AsyncStorage.getItem('refreshToken');
+  if (!storedRefresh) throw new Error('no_refresh_token');
+
+  // Use plain axios (not axiosInstance) to avoid re-entering this interceptor.
+  const { data } = await axios.post(
+    `${ENDPOINTS.BASE_URL}${ENDPOINTS.AUTH.REFRESH}`,
+    { refreshToken: storedRefresh },
+    { headers: { 'Content-Type': 'application/json' } }
+  );
+
+  const newAccessToken: string = data.idToken ?? data.accessToken;
+  if (!newAccessToken) throw new Error('empty_token_in_refresh_response');
+
+  await AsyncStorage.setItem('accessToken', newAccessToken);
+  await AsyncStorage.setItem('tokenIssuedAt', String(Date.now()));
+  if (data.refreshToken) {
+    await AsyncStorage.setItem('refreshToken', data.refreshToken);
+  }
+
+  axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${newAccessToken}`;
+  return newAccessToken;
+};
+
+/**
+ * Proactively refreshes the access token if it's near/past its known expiry —
+ * called on app foreground (see AuthContext's AppState listener) so a token
+ * that would have expired while backgrounded is already fresh before any
+ * screen makes a request, instead of waiting for a reactive 401.
+ * No-op if there's no session, or a refresh (reactive or proactive) is
+ * already in flight — that in-flight refresh covers this check too.
+ */
+export const refreshTokenIfNeeded = async (): Promise<void> => {
+  if (isRefreshing) return;
+  try {
+    const [storedToken, issuedAtRaw] = await Promise.all([
+      AsyncStorage.getItem('accessToken'),
+      AsyncStorage.getItem('tokenIssuedAt'),
+    ]);
+    if (!storedToken) return; // not logged in — nothing to refresh
+
+    const issuedAt = issuedAtRaw ? Number(issuedAtRaw) : 0;
+    const isStale = !issuedAt || Date.now() - issuedAt >= PROACTIVE_REFRESH_AFTER_MS;
+    if (!isStale) return;
+
+    isRefreshing = true;
+    const newToken = await performRefresh();
+    drainQueue(null, newToken);
+  } catch (err) {
+    // Swallow — if the refresh token itself is dead, the next real request
+    // will 401 and the reactive path below will handle logging the user out.
+  } finally {
+    isRefreshing = false;
+  }
 };
 
 // ─── Response interceptor: 401 → refresh → retry ─────────────────────────────
@@ -126,25 +191,7 @@ axiosInstance.interceptors.response.use(
     isRefreshing = true;
 
     try {
-      const storedRefresh = await AsyncStorage.getItem('refreshToken');
-      if (!storedRefresh) throw new Error('no_refresh_token');
-
-      // Use plain axios (not axiosInstance) to avoid re-entering this interceptor.
-      const { data } = await axios.post(
-        `${ENDPOINTS.BASE_URL}${ENDPOINTS.AUTH.REFRESH}`,
-        { refreshToken: storedRefresh },
-        { headers: { 'Content-Type': 'application/json' } }
-      );
-
-      const newAccessToken: string = data.idToken ?? data.accessToken;
-      if (!newAccessToken) throw new Error('empty_token_in_refresh_response');
-
-      await AsyncStorage.setItem('accessToken', newAccessToken);
-      if (data.refreshToken) {
-        await AsyncStorage.setItem('refreshToken', data.refreshToken);
-      }
-
-      axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${newAccessToken}`;
+      const newAccessToken = await performRefresh();
       drainQueue(null, newAccessToken);
 
       originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;

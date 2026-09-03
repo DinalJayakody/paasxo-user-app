@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
@@ -7,12 +7,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, MapPin, Calendar, Clock, UserPlus, ChevronRight } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import axiosInstance from '../api/axios';
+import ScreenGlow from '../components/ScreenGlow';
 
 const WALK_RUN_GREEN = '#059669';
 
 export default function CreateWalkRunScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
 
   const [title, setTitle] = useState('');
@@ -70,10 +74,11 @@ export default function CreateWalkRunScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScreenGlow />
       {/* Header */}
       <LinearGradient colors={[WALK_RUN_GREEN, '#047857']} style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
-          <ArrowLeft color={Colors.white} size={22} strokeWidth={2.5} />
+          <ArrowLeft color={colors.white} size={22} strokeWidth={2.5} />
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: 'center' }}>
           <Text style={styles.headerTitle}>Schedule Walk / Run</Text>
@@ -95,7 +100,7 @@ export default function CreateWalkRunScreen() {
           <TextInput
             style={styles.input}
             placeholder="e.g. Morning run through the park"
-            placeholderTextColor={Colors.neutral400}
+            placeholderTextColor={colors.neutral400}
             value={title}
             onChangeText={setTitle}
           />
@@ -107,7 +112,7 @@ export default function CreateWalkRunScreen() {
           <TextInput
             style={[styles.input, styles.multiline]}
             placeholder="Any notes about the route or pace..."
-            placeholderTextColor={Colors.neutral400}
+            placeholderTextColor={colors.neutral400}
             value={description}
             onChangeText={setDescription}
             multiline
@@ -123,7 +128,7 @@ export default function CreateWalkRunScreen() {
             <TextInput
               style={styles.iconInputText}
               placeholder="e.g. Hyde Park, London"
-              placeholderTextColor={Colors.neutral400}
+              placeholderTextColor={colors.neutral400}
               value={startLocation}
               onChangeText={setStartLocation}
             />
@@ -134,11 +139,11 @@ export default function CreateWalkRunScreen() {
         <View style={styles.section}>
           <Text style={styles.label}>End Location</Text>
           <View style={styles.iconInput}>
-            <MapPin color={Colors.neutral400} size={18} strokeWidth={2} />
+            <MapPin color={colors.neutral400} size={18} strokeWidth={2} />
             <TextInput
               style={styles.iconInputText}
               placeholder="e.g. Buckingham Palace (optional)"
-              placeholderTextColor={Colors.neutral400}
+              placeholderTextColor={colors.neutral400}
               value={endLocation}
               onChangeText={setEndLocation}
             />
@@ -154,7 +159,7 @@ export default function CreateWalkRunScreen() {
               <TextInput
                 style={styles.iconInputText}
                 placeholder="YYYY-MM-DD"
-                placeholderTextColor={Colors.neutral400}
+                placeholderTextColor={colors.neutral400}
                 value={scheduledDate}
                 onChangeText={setScheduledDate}
               />
@@ -168,7 +173,7 @@ export default function CreateWalkRunScreen() {
               <TextInput
                 style={styles.iconInputText}
                 placeholder="HH:mm"
-                placeholderTextColor={Colors.neutral400}
+                placeholderTextColor={colors.neutral400}
                 value={scheduledTime}
                 onChangeText={setScheduledTime}
               />
@@ -180,15 +185,15 @@ export default function CreateWalkRunScreen() {
         <View style={styles.section}>
           <Text style={styles.label}>Invite a Partner</Text>
           <View style={styles.iconInput}>
-            <UserPlus color={Colors.primary} size={18} strokeWidth={2} />
+            <UserPlus color={colors.primary} size={18} strokeWidth={2} />
             <TextInput
               style={styles.iconInputText}
               placeholder="Search by name or username..."
-              placeholderTextColor={Colors.neutral400}
+              placeholderTextColor={colors.neutral400}
               value={partnerSearch}
               onChangeText={searchPartner}
             />
-            {searching && <ActivityIndicator size="small" color={Colors.primary} />}
+            {searching && <ActivityIndicator size="small" color={colors.primary} />}
           </View>
 
           {selectedPartnerId && (
@@ -224,10 +229,10 @@ export default function CreateWalkRunScreen() {
         <TouchableOpacity onPress={handleSubmit} disabled={submitting} activeOpacity={0.85}>
           <LinearGradient colors={[WALK_RUN_GREEN, '#047857']} style={styles.submitBtn}>
             {submitting
-              ? <ActivityIndicator color={Colors.white} />
+              ? <ActivityIndicator color={colors.white} />
               : <>
                   <Text style={styles.submitText}>Schedule Walk / Run</Text>
-                  <ChevronRight color={Colors.white} size={20} strokeWidth={2.5} />
+                  <ChevronRight color={colors.white} size={20} strokeWidth={2.5} />
                 </>
             }
           </LinearGradient>
@@ -240,8 +245,8 @@ export default function CreateWalkRunScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
     paddingTop: 12, paddingBottom: 20,
@@ -251,44 +256,44 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center', justifyContent: 'center',
   },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: Colors.white },
+  headerTitle: { fontSize: 18, fontWeight: '800', color: colors.white },
   headerSub: { fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 2 },
   scroll: { padding: 20 },
   section: { marginBottom: 16 },
   row: { flexDirection: 'row', marginBottom: 16 },
-  label: { fontSize: 13, fontWeight: '700', color: Colors.neutral700, marginBottom: 8 },
+  label: { fontSize: 13, fontWeight: '700', color: colors.neutral700, marginBottom: 8 },
   input: {
-    backgroundColor: Colors.white, borderRadius: 14, borderWidth: 1.5,
-    borderColor: Colors.neutral200, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 14, color: Colors.neutral900,
+    backgroundColor: colors.inputBg, borderRadius: 14, borderWidth: 1.5,
+    borderColor: colors.neutral200, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 14, color: colors.neutral900,
   },
   multiline: { minHeight: 80, textAlignVertical: 'top' },
   iconInput: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: Colors.white, borderRadius: 14, borderWidth: 1.5,
-    borderColor: Colors.neutral200, paddingHorizontal: 14, paddingVertical: 12,
+    backgroundColor: colors.inputBg, borderRadius: 14, borderWidth: 1.5,
+    borderColor: colors.neutral200, paddingHorizontal: 14, paddingVertical: 12,
   },
-  iconInputText: { flex: 1, fontSize: 14, color: Colors.neutral900 },
+  iconInputText: { flex: 1, fontSize: 14, color: colors.neutral900 },
   searchResults: {
-    marginTop: 8, backgroundColor: Colors.white, borderRadius: 14,
-    borderWidth: 1.5, borderColor: Colors.neutral200, overflow: 'hidden',
+    marginTop: 8, backgroundColor: colors.cardBg, borderRadius: 14,
+    borderWidth: 1.5, borderColor: colors.neutral200, overflow: 'hidden',
   },
   searchResultRow: {
     paddingHorizontal: 14, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: Colors.neutral100,
+    borderBottomWidth: 1, borderBottomColor: colors.neutral100,
   },
-  searchResultName: { fontSize: 14, fontWeight: '700', color: Colors.neutral900 },
-  searchResultSub: { fontSize: 12, color: Colors.neutral500, marginTop: 2 },
+  searchResultName: { fontSize: 14, fontWeight: '700', color: colors.neutral900 },
+  searchResultSub: { fontSize: 12, color: colors.neutral500, marginTop: 2 },
   partnerSelected: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginTop: 8, paddingHorizontal: 14, paddingVertical: 10,
     backgroundColor: '#D1FAE5', borderRadius: 12,
   },
   partnerSelectedText: { fontSize: 13, fontWeight: '700', color: WALK_RUN_GREEN },
-  partnerClear: { fontSize: 12, color: Colors.error, fontWeight: '700' },
+  partnerClear: { fontSize: 12, color: colors.error, fontWeight: '700' },
   submitBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, borderRadius: 16, paddingVertical: 16,
   },
-  submitText: { fontSize: 16, fontWeight: '800', color: Colors.white },
+  submitText: { fontSize: 16, fontWeight: '800', color: colors.white },
 });

@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { CheckCircle2, Calendar, Clock, MapPin, Video, CalendarPlus, Receipt } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
+import ScreenGlow from '../components/ScreenGlow';
 
 interface Props {
   bookingId: string;
@@ -36,6 +38,8 @@ function toCalendarDate(dateIso: string, timeStr: string) {
 export default function TrainerBookingConfirmedScreen({
   bookingId, sessionTitle, trainerDisplayName, slotDate, startTime, endTime, location, isOnline, pricePaid,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
@@ -56,9 +60,10 @@ export default function TrainerBookingConfirmedScreen({
 
   return (
     <SafeAreaView style={styles.flex1} edges={['top', 'bottom']}>
+      <ScreenGlow />
       <View style={styles.content}>
-        <LinearGradient colors={[Colors.trainer, Colors.primaryDark]} style={styles.iconCircle}>
-          <CheckCircle2 color={Colors.white} size={44} strokeWidth={2} />
+        <LinearGradient colors={[colors.trainer, colors.primaryDark]} style={styles.iconCircle}>
+          <CheckCircle2 color={colors.white} size={44} strokeWidth={2} />
         </LinearGradient>
 
         <Text style={styles.title}>You're In!</Text>
@@ -69,23 +74,23 @@ export default function TrainerBookingConfirmedScreen({
 
         <View style={styles.card}>
           <View style={styles.infoRow}>
-            <Calendar color={Colors.trainer} size={18} strokeWidth={2} />
+            <Calendar color={colors.trainer} size={18} strokeWidth={2} />
             <Text style={styles.infoText}>{dateLabel(slotDate)}</Text>
           </View>
           <View style={styles.infoRow}>
-            <Clock color={Colors.trainer} size={18} strokeWidth={2} />
+            <Clock color={colors.trainer} size={18} strokeWidth={2} />
             <Text style={styles.infoText}>{timeLabel(startTime)} – {timeLabel(endTime)}</Text>
           </View>
           <View style={styles.infoRow}>
             {isOnline ? (
-              <Video color={Colors.trainer} size={18} strokeWidth={2} />
+              <Video color={colors.trainer} size={18} strokeWidth={2} />
             ) : (
-              <MapPin color={Colors.trainer} size={18} strokeWidth={2} />
+              <MapPin color={colors.trainer} size={18} strokeWidth={2} />
             )}
             <Text style={styles.infoText}>{isOnline ? 'Online session' : (location || 'In person')}</Text>
           </View>
           <View style={[styles.infoRow, styles.infoRowLast]}>
-            <Receipt color={Colors.trainer} size={18} strokeWidth={2} />
+            <Receipt color={colors.trainer} size={18} strokeWidth={2} />
             <Text style={styles.infoText}>LKR {pricePaid} paid</Text>
           </View>
         </View>
@@ -95,7 +100,7 @@ export default function TrainerBookingConfirmedScreen({
 
       <View style={[styles.footer, { paddingBottom: 20 + insets.bottom }]}>
         <TouchableOpacity style={styles.calendarBtn} onPress={handleAddToCalendar} activeOpacity={0.8}>
-          <CalendarPlus color={Colors.trainer} size={18} strokeWidth={2.2} />
+          <CalendarPlus color={colors.trainer} size={18} strokeWidth={2.2} />
           <Text style={styles.calendarBtnText}>Add to Calendar</Text>
         </TouchableOpacity>
         <Button title="Done" onPress={handleDone} style={styles.doneBtn} />
@@ -104,33 +109,33 @@ export default function TrainerBookingConfirmedScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  flex1: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  flex1: { flex: 1, backgroundColor: colors.background },
   content: { flex: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 48 },
   iconCircle: {
     width: 92, height: 92, borderRadius: 46, alignItems: 'center', justifyContent: 'center', marginBottom: 20,
   },
-  title: { fontSize: 26, fontWeight: '900', color: Colors.text, marginBottom: 8 },
+  title: { fontSize: 26, fontWeight: '900', color: colors.text, marginBottom: 8 },
   subtitle: {
-    fontSize: 14.5, color: Colors.textSecondary, textAlign: 'center', lineHeight: 21, marginBottom: 28,
+    fontSize: 14.5, color: colors.textSecondary, textAlign: 'center', lineHeight: 21, marginBottom: 28,
   },
-  subtitleStrong: { fontWeight: '700', color: Colors.text },
+  subtitleStrong: { fontWeight: '700', color: colors.text },
   card: {
-    width: '100%', backgroundColor: Colors.white, borderRadius: 18, padding: 18, gap: 14,
+    width: '100%', backgroundColor: colors.cardBg, borderRadius: 18, padding: 18, gap: 14,
     shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   infoRowLast: {},
-  infoText: { fontSize: 14, fontWeight: '600', color: Colors.text },
-  bookingRef: { fontSize: 12, color: Colors.textMuted, marginTop: 18 },
+  infoText: { fontSize: 14, fontWeight: '600', color: colors.text },
+  bookingRef: { fontSize: 12, color: colors.textMuted, marginTop: 18 },
   footer: {
     paddingHorizontal: 28, paddingTop: 14, gap: 12,
-    borderTopWidth: 1, borderTopColor: Colors.neutral200, backgroundColor: Colors.white,
+    borderTopWidth: 1, borderTopColor: colors.neutral200, backgroundColor: colors.cardBg,
   },
   calendarBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    borderWidth: 1.5, borderColor: Colors.trainerLight, borderRadius: 14, paddingVertical: 14,
+    borderWidth: 1.5, borderColor: colors.trainerLight, borderRadius: 14, paddingVertical: 14,
   },
-  calendarBtnText: { fontSize: 14, fontWeight: '700', color: Colors.trainer },
+  calendarBtnText: { fontSize: 14, fontWeight: '700', color: colors.trainer },
   doneBtn: { width: '100%' },
 });

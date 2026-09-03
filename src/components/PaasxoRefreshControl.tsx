@@ -1,6 +1,6 @@
 import React from 'react';
 import { RefreshControl, RefreshControlProps } from 'react-native';
-import { Colors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 
 /**
  * Native RefreshControl can't have its spinner graphic replaced with a
@@ -15,12 +15,13 @@ import { Colors } from '../styles/colors';
  * custom-drawn graphic would be.
  */
 export function PaasxoRefreshControl(props: Omit<RefreshControlProps, 'tintColor' | 'colors' | 'progressBackgroundColor'>) {
+  const { colors } = useTheme();
   return (
     <RefreshControl
       {...props}
-      tintColor={Colors.primaryLight}
-      colors={[Colors.primary]}
-      progressBackgroundColor={Colors.white}
+      tintColor={colors.primaryLight}
+      colors={[colors.primary]}
+      progressBackgroundColor={colors.cardBg}
     />
   );
 }

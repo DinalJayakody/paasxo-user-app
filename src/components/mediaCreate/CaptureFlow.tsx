@@ -36,7 +36,8 @@ import {
   X,
   Zap,
 } from 'lucide-react-native';
-import { Colors } from '../../styles/colors';
+import { ThemeColors } from '../../styles/colors';
+import { useTheme } from '../../context/ThemeContext';
 import { audioApi, AudioTrack } from '../../api/audioApi';
 
 // Platform-safe camera / native-module imports
@@ -161,11 +162,13 @@ function DraggableSticker({
   initialY,
   onPositionChange,
   children,
+  styles,
 }: {
   initialX: number;
   initialY: number;
   onPositionChange: (x: number, y: number) => void;
   children: React.ReactNode;
+  styles: ReturnType<typeof createStyles>;
 }) {
   const pan = useRef(new Animated.ValueXY({ x: initialX * W, y: initialY * H })).current;
   const panResponder = useRef(
@@ -226,11 +229,14 @@ export function CaptureFlow({
   submitLabel = 'Share',
   submittingLabel = 'Uploading…',
   doneLabel = 'Shared!',
-  accentColors = ['#E91E63', '#7B1FA2', Colors.primaryDark],
+  accentColors,
   allowBoomerang = false,
   allowMusic = false,
   onSubmit,
 }: CaptureFlowProps) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
+  const resolvedAccentColors = accentColors ?? ['#E91E63', '#7B1FA2', colors.primaryDark];
   const router = useRouter();
   const cameraRef = useRef<any>(null);
 
@@ -617,7 +623,7 @@ export function CaptureFlow({
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.webFallback}>
-          <Camera color={Colors.neutral500} size={48} strokeWidth={1.2} />
+          <Camera color={colors.neutral500} size={48} strokeWidth={1.2} />
           <Text style={styles.webFallbackTitle}>Camera unavailable on web</Text>
           <Text style={styles.webFallbackSub}>Use the iOS or Android app to create this</Text>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.8}>
@@ -631,7 +637,7 @@ export function CaptureFlow({
   if (!CameraView) {
     return (
       <SafeAreaView style={styles.safe}>
-        <ActivityIndicator color={Colors.primary} />
+        <ActivityIndicator color={colors.primary} />
       </SafeAreaView>
     );
   }
@@ -640,7 +646,7 @@ export function CaptureFlow({
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.permWrap}>
-          <Camera color={Colors.primary} size={56} strokeWidth={1.2} />
+          <Camera color={colors.primary} size={56} strokeWidth={1.2} />
           <Text style={styles.permTitle}>Camera Access Needed</Text>
           <Text style={styles.permSub}>We need camera permission to let you create this</Text>
           <TouchableOpacity
@@ -651,7 +657,7 @@ export function CaptureFlow({
             }}
             activeOpacity={0.85}
           >
-            <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.permBtnGrad}>
+            <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.permBtnGrad}>
               <Text style={styles.permBtnText}>Allow Camera</Text>
             </LinearGradient>
           </TouchableOpacity>
@@ -684,6 +690,7 @@ export function CaptureFlow({
             initialX={captionPos.x}
             initialY={captionPos.y}
             onPositionChange={(x, y) => setCaptionPos({ x, y })}
+            styles={styles}
           >
             <Pressable onLongPress={removeCaptionText}>
               <Text style={[styles.stickerCaptionText, { color: captionColor }]}>{captionText}</Text>
@@ -695,6 +702,7 @@ export function CaptureFlow({
             initialX={emojiPos.x}
             initialY={emojiPos.y}
             onPositionChange={(x, y) => setEmojiPos({ x, y })}
+            styles={styles}
           >
             <Pressable onLongPress={removeEmoji}>
               <Text style={styles.stickerEmoji}>{emoji}</Text>
@@ -798,7 +806,7 @@ export function CaptureFlow({
                 <Text style={styles.shareBtnText}>{submittingLabel}</Text>
               </View>
             ) : (
-              <LinearGradient colors={accentColors} style={styles.shareBtnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+              <LinearGradient colors={resolvedAccentColors} style={styles.shareBtnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
                 <Zap color="#fff" size={18} strokeWidth={2.5} fill="#fff" />
                 <Text style={styles.shareBtnText}>{submitLabel}</Text>
               </LinearGradient>
@@ -887,7 +895,7 @@ export function CaptureFlow({
                         <Text style={styles.trackTitle}>No music</Text>
                         <Text style={styles.trackArtist}>Use your recorded audio only</Text>
                       </View>
-                      {!selectedTrack && <CheckCircle color={Colors.primaryAccent ?? '#fff'} size={20} strokeWidth={2.5} />}
+                      {!selectedTrack && <CheckCircle color={colors.primaryAccent ?? '#fff'} size={20} strokeWidth={2.5} />}
                     </TouchableOpacity>
                     {audioTracks.map((track) => {
                       const isPreviewing = previewingTrackId === track.id;
@@ -914,7 +922,7 @@ export function CaptureFlow({
                             <Text style={styles.trackTitle} numberOfLines={1}>{track.title}</Text>
                             <Text style={styles.trackArtist} numberOfLines={1}>{track.artist}</Text>
                           </View>
-                          {isSelected && <CheckCircle color={Colors.primaryAccent ?? '#fff'} size={20} strokeWidth={2.5} />}
+                          {isSelected && <CheckCircle color={colors.primaryAccent ?? '#fff'} size={20} strokeWidth={2.5} />}
                         </TouchableOpacity>
                       );
                     })}
@@ -997,7 +1005,7 @@ export function CaptureFlow({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#000' },
 
   cameraContainer: { flex: 1, backgroundColor: '#000' },
@@ -1094,7 +1102,7 @@ const styles = StyleSheet.create({
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center',
   },
-  trackPlayBtnActive: { backgroundColor: Colors.primary },
+  trackPlayBtnActive: { backgroundColor: colors.primary },
   trackTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
   trackArtist: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 2 },
 
@@ -1114,7 +1122,7 @@ const styles = StyleSheet.create({
   shareBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 16 },
   shareBtnInner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 16,
-    backgroundColor: Colors.success, borderRadius: 28,
+    backgroundColor: colors.success, borderRadius: 28,
   },
   shareBtnText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
 
@@ -1132,7 +1140,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   editorTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  editorDoneText: { color: Colors.primaryAccent ?? '#fff', fontSize: 16, fontWeight: '800' },
+  editorDoneText: { color: colors.primaryAccent ?? '#fff', fontSize: 16, fontWeight: '800' },
   editorTextInput: { fontSize: 26, fontWeight: '800', textAlign: 'center' },
   colorRow: { flexDirection: 'row', justifyContent: 'center', gap: 14, marginTop: 24 },
   colorSwatch: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: 'transparent' },
@@ -1142,15 +1150,15 @@ const styles = StyleSheet.create({
   emojiCellText: { fontSize: 30 },
 
   permWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 16 },
-  permTitle: { fontSize: 22, fontWeight: '800', color: Colors.text, textAlign: 'center' },
-  permSub: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  permTitle: { fontSize: 22, fontWeight: '800', color: '#fff', textAlign: 'center' },
+  permSub: { fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center', lineHeight: 20 },
   permBtn: { width: '100%', borderRadius: 14, overflow: 'hidden', marginTop: 8 },
   permBtnGrad: { paddingVertical: 14, alignItems: 'center' },
   permBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
 
   webFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 32 },
-  webFallbackTitle: { fontSize: 20, fontWeight: '800', color: Colors.text, textAlign: 'center' },
-  webFallbackSub: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center' },
-  backBtn: { backgroundColor: Colors.primary, borderRadius: 14, paddingHorizontal: 24, paddingVertical: 12, marginTop: 8 },
+  webFallbackTitle: { fontSize: 20, fontWeight: '800', color: '#fff', textAlign: 'center' },
+  webFallbackSub: { fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center' },
+  backBtn: { backgroundColor: colors.primary, borderRadius: 14, paddingHorizontal: 24, paddingVertical: 12, marginTop: 8 },
   backBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 });

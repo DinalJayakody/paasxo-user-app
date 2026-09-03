@@ -49,7 +49,8 @@ import {
 import * as Location from 'expo-location';
 import Svg, { Path } from 'react-native-svg';
 import { useFocusEffect } from '@react-navigation/native';
-import { Colors } from '../styles/colors';
+import { Colors, ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { notificationApi } from '../api/notificationApi';
 import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
 import { futsalApi } from '../api/futsalApi';
@@ -59,8 +60,10 @@ import { trainerApi } from '../api/trainerApi';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import HeaderIconButton from '../components/HeaderIconButton';
 import { useSubscription } from '../hooks/useSubscription';
 import { resolveMediaUrl } from '../utils/mediaUrl';
+import ScreenGlow from '../components/ScreenGlow';
 
 // ─── Platform-safe maps ──────────────────────────────────────────────────────
 let MapViewComponent: any = null;
@@ -211,6 +214,8 @@ function RadialCategoryMenu({
   onSelect: (c: Category) => void;
   onClose: () => void;
 }) {
+  const { colors } = useTheme();
+  const pieStyles = React.useMemo(() => createPieStyles(colors), [colors]);
   const backdrop  = useRef(new Animated.Value(0)).current;
   const pieScale  = useRef(new Animated.Value(0)).current;
   const pieRotate = useRef(new Animated.Value(0)).current;
@@ -309,11 +314,11 @@ function RadialCategoryMenu({
                   ],
                 }}
               >
-                <cat.Icon color={Colors.white} size={isSel ? 26 : 21} strokeWidth={2.2} />
+                <cat.Icon color={colors.white} size={isSel ? 26 : 21} strokeWidth={2.2} />
                 <Text
                   style={[
                     pieStyles.itemLabel,
-                    isSel && { color: Colors.white, fontWeight: '900' },
+                    isSel && { color: colors.white, fontWeight: '900' },
                   ]}
                 >
                   {cat.label}
@@ -328,19 +333,19 @@ function RadialCategoryMenu({
             style={[pieStyles.centerBtn, { left: PIE_CX - 36, top: PIE_CY - 36 }]}
           >
             {selectedCat && <selectedCat.Icon color={selectedCat.color} size={18} strokeWidth={2.2} />}
-            <X color={Colors.neutral600} size={13} strokeWidth={2.5} />
+            <X color={colors.neutral600} size={13} strokeWidth={2.5} />
           </TouchableOpacity>
         </Animated.View>
 
         <Text style={pieStyles.guideBelow}>
-          Currently: <Text style={{ fontWeight: '800', color: Colors.white }}>{selectedCat?.label}</Text>
+          Currently: <Text style={{ fontWeight: '800', color: colors.white }}>{selectedCat?.label}</Text>
         </Text>
       </Animated.View>
     </Modal>
   );
 }
 
-const pieStyles = StyleSheet.create({
+const createPieStyles = (colors: ThemeColors) => StyleSheet.create({
   guideAbove: {
     fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.65)',
     marginBottom: 28, letterSpacing: 0.4,
@@ -355,7 +360,7 @@ const pieStyles = StyleSheet.create({
   centerBtn: {
     position: 'absolute',
     width: 72, height: 72, borderRadius: 36,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 14,
     shadowOffset: { width: 0, height: 4 }, elevation: 10,
@@ -375,6 +380,8 @@ function CalendarModal({
   onSelect: (d: Date) => void;
   selectedDate: Date | null;
 }) {
+  const { colors } = useTheme();
+  const calStyles = React.useMemo(() => createCalStyles(colors), [colors]);
   const today = new Date();
   const [viewDate, setViewDate] = useState<Date>(() => {
     const d = selectedDate ?? today;
@@ -433,11 +440,11 @@ function CalendarModal({
           {/* Month nav */}
           <View style={calStyles.monthNav}>
             <TouchableOpacity onPress={prevMonth} style={calStyles.navBtn} activeOpacity={0.7}>
-              <ChevronLeft color={Colors.primary} size={20} strokeWidth={2.5} />
+              <ChevronLeft color={colors.primary} size={20} strokeWidth={2.5} />
             </TouchableOpacity>
             <Text style={calStyles.monthLabel}>{monthLabel}</Text>
             <TouchableOpacity onPress={nextMonth} style={calStyles.navBtn} activeOpacity={0.7}>
-              <ChevronRight color={Colors.primary} size={20} strokeWidth={2.5} />
+              <ChevronRight color={colors.primary} size={20} strokeWidth={2.5} />
             </TouchableOpacity>
           </View>
 
@@ -496,6 +503,8 @@ function CalendarModal({
 const VALID_CATEGORIES: Category[] = ['VENUES', 'TRAINERS', 'GAMES', 'EVENTS'];
 
 export default function ExploreScreen() {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const navBarHeight = useBottomNavBarHeight();
   const router = useRouter();
   const { active: isPro } = useSubscription();
@@ -763,10 +772,10 @@ export default function ExploreScreen() {
           <Image source={{ uri: imageUri }} style={styles.cardImage} resizeMode="cover" />
         ) : (
           <LinearGradient
-            colors={[Colors.primary + '40', Colors.primaryDark + '25']}
+            colors={[colors.primary + '40', colors.primaryDark + '25']}
             style={[styles.cardImage, styles.cardImagePlaceholder]}
           >
-            <MapPin color={Colors.primary} size={32} strokeWidth={1.5} />
+            <MapPin color={colors.primary} size={32} strokeWidth={1.5} />
             <Text style={styles.cardImagePlaceholderText}>{venue.name}</Text>
           </LinearGradient>
         )}
@@ -776,7 +785,7 @@ export default function ExploreScreen() {
           <View style={styles.cardMetaRow}>
             {venue.distance != null && (
               <View style={styles.metaItem}>
-                <Navigation color={Colors.textMuted} size={12} strokeWidth={2} />
+                <Navigation color={colors.textMuted} size={12} strokeWidth={2} />
                 <Text style={styles.metaText}>{venue.distance} km away</Text>
               </View>
             )}
@@ -787,9 +796,9 @@ export default function ExploreScreen() {
             activeOpacity={0.88}
             onPress={() => router.push(`/create-match` as any)}
           >
-            <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.cardCtaGrad}>
+            <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.cardCtaGrad}>
               <Text style={styles.cardCtaText}>Book Now</Text>
-              <ChevronRight color={Colors.white} size={14} strokeWidth={2.5} />
+              <ChevronRight color={colors.white} size={14} strokeWidth={2.5} />
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -823,7 +832,7 @@ export default function ExploreScreen() {
       >
         <View style={styles.gameCardHeader}>
           <View style={styles.sportBadge}>
-            <GameSportIcon color={Colors.text} size={13} strokeWidth={2.2} />
+            <GameSportIcon color={colors.text} size={13} strokeWidth={2.2} />
             <Text style={styles.sportBadgeText}>{game.sport}</Text>
           </View>
           <View style={[styles.feeBadge, game.totalPrice == null && styles.feeBadgeFree]}>
@@ -836,23 +845,23 @@ export default function ExploreScreen() {
           <Text style={styles.cardName}>{game.title}</Text>
           <View style={styles.cardMetaRow}>
             <View style={styles.metaItem}>
-              <Calendar color={Colors.textMuted} size={12} strokeWidth={2} />
+              <Calendar color={colors.textMuted} size={12} strokeWidth={2} />
               <Text style={styles.metaText}>{dateLabel}</Text>
             </View>
             {!!timeLabel && (
               <View style={styles.metaItem}>
-                <Clock color={Colors.textMuted} size={12} strokeWidth={2} />
+                <Clock color={colors.textMuted} size={12} strokeWidth={2} />
                 <Text style={styles.metaText}>{timeLabel}</Text>
               </View>
             )}
           </View>
           <View style={styles.metaItem}>
-            <MapPin color={Colors.textMuted} size={12} strokeWidth={2} />
+            <MapPin color={colors.textMuted} size={12} strokeWidth={2} />
             <Text style={styles.metaText} numberOfLines={1}>{game.locationName}</Text>
           </View>
           {game.distance != null && (
             <View style={[styles.metaItem, { marginTop: 4 }]}>
-              <Navigation color={Colors.textMuted} size={12} strokeWidth={2} />
+              <Navigation color={colors.textMuted} size={12} strokeWidth={2} />
               <Text style={styles.metaText}>{game.distance} km away</Text>
             </View>
           )}
@@ -869,9 +878,9 @@ export default function ExploreScreen() {
             activeOpacity={0.88}
             onPress={() => router.push(`/join-match/${game.id}` as any)}
           >
-            <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.cardCtaGrad}>
+            <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.cardCtaGrad}>
               <Text style={styles.cardCtaText}>Join Game</Text>
-              <ChevronRight color={Colors.white} size={14} strokeWidth={2.5} />
+              <ChevronRight color={colors.white} size={14} strokeWidth={2.5} />
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -887,7 +896,7 @@ export default function ExploreScreen() {
         {imageUri ? (
           <Image source={{ uri: imageUri }} style={styles.cardImage} resizeMode="cover" />
         ) : (
-          <LinearGradient colors={[`${Colors.trainer}40`, `${Colors.primaryDark}25`]} style={[styles.cardImage, styles.cardImagePlaceholder]}>
+          <LinearGradient colors={[`${Colors.trainer}40`, `${colors.primaryDark}25`]} style={[styles.cardImage, styles.cardImagePlaceholder]}>
             <Dumbbell color={Colors.trainer} size={32} strokeWidth={1.5} />
             <Text style={[styles.cardImagePlaceholderText, { color: Colors.trainer }]}>{trainer.name}</Text>
           </LinearGradient>
@@ -902,7 +911,7 @@ export default function ExploreScreen() {
           <View style={styles.cardMetaRow}>
             {trainer.distance != null && (
               <View style={styles.metaItem}>
-                <Navigation color={Colors.textMuted} size={12} strokeWidth={2} />
+                <Navigation color={colors.textMuted} size={12} strokeWidth={2} />
                 <Text style={styles.metaText}>{trainer.distance} km away</Text>
               </View>
             )}
@@ -915,9 +924,9 @@ export default function ExploreScreen() {
             <Text style={[styles.priceLabel, { color: Colors.trainer }]}>{priceLabel}</Text>
           </View>
           <TouchableOpacity style={styles.cardCta} activeOpacity={0.88} onPress={() => router.push(`/trainer/${trainer.id}` as any)}>
-            <LinearGradient colors={[Colors.trainer, Colors.primaryDark]} style={styles.cardCtaGrad}>
+            <LinearGradient colors={[Colors.trainer, colors.primaryDark]} style={styles.cardCtaGrad}>
               <Text style={styles.cardCtaText}>View Trainer</Text>
-              <ChevronRight color={Colors.white} size={14} strokeWidth={2.5} />
+              <ChevronRight color={colors.white} size={14} strokeWidth={2.5} />
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -927,7 +936,7 @@ export default function ExploreScreen() {
 
   const renderEventCard = (event: EventResult) => {
     const EventSportIcon = sportIconFor(event.sport);
-    const statusColor = event.status === 'ACTIVE' ? Colors.success : event.status === 'UPCOMING' ? '#7C3AED' : Colors.neutral400;
+    const statusColor = event.status === 'ACTIVE' ? colors.success : event.status === 'UPCOMING' ? '#7C3AED' : colors.neutral400;
     const statusLabel = event.status ?? 'OPEN';
     const dateLabel = event.startDate
       ? new Date(event.startDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
@@ -956,19 +965,19 @@ export default function ExploreScreen() {
         <View style={styles.cardBody}>
           <View style={styles.cardMetaRow}>
             <View style={styles.metaItem}>
-              <Calendar color={Colors.textMuted} size={12} strokeWidth={2} />
+              <Calendar color={colors.textMuted} size={12} strokeWidth={2} />
               <Text style={styles.metaText}>{dateLabel}</Text>
             </View>
             {event.distance != null && (
               <View style={styles.metaItem}>
-                <Navigation color={Colors.textMuted} size={12} strokeWidth={2} />
+                <Navigation color={colors.textMuted} size={12} strokeWidth={2} />
                 <Text style={styles.metaText}>{event.distance} km away</Text>
               </View>
             )}
           </View>
           {(event.teamCount != null || event.maxTeams != null) && (
             <View style={styles.metaItem}>
-              <Users color={Colors.textMuted} size={12} strokeWidth={2} />
+              <Users color={colors.textMuted} size={12} strokeWidth={2} />
               <Text style={styles.metaText}>
                 {event.teamCount ?? 0}{event.maxTeams ? ` / ${event.maxTeams}` : ''} teams
               </Text>
@@ -976,9 +985,9 @@ export default function ExploreScreen() {
           )}
           <TouchableOpacity style={styles.cardCta} activeOpacity={0.88} onPress={() => router.push(`/tournament/${event.id}` as any)}>
             <LinearGradient colors={['#7C3AED', '#6D28D9']} style={styles.cardCtaGrad}>
-              <Trophy color={Colors.white} size={14} strokeWidth={2.5} />
+              <Trophy color={colors.white} size={14} strokeWidth={2.5} />
               <Text style={styles.cardCtaText}>View Tournament</Text>
-              <ChevronRight color={Colors.white} size={14} strokeWidth={2.5} />
+              <ChevronRight color={colors.white} size={14} strokeWidth={2.5} />
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -1001,22 +1010,31 @@ export default function ExploreScreen() {
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
-      {/* Hero */}
-      <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.hero}>
-        <TouchableOpacity
+      {/* Floating glass-gradient header */}
+      <View style={styles.heroShadow}>
+      <View style={styles.hero}>
+        <LinearGradient
+          colors={[colors.primaryAccent, colors.primary, colors.primaryDark]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={styles.heroGlassStroke} pointerEvents="none" />
+
+        <HeaderIconButton
           style={styles.exploreBell}
           onPress={() => router.push('/notifications?category=GENERAL' as any)}
           hitSlop={8}
         >
-          <Bell color={Colors.white} size={19} strokeWidth={2} />
+          <Bell color={colors.white} size={19} strokeWidth={2} />
           {unreadGeneral > 0 && (
             <View style={styles.exploreBellBadge}>
               <Text style={styles.exploreBellBadgeText}>{unreadGeneral > 9 ? '9+' : unreadGeneral}</Text>
             </View>
           )}
-        </TouchableOpacity>
+        </HeaderIconButton>
         <View style={styles.heroBrandRow}>
-          <Image source={require('../../assets/logo.jpeg')} style={styles.heroLogo} resizeMode="contain" />
+          <Image source={require('../../assets/logo-mark.png')} style={styles.heroLogo} resizeMode="contain" />
           {isPro && (
             <View style={styles.proBadge}>
               <Zap color="#1A1A2E" size={8} strokeWidth={2.5} fill="#1A1A2E" />
@@ -1027,23 +1045,24 @@ export default function ExploreScreen() {
         <Text style={styles.heroTitle}>Discover</Text>
         <Text style={styles.heroSub}>Find venues & matches near you</Text>
         <View style={styles.searchBar}>
-          <Search color={Colors.neutral400} size={17} strokeWidth={2} />
+          <Search color={colors.neutral400} size={17} strokeWidth={2} />
           <TextInput
             style={styles.searchInput}
             value={searchText}
             onChangeText={setSearchText}
             placeholder={category === 'VENUES' ? 'Search venue name…' : category === 'TRAINERS' ? 'Search trainer name…' : category === 'EVENTS' ? 'Search tournament…' : 'Search match title…'}
-            placeholderTextColor={Colors.neutral400}
+            placeholderTextColor={colors.neutral400}
             returnKeyType="search"
             onSubmitEditing={handleShowResults}
           />
           {!!searchText && (
             <TouchableOpacity onPress={() => setSearchText('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <X color={Colors.neutral400} size={15} strokeWidth={2} />
+              <X color={colors.neutral400} size={15} strokeWidth={2} />
             </TouchableOpacity>
           )}
         </View>
-      </LinearGradient>
+      </View>
+      </View>
 
       <View style={styles.pad}>
         {/* Category — single button that opens radial pie menu */}
@@ -1089,7 +1108,7 @@ export default function ExploreScreen() {
                   onPress={() => setSportFilter(s.id)}
                   activeOpacity={0.8}
                 >
-                  <s.Icon color={sportFilter === s.id ? Colors.primary : Colors.textSecondary} size={14} strokeWidth={2.2} />
+                  <s.Icon color={sportFilter === s.id ? colors.primary : colors.textSecondary} size={14} strokeWidth={2.2} />
                   <Text style={[styles.chipText, sportFilter === s.id && styles.chipTextActive]}>{s.label}</Text>
                 </TouchableOpacity>
               ))}
@@ -1113,7 +1132,7 @@ export default function ExploreScreen() {
                 }}
                 activeOpacity={0.8}
               >
-                <Calendar color={active ? Colors.white : Colors.neutral500} size={12} strokeWidth={2} />
+                <Calendar color={active ? colors.white : colors.neutral500} size={12} strokeWidth={2} />
                 <Text style={[styles.dateChipText, active && styles.dateChipTextActive]}>{label}</Text>
               </TouchableOpacity>
             );
@@ -1126,7 +1145,7 @@ export default function ExploreScreen() {
           activeOpacity={0.8}
         >
           <Calendar
-            color={dateQuick === 'CUSTOM' ? Colors.white : Colors.primary}
+            color={dateQuick === 'CUSTOM' ? colors.white : colors.primary}
             size={14}
             strokeWidth={2}
           />
@@ -1140,7 +1159,7 @@ export default function ExploreScreen() {
               onPress={() => { setDateQuick(null); setCustomDate(null); }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <X color={Colors.white} size={13} strokeWidth={2} />
+              <X color={colors.white} size={13} strokeWidth={2} />
             </TouchableOpacity>
           )}
         </TouchableOpacity>
@@ -1169,7 +1188,7 @@ export default function ExploreScreen() {
             onPress={() => setRadiusKm((v) => Math.max(1, v - 1))}
             activeOpacity={0.8}
           >
-            <Minus color={Colors.primary} size={16} strokeWidth={2.5} />
+            <Minus color={colors.primary} size={16} strokeWidth={2.5} />
           </TouchableOpacity>
           <View style={styles.tuneValue}>
             <Text style={styles.tuneKm}>{radiusKm}</Text>
@@ -1208,13 +1227,13 @@ export default function ExploreScreen() {
               )}
             </MapViewComponent>
             <View style={styles.radiusMapBadge}>
-              <MapPin color={Colors.primary} size={10} strokeWidth={2.5} />
+              <MapPin color={colors.primary} size={10} strokeWidth={2.5} />
               <Text style={styles.radiusMapBadgeText}>{radiusKm} km radius</Text>
             </View>
           </View>
         ) : (
           <View style={styles.radiusMapFallback}>
-            <MapIcon color={Colors.neutral400} size={28} strokeWidth={1.5} />
+            <MapIcon color={colors.neutral400} size={28} strokeWidth={1.5} />
             <Text style={styles.radiusMapFallbackText}>{radiusKm} km radius · map on device</Text>
           </View>
         )}
@@ -1226,7 +1245,7 @@ export default function ExploreScreen() {
           activeOpacity={0.8}
         >
           <View style={styles.freeToggleLeft}>
-            <DollarSign color={freeOnly ? Colors.success : Colors.textMuted} size={16} strokeWidth={2} />
+            <DollarSign color={freeOnly ? colors.success : colors.textMuted} size={16} strokeWidth={2} />
             <View>
               <Text style={styles.freeToggleLabel}>Free only</Text>
               <Text style={styles.freeToggleSub}>Show only matches / venues with no cost</Text>
@@ -1245,22 +1264,22 @@ export default function ExploreScreen() {
             activeOpacity={0.88}
           >
             <LinearGradient colors={['#1E293B', '#0F172A']} style={styles.proBannerGrad}>
-              <Zap color={Colors.warning} size={20} strokeWidth={2.5} fill={Colors.warning} />
+              <Zap color={colors.warning} size={20} strokeWidth={2.5} fill={colors.warning} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.proBannerTitle}>Unlock Pro Access</Text>
                 <Text style={styles.proBannerSub}>Priority results, unlimited invites & more</Text>
               </View>
-              <ChevronRight color={Colors.neutral400} size={16} strokeWidth={2} />
+              <ChevronRight color={colors.neutral400} size={16} strokeWidth={2} />
             </LinearGradient>
           </TouchableOpacity>
         )}
 
         {/* Show Results */}
         <TouchableOpacity style={styles.showBtn} onPress={handleShowResults} activeOpacity={0.88}>
-          <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.showBtnGrad}>
-            <Search color={Colors.white} size={17} strokeWidth={2.5} />
+          <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.showBtnGrad}>
+            <Search color={colors.white} size={17} strokeWidth={2.5} />
             <Text style={styles.showBtnText}>Show Results</Text>
-            <ChevronRight color={Colors.white} size={17} strokeWidth={2.5} />
+            <ChevronRight color={colors.white} size={17} strokeWidth={2.5} />
           </LinearGradient>
         </TouchableOpacity>
       </View>
@@ -1282,7 +1301,7 @@ export default function ExploreScreen() {
     <View style={{ flex: 1 }}>
       <View style={styles.resultsBar}>
         <TouchableOpacity style={styles.resultsBackBtn} onPress={() => setStep('SEARCH')} activeOpacity={0.8}>
-          <X color={Colors.text} size={20} strokeWidth={2.5} />
+          <X color={colors.text} size={20} strokeWidth={2.5} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.resultsCount}>
@@ -1296,7 +1315,7 @@ export default function ExploreScreen() {
           </Text>
         </View>
         <TouchableOpacity style={styles.mapToggleBtn} onPress={() => setStep('MAP')} activeOpacity={0.85}>
-          <MapIcon color={Colors.white} size={14} strokeWidth={2.5} />
+          <MapIcon color={colors.white} size={14} strokeWidth={2.5} />
           <Text style={styles.mapToggleBtnText}>Map</Text>
         </TouchableOpacity>
       </View>
@@ -1317,7 +1336,7 @@ export default function ExploreScreen() {
               onPress={() => handleSwitchCategory(cat.id)}
               activeOpacity={0.8}
             >
-              <cat.Icon color={active ? Colors.white : cat.color} size={14} strokeWidth={2.2} />
+              <cat.Icon color={active ? colors.white : cat.color} size={14} strokeWidth={2.2} />
               <Text numberOfLines={1} style={[styles.catSwitchText, active && styles.catSwitchTextActive]}>{cat.label}</Text>
             </TouchableOpacity>
           );
@@ -1347,7 +1366,7 @@ export default function ExploreScreen() {
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
               <View style={styles.emptyIconWrap}>
-                <Search color={Colors.neutral400} size={30} strokeWidth={1.8} />
+                <Search color={colors.neutral400} size={30} strokeWidth={1.8} />
               </View>
               <Text style={styles.emptyTitle}>No {category === 'VENUES' ? 'venues' : 'games'} found</Text>
               <Text style={styles.emptySub}>Try a wider radius or fewer filters</Text>
@@ -1363,7 +1382,7 @@ export default function ExploreScreen() {
           ListFooterComponent={
             loadingMore ? (
               <View style={styles.loadMoreFooter}>
-                <ActivityIndicator size="small" color={Colors.primary} />
+                <ActivityIndicator size="small" color={colors.primary} />
                 <Text style={styles.loadMoreText}>Loading more…</Text>
               </View>
             ) : null
@@ -1377,20 +1396,24 @@ export default function ExploreScreen() {
   // ─── MAP step ─────────────────────────────────────────────────────────────
   const renderMapStep = () => {
     if (Platform.OS === 'web' || !MapViewComponent) {
+      // Fixed dark gradient (not theme-reactive) — the text/icons on this
+      // web map-fallback screen are fixed white, so the backdrop must stay
+      // dark in both themes rather than flipping to near-white the way
+      // colors.neutral800/900 (text-oriented tokens) do in dark mode.
       return (
-        <LinearGradient colors={[Colors.neutral800, Colors.neutral900]} style={{ flex: 1 }}>
+        <LinearGradient colors={['#1E293B', '#0F172A']} style={{ flex: 1 }}>
           <SafeAreaView style={styles.mapWebHeader} edges={['top']}>
             <TouchableOpacity style={styles.mapBackBtn} onPress={() => setStep('RESULTS')} activeOpacity={0.8}>
-              <X color={Colors.white} size={20} strokeWidth={2.5} />
+              <X color={colors.white} size={20} strokeWidth={2.5} />
             </TouchableOpacity>
             <Text style={styles.mapWebTitle}>Map View</Text>
           </SafeAreaView>
           <View style={styles.mapWebBody}>
-            <MapIcon color={Colors.neutral500} size={56} strokeWidth={1.2} />
+            <MapIcon color={colors.neutral500} size={56} strokeWidth={1.2} />
             <Text style={styles.mapWebMsg}>Map view available on iOS & Android</Text>
             <Text style={styles.mapWebSub}>{results.length} results in your area</Text>
             <TouchableOpacity style={styles.mapWebListBtn} onPress={() => setStep('RESULTS')} activeOpacity={0.88}>
-              <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.mapWebListGrad}>
+              <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.mapWebListGrad}>
                 <Text style={styles.mapWebListText}>View as List</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -1412,7 +1435,7 @@ export default function ExploreScreen() {
               <MarkerComponent
                 key={item.id}
                 coordinate={{ latitude: item.latitude, longitude: item.longitude }}
-                pinColor={Colors.primary}
+                pinColor={colors.primary}
                 onPress={() => openSheet(item)}
                 title={'name' in item ? (item as VenueResult).name : (item as GameResult).title}
               />
@@ -1423,13 +1446,13 @@ export default function ExploreScreen() {
         <SafeAreaView style={styles.mapOverlay} edges={['top']}>
           <View style={styles.mapTopRow}>
             <TouchableOpacity style={styles.mapTopBtn} onPress={() => setStep('RESULTS')} activeOpacity={0.85}>
-              <X color={Colors.text} size={18} strokeWidth={2.5} />
+              <X color={colors.text} size={18} strokeWidth={2.5} />
             </TouchableOpacity>
             <View style={styles.mapTopCenter}>
               <Text style={styles.mapTopCount}>{results.length} {category === 'VENUES' ? 'venues' : 'games'}</Text>
             </View>
             <TouchableOpacity style={styles.mapNewSearch} onPress={() => setStep('SEARCH')} activeOpacity={0.85}>
-              <Search color={Colors.primary} size={13} strokeWidth={2} />
+              <Search color={colors.primary} size={13} strokeWidth={2} />
               <Text style={styles.mapNewSearchText}>New Search</Text>
             </TouchableOpacity>
           </View>
@@ -1437,13 +1460,13 @@ export default function ExploreScreen() {
 
         <View style={styles.mapFABs}>
           <TouchableOpacity style={styles.mapFAB} onPress={() => router.push('/create-match' as any)} activeOpacity={0.88}>
-            <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.mapFABGrad}>
-              <Plus color={Colors.white} size={13} strokeWidth={2.5} />
+            <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.mapFABGrad}>
+              <Plus color={colors.white} size={13} strokeWidth={2.5} />
               <Text style={styles.mapFABText}>Create Game</Text>
             </LinearGradient>
           </TouchableOpacity>
           <TouchableOpacity style={styles.mapFABIcon} onPress={() => setStep('SEARCH')} activeOpacity={0.85}>
-            <RotateCcw color={Colors.text} size={16} strokeWidth={2} />
+            <RotateCcw color={colors.text} size={16} strokeWidth={2} />
           </TouchableOpacity>
         </View>
 
@@ -1453,7 +1476,7 @@ export default function ExploreScreen() {
             <Animated.View style={[styles.bottomSheet, { transform: [{ translateY: sheetAnim }] }]}>
               <View style={styles.sheetHandle} />
               <TouchableOpacity style={styles.sheetClose} onPress={closeSheet} activeOpacity={0.8}>
-                <X color={Colors.neutral500} size={16} strokeWidth={2} />
+                <X color={colors.neutral500} size={16} strokeWidth={2} />
               </TouchableOpacity>
               <Text style={styles.sheetName}>
                 {'name' in selectedItem
@@ -1486,13 +1509,13 @@ export default function ExploreScreen() {
                 }}
               >
                 <LinearGradient
-                  colors={'pricePerSession' in selectedItem ? [Colors.trainer, Colors.primaryDark] : [Colors.primary, Colors.primaryDark]}
+                  colors={'pricePerSession' in selectedItem ? [Colors.trainer, colors.primaryDark] : [colors.primary, colors.primaryDark]}
                   style={styles.sheetCtaGrad}
                 >
                   <Text style={styles.sheetCtaText}>
                     {'pricePerSession' in selectedItem ? 'View Trainer' : 'name' in selectedItem ? 'Book Now' : 'View Game'}
                   </Text>
-                  <ChevronRight color={Colors.white} size={16} strokeWidth={2.5} />
+                  <ChevronRight color={colors.white} size={16} strokeWidth={2.5} />
                 </LinearGradient>
               </TouchableOpacity>
             </Animated.View>
@@ -1504,6 +1527,7 @@ export default function ExploreScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <ScreenGlow />
       {step === 'SEARCH' && renderSearchStep()}
       {step === 'RESULTS' && renderResultsStep()}
       {step === 'MAP' && renderMapStep()}
@@ -1513,209 +1537,229 @@ export default function ExploreScreen() {
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.background },
 
   // ── Hero
-  hero: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 28, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
+  heroShadow: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    borderRadius: 28,
+    shadowColor: colors.primaryDark,
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
+  hero: {
+    paddingHorizontal: 20, paddingTop: 24, paddingBottom: 28,
+    borderRadius: 28,
+    overflow: 'hidden',
+  },
+  heroGlassStroke: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
   exploreBell: {
     position: 'absolute', top: 20, right: 20, zIndex: 2,
-    width: 38, height: 38, borderRadius: 13,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
   },
   exploreBellBadge: {
     position: 'absolute', top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8,
-    backgroundColor: Colors.error, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
+    backgroundColor: colors.error, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
   },
-  exploreBellBadgeText: { fontSize: 9, fontWeight: '800', color: Colors.white },
+  exploreBellBadgeText: { fontSize: 9, fontWeight: '800', color: colors.white },
   heroBrandRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 14 },
   heroLogo: { width: 38, height: 38, borderRadius: 10 },
-  proBadge: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: Colors.warning, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2 },
+  proBadge: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: colors.warning, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2 },
   proBadgeText: { fontSize: 8, fontWeight: '900', color: '#1A1A2E', letterSpacing: 0.6 },
-  heroTitle: { fontSize: 30, fontWeight: '900', color: Colors.white, letterSpacing: -0.4 },
-  heroSub: { fontSize: 13, color: Colors.white + 'CC', marginBottom: 16, marginTop: 2 },
-  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.white, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11 },
-  searchInput: { flex: 1, fontSize: 14, color: Colors.text },
+  heroTitle: { fontSize: 30, fontWeight: '900', color: colors.white, letterSpacing: -0.4 },
+  heroSub: { fontSize: 13, color: colors.white + 'CC', marginBottom: 16, marginTop: 2 },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.inputBg, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11 },
+  searchInput: { flex: 1, fontSize: 14, color: colors.text },
 
   // ── Scroll
   searchScroll: { paddingBottom: 110 },
   pad: { paddingHorizontal: 18, paddingTop: 20 },
-  sectionTitle: { fontSize: 15, fontWeight: '800', color: Colors.text, marginBottom: 12, marginTop: 4 },
+  sectionTitle: { fontSize: 15, fontWeight: '800', color: colors.text, marginBottom: 12, marginTop: 4 },
 
   // ── Category
   categoryRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
-  categoryCard: { flex: 1, alignItems: 'center', gap: 8, padding: 16, backgroundColor: Colors.white, borderRadius: 18, borderWidth: 1.5, borderColor: Colors.neutral200, position: 'relative', shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
-  categoryCardActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
+  categoryCard: { flex: 1, alignItems: 'center', gap: 8, padding: 16, backgroundColor: colors.cardBg, borderRadius: 18, borderWidth: 1.5, borderColor: colors.neutral200, position: 'relative', shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
+  categoryCardActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
   categoryEmoji: { fontSize: 28 },
-  categoryLabel: { fontSize: 13, fontWeight: '700', color: Colors.text },
-  categoryLabelActive: { color: Colors.primary, fontWeight: '800' },
-  categoryDot: { position: 'absolute', top: 10, right: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.primary },
+  categoryLabel: { fontSize: 13, fontWeight: '700', color: colors.text },
+  categoryLabelActive: { color: colors.primary, fontWeight: '800' },
+  categoryDot: { position: 'absolute', top: 10, right: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary },
 
   // ── Sport chips
   chipRow: { marginBottom: 6 },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: Colors.white, borderRadius: 40, borderWidth: 1, borderColor: Colors.neutral200, marginRight: 8 },
-  chipActive: { backgroundColor: Colors.primaryLight, borderColor: Colors.primary },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: colors.cardBg, borderRadius: 40, borderWidth: 1, borderColor: colors.neutral200, marginRight: 8 },
+  chipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
   chipEmoji: { fontSize: 13 },
-  chipText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
-  chipTextActive: { color: Colors.primary, fontWeight: '700' },
+  chipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  chipTextActive: { color: colors.primary, fontWeight: '700' },
 
   // ── Date
   dateGrid: { flexDirection: 'row', gap: 8, marginBottom: 10, flexWrap: 'nowrap' },
-  dateChip: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 10, borderRadius: 12, backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.neutral200 },
-  dateChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  dateChipText: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary },
-  dateChipTextActive: { color: Colors.white },
+  dateChip: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.neutral200 },
+  dateChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  dateChipText: { fontSize: 11, fontWeight: '700', color: colors.textSecondary },
+  dateChipTextActive: { color: colors.white },
 
-  calendarBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: Colors.primaryLight, borderRadius: 12, borderWidth: 1, borderColor: Colors.primary + '50', marginBottom: 20 },
-  calendarBtnActive: { backgroundColor: Colors.primary },
-  calendarBtnText: { flex: 1, fontSize: 13, fontWeight: '600', color: Colors.primary },
-  calendarBtnTextActive: { color: Colors.white },
+  calendarBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: colors.primaryLight, borderRadius: 12, borderWidth: 1, borderColor: colors.primary + '50', marginBottom: 20 },
+  calendarBtnActive: { backgroundColor: colors.primary },
+  calendarBtnText: { flex: 1, fontSize: 13, fontWeight: '600', color: colors.primary },
+  calendarBtnTextActive: { color: colors.white },
 
   // ── Radius
   radiusPresets: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  radiusPreset: { flex: 1, paddingVertical: 9, borderRadius: 12, backgroundColor: Colors.neutral100, borderWidth: 1, borderColor: Colors.neutral200, alignItems: 'center' },
-  radiusPresetActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  radiusPresetText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
-  radiusPresetTextActive: { color: Colors.white },
+  radiusPreset: { flex: 1, paddingVertical: 9, borderRadius: 12, backgroundColor: colors.neutral100, borderWidth: 1, borderColor: colors.neutral200, alignItems: 'center' },
+  radiusPresetActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  radiusPresetText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
+  radiusPresetTextActive: { color: colors.white },
 
   radiusTune: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20, marginBottom: 14 },
-  tuneBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.primary + '40' },
+  tuneBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.primary + '40' },
   tuneValue: { alignItems: 'center' },
-  tuneKm: { fontSize: 28, fontWeight: '900', color: Colors.text, lineHeight: 32 },
-  tuneUnit: { fontSize: 12, fontWeight: '600', color: Colors.textMuted },
-  tunePlusText: { fontSize: 22, fontWeight: '700', color: Colors.primary, lineHeight: 24 },
+  tuneKm: { fontSize: 28, fontWeight: '900', color: colors.text, lineHeight: 32 },
+  tuneUnit: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
+  tunePlusText: { fontSize: 22, fontWeight: '700', color: colors.primary, lineHeight: 24 },
 
   radiusMapWrap: { height: 200, borderRadius: 16, overflow: 'hidden', marginBottom: 16, position: 'relative' },
   radiusMapBadge: { position: 'absolute', top: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.92)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
-  radiusMapBadgeText: { fontSize: 11, fontWeight: '700', color: Colors.primary },
-  radiusMapFallback: { height: 80, borderRadius: 16, backgroundColor: Colors.neutral100, alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 16, borderWidth: 1, borderColor: Colors.neutral200, flexDirection: 'row' },
-  radiusMapFallbackText: { fontSize: 12, color: Colors.textMuted, fontWeight: '600' },
+  radiusMapBadgeText: { fontSize: 11, fontWeight: '700', color: colors.primary },
+  radiusMapFallback: { height: 80, borderRadius: 16, backgroundColor: colors.neutral100, alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 16, borderWidth: 1, borderColor: colors.neutral200, flexDirection: 'row' },
+  radiusMapFallbackText: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
 
   // ── Free toggle
-  freeToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.white, borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: Colors.neutral200 },
+  freeToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.cardBg, borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: colors.neutral200 },
   freeToggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-  freeToggleLabel: { fontSize: 14, fontWeight: '700', color: Colors.text },
-  freeToggleSub: { fontSize: 11, color: Colors.textMuted, marginTop: 1 },
-  toggle: { width: 44, height: 24, borderRadius: 12, backgroundColor: Colors.neutral200, padding: 2, justifyContent: 'center' },
-  toggleOn: { backgroundColor: Colors.success },
-  toggleThumb: { width: 20, height: 20, borderRadius: 10, backgroundColor: Colors.white, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 2 },
+  freeToggleLabel: { fontSize: 14, fontWeight: '700', color: colors.text },
+  freeToggleSub: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
+  toggle: { width: 44, height: 24, borderRadius: 12, backgroundColor: colors.neutral200, padding: 2, justifyContent: 'center' },
+  toggleOn: { backgroundColor: colors.success },
+  toggleThumb: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.white, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 2 },
   toggleThumbOn: { alignSelf: 'flex-end' },
 
   // ── Pro banner
   proBanner: { borderRadius: 14, overflow: 'hidden', marginBottom: 14 },
   proBannerGrad: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 13, gap: 10 },
-  proBannerTitle: { fontSize: 13, fontWeight: '800', color: Colors.white, marginBottom: 2 },
-  proBannerSub: { fontSize: 11, color: Colors.neutral400 },
+  proBannerTitle: { fontSize: 13, fontWeight: '800', color: colors.white, marginBottom: 2 },
+  proBannerSub: { fontSize: 11, color: colors.neutral400 },
 
   // ── Show Results
   showBtn: { marginTop: 6, borderRadius: 16, overflow: 'hidden' },
   showBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 16 },
-  showBtnText: { fontSize: 16, fontWeight: '800', color: Colors.white },
+  showBtnText: { fontSize: 16, fontWeight: '800', color: colors.white },
 
   // ── Results bar
-  resultsBar: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.neutral200 },
-  resultsBackBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: Colors.neutral100, alignItems: 'center', justifyContent: 'center' },
-  resultsCount: { fontSize: 15, fontWeight: '800', color: Colors.text },
-  resultsSubtitle: { fontSize: 11, color: Colors.textSecondary, marginTop: 1 },
-  mapToggleBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.primary, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
-  mapToggleBtnText: { fontSize: 13, fontWeight: '700', color: Colors.white },
+  resultsBar: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.cardBg, borderBottomWidth: 1, borderBottomColor: colors.neutral200 },
+  resultsBackBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.neutral100, alignItems: 'center', justifyContent: 'center' },
+  resultsCount: { fontSize: 15, fontWeight: '800', color: colors.text },
+  resultsSubtitle: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+  mapToggleBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.primary, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
+  mapToggleBtnText: { fontSize: 13, fontWeight: '700', color: colors.white },
 
   // ── Category switcher (results)
   catSwitchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12 },
   catSwitchChip: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingHorizontal: 14, height: 36, backgroundColor: Colors.neutral100,
+    paddingHorizontal: 14, height: 36, backgroundColor: colors.neutral100,
     borderRadius: 18, borderWidth: 1.5, borderColor: 'transparent',
   },
-  catSwitchText: { fontSize: 12.5, fontWeight: '700', color: Colors.neutral600 },
-  catSwitchTextActive: { color: Colors.white, fontWeight: '800' },
+  catSwitchText: { fontSize: 12.5, fontWeight: '700', color: colors.neutral600 },
+  catSwitchTextActive: { color: colors.white, fontWeight: '800' },
 
   // ── Loading / empty
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   refreshableArea: { flex: 1, position: 'relative' },
-  loadingText: { fontSize: 14, color: Colors.textSecondary },
+  loadingText: { fontSize: 14, color: colors.textSecondary },
   resultsList: { padding: 16, paddingBottom: 100, gap: 14 },
   loadMoreFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 20 },
-  loadMoreText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+  loadMoreText: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
   emptyWrap: { alignItems: 'center', paddingTop: 60, gap: 12 },
   emptyIconWrap: {
-    width: 72, height: 72, borderRadius: 36, backgroundColor: Colors.neutral100,
+    width: 72, height: 72, borderRadius: 36, backgroundColor: colors.neutral100,
     alignItems: 'center', justifyContent: 'center',
   },
-  emptyTitle: { fontSize: 17, fontWeight: '800', color: Colors.text },
-  emptySub: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center' },
-  emptyBtn: { marginTop: 4, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: Colors.primary, borderRadius: 14 },
-  emptyBtnText: { fontSize: 14, fontWeight: '700', color: Colors.white },
+  emptyTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
+  emptySub: { fontSize: 13, color: colors.textSecondary, textAlign: 'center' },
+  emptyBtn: { marginTop: 4, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: colors.primary, borderRadius: 14 },
+  emptyBtnText: { fontSize: 14, fontWeight: '700', color: colors.white },
 
   // ── Result cards shared
-  resultCard: { backgroundColor: Colors.white, borderRadius: 20, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  resultCard: { backgroundColor: colors.cardBg, borderRadius: 20, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
   cardImage: { width: '100%', height: 140 },
   cardImagePlaceholder: { alignItems: 'center', justifyContent: 'center', gap: 8 },
-  cardImagePlaceholderText: { fontSize: 13, color: Colors.primary, fontWeight: '600' },
+  cardImagePlaceholderText: { fontSize: 13, color: colors.primary, fontWeight: '600' },
   cardBody: { padding: 14, gap: 8 },
-  cardName: { fontSize: 16, fontWeight: '800', color: Colors.text },
-  cardLocation: { fontSize: 12, color: Colors.textSecondary },
+  cardName: { fontSize: 16, fontWeight: '800', color: colors.text },
+  cardLocation: { fontSize: 12, color: colors.textSecondary },
   cardMetaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaText: { fontSize: 12, color: Colors.textSecondary },
-  priceLabel: { fontSize: 13, fontWeight: '700', color: Colors.primaryDark },
+  metaText: { fontSize: 12, color: colors.textSecondary },
+  priceLabel: { fontSize: 13, fontWeight: '700', color: colors.primaryDark },
   cardCta: { marginTop: 4, borderRadius: 12, overflow: 'hidden' },
   cardCtaGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12 },
-  cardCtaText: { fontSize: 14, fontWeight: '800', color: Colors.white },
+  cardCtaText: { fontSize: 14, fontWeight: '800', color: colors.white },
 
   // ── Game card extras
   gameCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14, paddingBottom: 4 },
-  sportBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.primaryLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
-  sportBadgeText: { fontSize: 10, fontWeight: '800', color: Colors.primary },
-  feeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: Colors.primaryLight },
-  feeBadgeFree: { backgroundColor: Colors.success + '20' },
-  feeText: { fontSize: 12, fontWeight: '800', color: Colors.primary },
-  feeFreeText: { color: Colors.success },
+  sportBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.primaryLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
+  sportBadgeText: { fontSize: 10, fontWeight: '800', color: colors.primary },
+  feeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: colors.primaryLight },
+  feeBadgeFree: { backgroundColor: colors.success + '20' },
+  feeText: { fontSize: 12, fontWeight: '800', color: colors.primary },
+  feeFreeText: { color: colors.success },
   fillWrap: { gap: 4 },
-  fillTrack: { height: 5, backgroundColor: Colors.neutral100, borderRadius: 3, overflow: 'hidden' },
-  fillBar: { height: 5, backgroundColor: Colors.primary, borderRadius: 3 },
-  fillLabel: { fontSize: 11, color: Colors.textSecondary, fontWeight: '600' },
+  fillTrack: { height: 5, backgroundColor: colors.neutral100, borderRadius: 3, overflow: 'hidden' },
+  fillBar: { height: 5, backgroundColor: colors.primary, borderRadius: 3 },
+  fillLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
 
   // ── Map web fallback
   mapWebHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
-  mapBackBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: Colors.white + '20', alignItems: 'center', justifyContent: 'center' },
-  mapWebTitle: { fontSize: 18, fontWeight: '800', color: Colors.white },
+  mapBackBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.white + '20', alignItems: 'center', justifyContent: 'center' },
+  mapWebTitle: { fontSize: 18, fontWeight: '800', color: colors.white },
   mapWebBody: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24 },
-  mapWebMsg: { fontSize: 18, fontWeight: '800', color: Colors.white, textAlign: 'center' },
-  mapWebSub: { fontSize: 14, color: Colors.neutral400, textAlign: 'center' },
+  mapWebMsg: { fontSize: 18, fontWeight: '800', color: colors.white, textAlign: 'center' },
+  mapWebSub: { fontSize: 14, color: colors.neutral400, textAlign: 'center' },
   mapWebListBtn: { borderRadius: 14, overflow: 'hidden', marginTop: 8, width: 200 },
   mapWebListGrad: { paddingVertical: 14, alignItems: 'center' },
-  mapWebListText: { fontSize: 15, fontWeight: '800', color: Colors.white },
+  mapWebListText: { fontSize: 15, fontWeight: '800', color: colors.white },
 
   // ── Map overlay
   mapOverlay: { position: 'absolute', top: 0, left: 0, right: 0 },
   mapTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 14, marginTop: 8 },
-  mapTopBtn: { width: 40, height: 40, borderRadius: 14, backgroundColor: Colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
-  mapTopCenter: { flex: 1, backgroundColor: Colors.white, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 14, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
-  mapTopCount: { fontSize: 14, fontWeight: '800', color: Colors.text, textAlign: 'center' },
-  mapNewSearch: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.white, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
-  mapNewSearchText: { fontSize: 12, fontWeight: '700', color: Colors.primary },
+  mapTopBtn: { width: 40, height: 40, borderRadius: 14, backgroundColor: colors.cardBg, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
+  mapTopCenter: { flex: 1, backgroundColor: colors.cardBg, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 14, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
+  mapTopCount: { fontSize: 14, fontWeight: '800', color: colors.text, textAlign: 'center' },
+  mapNewSearch: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.cardBg, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
+  mapNewSearchText: { fontSize: 12, fontWeight: '700', color: colors.primary },
   mapFABs: { position: 'absolute', bottom: 30, right: 16, alignItems: 'flex-end', gap: 10 },
-  mapFAB: { borderRadius: 14, overflow: 'hidden', shadowColor: Colors.primary, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
+  mapFAB: { borderRadius: 14, overflow: 'hidden', shadowColor: colors.primary, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   mapFABGrad: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 11 },
-  mapFABText: { fontSize: 13, fontWeight: '800', color: Colors.white },
-  mapFABIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: Colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
+  mapFABText: { fontSize: 13, fontWeight: '800', color: colors.white },
+  mapFABIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.cardBg, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
 
   // ── Bottom sheet
-  bottomSheet: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: Colors.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingTop: 14, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 12 },
-  sheetHandle: { width: 40, height: 4, backgroundColor: Colors.neutral300, borderRadius: 2, alignSelf: 'center', marginBottom: 14 },
-  sheetClose: { position: 'absolute', top: 14, right: 16, width: 32, height: 32, borderRadius: 10, backgroundColor: Colors.neutral100, alignItems: 'center', justifyContent: 'center' },
-  sheetName: { fontSize: 18, fontWeight: '800', color: Colors.text, marginBottom: 4, paddingRight: 44 },
-  sheetSub: { fontSize: 13, color: Colors.textSecondary, marginBottom: 4 },
-  sheetPrice: { fontSize: 16, fontWeight: '800', color: Colors.primary, marginBottom: 12 },
+  bottomSheet: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: colors.cardBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingTop: 14, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 12 },
+  sheetHandle: { width: 40, height: 4, backgroundColor: colors.neutral300, borderRadius: 2, alignSelf: 'center', marginBottom: 14 },
+  sheetClose: { position: 'absolute', top: 14, right: 16, width: 32, height: 32, borderRadius: 10, backgroundColor: colors.neutral100, alignItems: 'center', justifyContent: 'center' },
+  sheetName: { fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: 4, paddingRight: 44 },
+  sheetSub: { fontSize: 13, color: colors.textSecondary, marginBottom: 4 },
+  sheetPrice: { fontSize: 16, fontWeight: '800', color: colors.primary, marginBottom: 12 },
   sheetCta: { marginTop: 8, borderRadius: 14, overflow: 'hidden' },
   sheetCtaGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14 },
-  sheetCtaText: { fontSize: 15, fontWeight: '800', color: Colors.white },
+  sheetCtaText: { fontSize: 15, fontWeight: '800', color: colors.white },
 
   // ── Category trigger button (replaces old tile row)
   catTrigger: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.white, borderRadius: 18,
+    backgroundColor: colors.cardBg, borderRadius: 18,
     borderWidth: 2, padding: 12, marginBottom: 20,
     shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 10,
     shadowOffset: { width: 0, height: 3 }, elevation: 3,
@@ -1724,17 +1768,17 @@ const styles = StyleSheet.create({
     width: 48, height: 48, borderRadius: 14,
     alignItems: 'center', justifyContent: 'center',
   },
-  catTriggerHint: { fontSize: 10, fontWeight: '600', color: Colors.textMuted, letterSpacing: 0.3 },
+  catTriggerHint: { fontSize: 10, fontWeight: '600', color: colors.textMuted, letterSpacing: 0.3 },
   catTriggerLabel: { fontSize: 16, fontWeight: '900', marginTop: 1 },
   catTriggerBadge: {
     paddingHorizontal: 12, paddingVertical: 7,
     borderRadius: 20,
   },
-  catTriggerBadgeText: { fontSize: 11, fontWeight: '800', color: Colors.white },
+  catTriggerBadgeText: { fontSize: 11, fontWeight: '800', color: colors.white },
 
   // ── Category switcher scroll in results bar
   catSwitchScroll: {
-    backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.neutral100,
+    backgroundColor: colors.cardBg, borderBottomWidth: 1, borderBottomColor: colors.neutral100,
     flexGrow: 0, flexShrink: 0,
   },
 
@@ -1750,8 +1794,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     padding: 14, paddingBottom: 10,
   },
-  eventCardTitle: { fontSize: 15, fontWeight: '800', color: Colors.text },
-  eventCardVenue: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+  eventCardTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
+  eventCardVenue: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   eventSportIconWrap: {
     width: 34, height: 34, borderRadius: 10, backgroundColor: '#7C3AED1c',
     alignItems: 'center', justifyContent: 'center',
@@ -1764,23 +1808,23 @@ const styles = StyleSheet.create({
 });
 
 // ─── Calendar styles ──────────────────────────────────────────────────────────
-const calStyles = StyleSheet.create({
+const createCalStyles = (colors: ThemeColors) => StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
-  sheet: { backgroundColor: Colors.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: Platform.OS === 'ios' ? 36 : 24, paddingTop: 12 },
-  handle: { width: 40, height: 4, backgroundColor: Colors.neutral300, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  title: { fontSize: 18, fontWeight: '800', color: Colors.text, textAlign: 'center', marginBottom: 20 },
+  sheet: { backgroundColor: colors.cardBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: Platform.OS === 'ios' ? 36 : 24, paddingTop: 12 },
+  handle: { width: 40, height: 4, backgroundColor: colors.neutral300, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  title: { fontSize: 18, fontWeight: '800', color: colors.text, textAlign: 'center', marginBottom: 20 },
   monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  navBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  monthLabel: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  navBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
+  monthLabel: { fontSize: 16, fontWeight: '700', color: colors.text },
   weekRow: { flexDirection: 'row', marginBottom: 8 },
-  weekLabel: { flex: 1, textAlign: 'center', fontSize: 12, fontWeight: '700', color: Colors.textMuted },
+  weekLabel: { flex: 1, textAlign: 'center', fontSize: 12, fontWeight: '700', color: colors.textMuted },
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   cell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 20, marginVertical: 2 },
-  cellSelected: { backgroundColor: Colors.primary },
-  cellToday: { backgroundColor: Colors.primaryLight },
+  cellSelected: { backgroundColor: colors.primary },
+  cellToday: { backgroundColor: colors.primaryLight },
   cellPast: { opacity: 0.3 },
-  cellText: { fontSize: 14, fontWeight: '600', color: Colors.text },
-  cellTextSelected: { color: Colors.white, fontWeight: '800' },
-  cellTextToday: { color: Colors.primary, fontWeight: '800' },
-  cellTextPast: { color: Colors.textMuted },
+  cellText: { fontSize: 14, fontWeight: '600', color: colors.text },
+  cellTextSelected: { color: colors.white, fontWeight: '800' },
+  cellTextToday: { color: colors.primary, fontWeight: '800' },
+  cellTextPast: { color: colors.textMuted },
 });

@@ -2,7 +2,8 @@ import React, { useMemo } from 'react';
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { ArrowLeft } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { CheckoutInitiationResponse } from '../types/api';
 
 type PayHereMessage =
@@ -41,6 +42,8 @@ export function PayHereCheckoutWebView({
   onError,
   onClose,
 }: PayHereCheckoutWebViewProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const handleMessage = (event: WebViewMessageEvent) => {
     let msg: PayHereMessage;
     try {
@@ -81,7 +84,7 @@ export function PayHereCheckoutWebView({
       <SafeAreaView style={styles.flex1}>
         <View style={styles.header}>
           <Pressable onPress={onClose} hitSlop={10}>
-            <ArrowLeft color={Colors.text} size={22} strokeWidth={2.5} />
+            <ArrowLeft color={colors.text} size={22} strokeWidth={2.5} />
           </Pressable>
           <Text style={styles.headerTitle}>Secure Payment</Text>
           <View style={{ width: 22 }} />
@@ -100,18 +103,18 @@ export function PayHereCheckoutWebView({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     zIndex: 1000,
     elevation: 1000,
   },
-  flex1: { flex: 1, backgroundColor: Colors.background },
+  flex1: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.background,
-    borderBottomWidth: 1, borderBottomColor: Colors.neutral200,
+    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: colors.background,
+    borderBottomWidth: 1, borderBottomColor: colors.neutral200,
   },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
 });

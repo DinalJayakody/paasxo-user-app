@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
@@ -8,12 +8,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   ArrowLeft, Calendar, Check, Clock, CreditCard, Lock, MapPin, ShieldCheck, Smartphone, Video,
 } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { trainerApi } from '../api/trainerApi';
 import { TrainerBooking, TrainerCategory } from '../types/api';
 import { resolveMediaUrl } from '../utils/mediaUrl';
 import { extractApiError } from '../utils/apiError';
 import { SessionGuidelines } from '../components/SessionGuidelines';
+import ScreenGlow from '../components/ScreenGlow';
 
 type PaymentMethod = 'saved-card' | 'apple-pay' | 'new-card';
 
@@ -47,6 +49,8 @@ export interface TrainerCheckoutProps {
 }
 
 export default function TrainerCheckoutScreen(props: TrainerCheckoutProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const {
     slotId, sessionTitle, trainerDisplayName, category, imageUrl,
     slotDate, startTime, endTime, location, isOnline, price,
@@ -94,9 +98,10 @@ export default function TrainerCheckoutScreen(props: TrainerCheckoutProps) {
 
   return (
     <SafeAreaView style={styles.flex1} edges={['top']}>
+      <ScreenGlow />
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={10}>
-          <ArrowLeft color={Colors.text} size={22} strokeWidth={2.5} />
+          <ArrowLeft color={colors.text} size={22} strokeWidth={2.5} />
         </Pressable>
         <Text style={styles.headerTitle}>Checkout</Text>
         <View style={{ width: 22 }} />
@@ -108,21 +113,21 @@ export default function TrainerCheckoutScreen(props: TrainerCheckoutProps) {
           {imageUrl ? (
             <Image source={{ uri: resolveMediaUrl(imageUrl) }} style={styles.summaryImage} />
           ) : (
-            <LinearGradient colors={[Colors.trainer, Colors.primaryDark]} style={styles.summaryImage} />
+            <LinearGradient colors={[colors.trainer, colors.primaryDark]} style={styles.summaryImage} />
           )}
           <View style={styles.summaryInfo}>
             <Text style={styles.summaryTitle} numberOfLines={2}>{sessionTitle}</Text>
             {!!trainerDisplayName && <Text style={styles.summaryTrainer}>with {trainerDisplayName}</Text>}
             <View style={styles.summaryMetaRow}>
-              <Calendar color={Colors.trainer} size={12.5} strokeWidth={2.2} />
+              <Calendar color={colors.trainer} size={12.5} strokeWidth={2.2} />
               <Text style={styles.summaryMetaText}>{dateLabel(slotDate)}</Text>
             </View>
             <View style={styles.summaryMetaRow}>
-              <Clock color={Colors.trainer} size={12.5} strokeWidth={2.2} />
+              <Clock color={colors.trainer} size={12.5} strokeWidth={2.2} />
               <Text style={styles.summaryMetaText}>{timeLabel(startTime)} – {timeLabel(endTime)}</Text>
             </View>
             <View style={styles.summaryMetaRow}>
-              {isOnline ? <Video color={Colors.trainer} size={12.5} strokeWidth={2.2} /> : <MapPin color={Colors.trainer} size={12.5} strokeWidth={2.2} />}
+              {isOnline ? <Video color={colors.trainer} size={12.5} strokeWidth={2.2} /> : <MapPin color={colors.trainer} size={12.5} strokeWidth={2.2} />}
               <Text style={styles.summaryMetaText} numberOfLines={1}>{isOnline ? 'Online session' : (location || 'In person')}</Text>
             </View>
           </View>
@@ -154,7 +159,7 @@ export default function TrainerCheckoutScreen(props: TrainerCheckoutProps) {
               onPress={() => setSelectedMethod(option.id)}
             >
               <View style={styles.paymentIconWrap}>
-                <Icon color={Colors.text} size={20} strokeWidth={2} />
+                <Icon color={colors.text} size={20} strokeWidth={2} />
               </View>
               <View style={styles.flex1}>
                 <Text style={styles.paymentLabel}>{option.label}</Text>
@@ -175,7 +180,7 @@ export default function TrainerCheckoutScreen(props: TrainerCheckoutProps) {
 
         <Pressable style={styles.agreeRow} onPress={() => setAgreed((v) => !v)} hitSlop={4}>
           <View style={[styles.checkbox, agreed && styles.checkboxChecked]}>
-            {agreed && <Check color={Colors.white} size={13} strokeWidth={3} />}
+            {agreed && <Check color={colors.white} size={13} strokeWidth={3} />}
           </View>
           <Text style={styles.agreeText}>
             I've read the session guidelines and confirm I'm fit to participate, or I'll inform the trainer of any
@@ -184,7 +189,7 @@ export default function TrainerCheckoutScreen(props: TrainerCheckoutProps) {
         </Pressable>
 
         <View style={styles.secureRow}>
-          <Lock color={Colors.textMuted} size={13} strokeWidth={2} />
+          <Lock color={colors.textMuted} size={13} strokeWidth={2} />
           <Text style={styles.secureText}>SECURE SSL ENCRYPTION</Text>
         </View>
       </ScrollView>
@@ -196,9 +201,9 @@ export default function TrainerCheckoutScreen(props: TrainerCheckoutProps) {
           disabled={!agreed || submitting}
         >
           {submitting
-            ? <ActivityIndicator color={Colors.white} />
+            ? <ActivityIndicator color={colors.white} />
             : <>
-                <ShieldCheck color={Colors.white} size={18} strokeWidth={2.2} />
+                <ShieldCheck color={colors.white} size={18} strokeWidth={2.2} />
                 <Text style={styles.payButtonText}>Pay & Join  LKR {amount.toFixed(2)}</Text>
               </>
           }
@@ -211,73 +216,73 @@ export default function TrainerCheckoutScreen(props: TrainerCheckoutProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  flex1: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  flex1: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.background,
+    paddingHorizontal: 16, paddingVertical: 12,
   },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: Colors.text },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24, backgroundColor: Colors.background },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24 },
 
   summaryCard: {
-    flexDirection: 'row', gap: 12, backgroundColor: Colors.white, borderRadius: 16, padding: 12, marginBottom: 20,
+    flexDirection: 'row', gap: 12, backgroundColor: colors.cardBg, borderRadius: 16, padding: 12, marginBottom: 20,
     shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2,
   },
   summaryImage: { width: 72, height: 72, borderRadius: 12 },
   summaryInfo: { flex: 1, gap: 3, justifyContent: 'center' },
-  summaryTitle: { fontSize: 14.5, fontWeight: '800', color: Colors.text },
-  summaryTrainer: { fontSize: 12, color: Colors.textSecondary, marginBottom: 2 },
+  summaryTitle: { fontSize: 14.5, fontWeight: '800', color: colors.text },
+  summaryTrainer: { fontSize: 12, color: colors.textSecondary, marginBottom: 2 },
   summaryMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  summaryMetaText: { fontSize: 11.5, color: Colors.textSecondary, fontWeight: '600' },
+  summaryMetaText: { fontSize: 11.5, color: colors.textSecondary, fontWeight: '600' },
 
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: Colors.text, marginBottom: 12, marginTop: 8 },
-  card: { backgroundColor: Colors.white, borderRadius: 16, padding: 16, marginBottom: 8 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 12, marginTop: 8 },
+  card: { backgroundColor: colors.cardBg, borderRadius: 16, padding: 16, marginBottom: 8 },
 
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 },
-  summaryLabel: { fontSize: 14, color: Colors.textSecondary, flex: 1, marginRight: 8 },
-  summaryValue: { fontSize: 14, fontWeight: '600', color: Colors.text },
-  divider: { height: 1, backgroundColor: Colors.neutral200, marginVertical: 6 },
-  totalLabel: { fontSize: 16, fontWeight: '700', color: Colors.text },
-  totalValue: { fontSize: 20, fontWeight: '800', color: Colors.trainer },
+  summaryLabel: { fontSize: 14, color: colors.textSecondary, flex: 1, marginRight: 8 },
+  summaryValue: { fontSize: 14, fontWeight: '600', color: colors.text },
+  divider: { height: 1, backgroundColor: colors.neutral200, marginVertical: 6 },
+  totalLabel: { fontSize: 16, fontWeight: '700', color: colors.text },
+  totalValue: { fontSize: 20, fontWeight: '800', color: colors.trainer },
 
   paymentOption: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: Colors.white, borderRadius: 14,
+    backgroundColor: colors.cardBg, borderRadius: 14,
     padding: 14, marginBottom: 12, borderWidth: 1.5, borderColor: 'transparent',
   },
-  paymentOptionSelected: { borderColor: Colors.trainer },
+  paymentOptionSelected: { borderColor: colors.trainer },
   paymentIconWrap: {
-    width: 38, height: 38, borderRadius: 10, backgroundColor: Colors.neutral100,
+    width: 38, height: 38, borderRadius: 10, backgroundColor: colors.neutral100,
     alignItems: 'center', justifyContent: 'center',
   },
-  paymentLabel: { fontSize: 14, fontWeight: '700', color: Colors.text },
-  paymentSubtitle: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: Colors.neutral300, alignItems: 'center', justifyContent: 'center' },
-  radioSelected: { borderColor: Colors.trainer },
-  radioDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: Colors.trainer },
+  paymentLabel: { fontSize: 14, fontWeight: '700', color: colors.text },
+  paymentSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: colors.neutral300, alignItems: 'center', justifyContent: 'center' },
+  radioSelected: { borderColor: colors.trainer },
+  radioDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.trainer },
 
   agreeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 16, paddingRight: 4 },
   checkbox: {
-    width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: Colors.neutral300,
+    width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: colors.neutral300,
     alignItems: 'center', justifyContent: 'center', marginTop: 1,
   },
-  checkboxChecked: { backgroundColor: Colors.trainer, borderColor: Colors.trainer },
-  agreeText: { flex: 1, fontSize: 12.5, color: Colors.textSecondary, lineHeight: 18 },
+  checkboxChecked: { backgroundColor: colors.trainer, borderColor: colors.trainer },
+  agreeText: { flex: 1, fontSize: 12.5, color: colors.textSecondary, lineHeight: 18 },
 
   secureRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 24 },
-  secureText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.6, color: Colors.textMuted },
+  secureText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.6, color: colors.textMuted },
 
   bottomBar: {
     paddingHorizontal: 20, paddingTop: 14,
     paddingBottom: Platform.OS === 'ios' ? 24 : 16,
-    backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.neutral200,
+    backgroundColor: colors.cardBg, borderTopWidth: 1, borderTopColor: colors.neutral200,
   },
   payButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: Colors.trainer, borderRadius: 16, paddingVertical: 16,
+    backgroundColor: colors.trainer, borderRadius: 16, paddingVertical: 16,
   },
   payButtonDisabled: { opacity: 0.5 },
-  payButtonText: { fontSize: 16, fontWeight: '700', color: Colors.white },
-  legalText: { fontSize: 11, color: Colors.textMuted, textAlign: 'center', marginTop: 10, lineHeight: 16 },
+  payButtonText: { fontSize: 16, fontWeight: '700', color: colors.white },
+  legalText: { fontSize: 11, color: colors.textMuted, textAlign: 'center', marginTop: 10, lineHeight: 16 },
 });

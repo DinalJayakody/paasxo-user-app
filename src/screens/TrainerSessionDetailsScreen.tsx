@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
@@ -10,7 +10,8 @@ import MapView, { Marker } from 'react-native-maps';
 import {
   ArrowLeft, ArrowRight, Calendar, CalendarDays, ClipboardList, Clock, Lock, MapPin, Navigation, Users, Video, Zap,
 } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { trainerApi } from '../api/trainerApi';
 import { TrainerBooking, TrainerSession, TrainerSessionSlot } from '../types/api';
 import { resolveMediaUrl } from '../utils/mediaUrl';
@@ -21,6 +22,7 @@ import { SessionGuidelines } from '../components/SessionGuidelines';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import ScreenGlow from '../components/ScreenGlow';
 
 const CATEGORY_LABELS: Record<string, string> = {
   GYM: 'Gym', CALISTHENICS: 'Calisthenics', DANCING: 'Dancing', YOGA: 'Yoga',
@@ -58,6 +60,8 @@ interface Props {
 }
 
 export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { active: isPro, loading: subLoading, refresh: refreshSubscription } = useSubscription();
@@ -104,6 +108,7 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
   if (error) {
     return (
       <SafeAreaView style={styles.loadingScreen}>
+        <ScreenGlow />
         <Text style={styles.errorText}>Couldn't load this session.</Text>
         <TouchableOpacity style={styles.retryButton} onPress={() => load()} activeOpacity={0.85}>
           <Text style={styles.retryButtonText}>Try Again</Text>
@@ -180,6 +185,7 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
 
   return (
     <SafeAreaView style={styles.flex1} edges={['top']}>
+      <ScreenGlow />
       <PaasxoRefreshLogo refreshing={refreshing} />
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -190,11 +196,11 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
           {session.imageUrl ? (
             <Image source={{ uri: resolveMediaUrl(session.imageUrl) }} style={styles.heroImage} />
           ) : (
-            <LinearGradient colors={[Colors.trainer, Colors.primaryDark]} style={styles.heroImage} />
+            <LinearGradient colors={[colors.trainer, colors.primaryDark]} style={styles.heroImage} />
           )}
           <View style={styles.heroScrim} />
           <TouchableOpacity style={styles.backFab} onPress={() => router.back()} hitSlop={10}>
-            <ArrowLeft color={Colors.text} size={20} strokeWidth={2.5} />
+            <ArrowLeft color={colors.text} size={20} strokeWidth={2.5} />
           </TouchableOpacity>
           <View style={styles.heroOverlay}>
             <View style={styles.categoryPill}>
@@ -207,15 +213,15 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
 
         <View style={styles.factRow}>
           <View style={styles.factChip}>
-            <Clock color={Colors.trainer} size={14} strokeWidth={2} />
+            <Clock color={colors.trainer} size={14} strokeWidth={2} />
             <Text style={styles.factChipText}>{timeLabel(session.startTime)} · {session.durationMinutes}min</Text>
           </View>
           <View style={styles.factChip}>
-            <Users color={Colors.trainer} size={14} strokeWidth={2} />
+            <Users color={colors.trainer} size={14} strokeWidth={2} />
             <Text style={styles.factChipText}>{session.capacity} spots</Text>
           </View>
           <View style={styles.factChip}>
-            {session.isOnline ? <Video color={Colors.trainer} size={14} strokeWidth={2} /> : <MapPin color={Colors.trainer} size={14} strokeWidth={2} />}
+            {session.isOnline ? <Video color={colors.trainer} size={14} strokeWidth={2} /> : <MapPin color={colors.trainer} size={14} strokeWidth={2} />}
             <Text style={styles.factChipText}>{session.isOnline ? 'Online' : (session.location || 'In person')}</Text>
           </View>
         </View>
@@ -239,7 +245,7 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
         <View style={styles.section}>
           <View style={styles.sectionHeaderRowBetween}>
             <View style={styles.sectionHeaderRow}>
-              <Calendar color={Colors.text} size={16} strokeWidth={2.2} />
+              <Calendar color={colors.text} size={16} strokeWidth={2.2} />
               <Text style={styles.sectionTitle}>Pick a Date</Text>
             </View>
             {slots.length > 0 && (
@@ -249,7 +255,7 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
                 hitSlop={8}
                 activeOpacity={0.75}
               >
-                <CalendarDays color={Colors.trainer} size={16} strokeWidth={2.2} />
+                <CalendarDays color={colors.trainer} size={16} strokeWidth={2.2} />
                 <Text style={styles.calendarIconBtnText}>Calendar</Text>
               </TouchableOpacity>
             )}
@@ -286,12 +292,12 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
 
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            {session.isOnline ? <Video color={Colors.text} size={16} strokeWidth={2.2} /> : <MapPin color={Colors.text} size={16} strokeWidth={2.2} />}
+            {session.isOnline ? <Video color={colors.text} size={16} strokeWidth={2.2} /> : <MapPin color={colors.text} size={16} strokeWidth={2.2} />}
             <Text style={styles.sectionTitle}>Location</Text>
           </View>
           {session.isOnline ? (
             <View style={styles.onlineNotice}>
-              <Video color={Colors.trainer} size={18} strokeWidth={2} />
+              <Video color={colors.trainer} size={18} strokeWidth={2} />
               <Text style={styles.onlineNoticeText}>
                 This is an online session — the meeting link will be shared with you after you join.
               </Text>
@@ -318,7 +324,7 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
                     <Marker coordinate={{ latitude: session.latitude, longitude: session.longitude }} />
                   </MapView>
                   <View style={styles.mapOverlayBadge}>
-                    <Navigation color={Colors.white} size={13} strokeWidth={2.4} />
+                    <Navigation color={colors.white} size={13} strokeWidth={2.4} />
                     <Text style={styles.mapOverlayBadgeText}>Tap to navigate</Text>
                   </View>
                 </Pressable>
@@ -326,7 +332,7 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
               <View style={styles.locationRow}>
                 <Text style={styles.locationText}>{session.location || 'Location shared after booking'}</Text>
                 <TouchableOpacity style={styles.directionsBtn} onPress={() => openDirections(session)} activeOpacity={0.8}>
-                  <Navigation color={Colors.trainer} size={14} strokeWidth={2.4} />
+                  <Navigation color={colors.trainer} size={14} strokeWidth={2.4} />
                   <Text style={styles.directionsBtnText}>Directions</Text>
                 </TouchableOpacity>
               </View>
@@ -336,7 +342,7 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
 
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <ClipboardList color={Colors.text} size={16} strokeWidth={2.2} />
+            <ClipboardList color={colors.text} size={16} strokeWidth={2.2} />
             <Text style={styles.sectionTitle}>Session Guidelines</Text>
           </View>
           <View style={styles.guidelinesCard}>
@@ -375,10 +381,10 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
           disabled={joining}
         >
           {joining ? (
-            <ActivityIndicator color={Colors.white} />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <>
-              {isPro ? <ArrowRight color={Colors.white} size={18} strokeWidth={2.4} /> : <Lock color={Colors.white} size={18} strokeWidth={2.2} />}
+              {isPro ? <ArrowRight color={colors.white} size={18} strokeWidth={2.4} /> : <Lock color={colors.white} size={18} strokeWidth={2.2} />}
               <Text style={styles.joinButtonText}>{isPro ? 'Join Session' : 'Unlock & Join'}</Text>
             </>
           )}
@@ -388,12 +394,12 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  flex1: { flex: 1, backgroundColor: Colors.background },
-  loadingScreen: { flex: 1, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 14 },
-  errorText: { fontSize: 14.5, color: Colors.textSecondary, textAlign: 'center' },
-  retryButton: { backgroundColor: Colors.trainer, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 },
-  retryButtonText: { color: Colors.white, fontSize: 14, fontWeight: '700' },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  flex1: { flex: 1, backgroundColor: colors.background },
+  loadingScreen: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 14 },
+  errorText: { fontSize: 14.5, color: colors.textSecondary, textAlign: 'center' },
+  retryButton: { backgroundColor: colors.trainer, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 },
+  retryButtonText: { color: colors.white, fontSize: 14, fontWeight: '700' },
   hero: { height: 210 },
   heroImage: { width: '100%', height: '100%' },
   heroScrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 110, backgroundColor: 'rgba(20,10,0,0.45)' },
@@ -406,61 +412,61 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 20,
     paddingHorizontal: 10, paddingVertical: 4, marginBottom: 6,
   },
-  categoryPillText: { color: Colors.white, fontSize: 11, fontWeight: '800', letterSpacing: 0.4 },
-  heroTitle: { fontSize: 22, fontWeight: '800', color: Colors.white },
+  categoryPillText: { color: colors.white, fontSize: 11, fontWeight: '800', letterSpacing: 0.4 },
+  heroTitle: { fontSize: 22, fontWeight: '800', color: colors.white },
   heroSubtitle: { fontSize: 13, color: '#FFE8D9', marginTop: 2 },
   factRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 20, marginTop: 16 },
   factChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.trainerLight,
+    flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.trainerLight,
     borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
   },
-  factChipText: { fontSize: 12.5, fontWeight: '700', color: Colors.primaryDark },
+  factChipText: { fontSize: 12.5, fontWeight: '700', color: colors.primaryDark },
   section: { paddingHorizontal: 20, marginTop: 22 },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
   sectionHeaderRowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
-  bodyText: { fontSize: 14, color: Colors.textSecondary, lineHeight: 21 },
-  planBox: { backgroundColor: Colors.white, borderRadius: 14, padding: 14 },
-  emptyText: { fontSize: 13.5, color: Colors.textMuted },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  bodyText: { fontSize: 14, color: colors.textSecondary, lineHeight: 21 },
+  planBox: { backgroundColor: colors.cardBg, borderRadius: 14, padding: 14 },
+  emptyText: { fontSize: 13.5, color: colors.textMuted },
   calendarIconBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.trainerLight,
+    flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.trainerLight,
     borderRadius: 20, paddingHorizontal: 11, paddingVertical: 6, marginBottom: 8,
   },
-  calendarIconBtnText: { fontSize: 12, fontWeight: '700', color: Colors.trainer },
+  calendarIconBtnText: { fontSize: 12, fontWeight: '700', color: colors.trainer },
   onlineNotice: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.trainerLight,
+    flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.trainerLight,
     borderRadius: 14, padding: 14,
   },
-  onlineNoticeText: { flex: 1, fontSize: 12.5, color: Colors.primaryDark, fontWeight: '600', lineHeight: 18 },
+  onlineNoticeText: { flex: 1, fontSize: 12.5, color: colors.primaryDark, fontWeight: '600', lineHeight: 18 },
   mapWrap: {
-    height: 150, borderRadius: 16, overflow: 'hidden', marginBottom: 10, backgroundColor: Colors.neutral200,
+    height: 150, borderRadius: 16, overflow: 'hidden', marginBottom: 10, backgroundColor: colors.neutral200,
   },
   mapOverlayBadge: {
     position: 'absolute', right: 10, bottom: 10, flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: 'rgba(20,20,20,0.72)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6,
   },
-  mapOverlayBadgeText: { color: Colors.white, fontSize: 11, fontWeight: '700' },
+  mapOverlayBadgeText: { color: colors.white, fontSize: 11, fontWeight: '700' },
   locationRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  locationText: { flex: 1, fontSize: 13.5, color: Colors.textSecondary, lineHeight: 19 },
+  locationText: { flex: 1, fontSize: 13.5, color: colors.textSecondary, lineHeight: 19 },
   directionsBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.trainerLight,
+    flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.trainerLight,
     borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
   },
-  directionsBtnText: { fontSize: 12.5, fontWeight: '700', color: Colors.trainer },
+  directionsBtnText: { fontSize: 12.5, fontWeight: '700', color: colors.trainer },
   guidelinesCard: {
-    backgroundColor: Colors.white, borderRadius: 16, padding: 16,
-    borderWidth: 1, borderColor: Colors.neutral200,
+    backgroundColor: colors.cardBg, borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: colors.neutral200,
   },
   dateCard: {
-    width: 88, backgroundColor: Colors.white, borderRadius: 14, padding: 12, alignItems: 'center',
-    borderWidth: 1.5, borderColor: Colors.neutral200, gap: 2,
+    width: 88, backgroundColor: colors.cardBg, borderRadius: 14, padding: 12, alignItems: 'center',
+    borderWidth: 1.5, borderColor: colors.neutral200, gap: 2,
   },
-  dateCardSelected: { backgroundColor: Colors.trainer, borderColor: Colors.trainer },
+  dateCardSelected: { backgroundColor: colors.trainer, borderColor: colors.trainer },
   dateCardDisabled: { opacity: 0.45 },
-  dateCardDay: { fontSize: 12.5, fontWeight: '800', color: Colors.text },
-  dateCardTime: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
-  dateCardSpots: { fontSize: 10.5, fontWeight: '700', color: Colors.trainer, marginTop: 4 },
-  dateCardTextSelected: { color: Colors.white },
+  dateCardDay: { fontSize: 12.5, fontWeight: '800', color: colors.text },
+  dateCardTime: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  dateCardSpots: { fontSize: 10.5, fontWeight: '700', color: colors.trainer, marginTop: 4 },
+  dateCardTextSelected: { color: colors.white },
   upsellCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FFFBEB',
     borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#FDE68A',
@@ -469,14 +475,14 @@ const styles = StyleSheet.create({
   bottomBar: {
     position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: 14,
     paddingHorizontal: 20, paddingTop: 14, paddingBottom: 28,
-    backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.neutral200,
+    backgroundColor: colors.cardBg, borderTopWidth: 1, borderTopColor: colors.neutral200,
   },
-  priceLabel: { fontSize: 11, color: Colors.textMuted, fontWeight: '700', textTransform: 'uppercase' },
-  priceValue: { fontSize: 18, fontWeight: '800', color: Colors.text },
+  priceLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '700', textTransform: 'uppercase' },
+  priceValue: { fontSize: 18, fontWeight: '800', color: colors.text },
   joinButton: {
-    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.trainer,
+    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.trainer,
     borderRadius: 14, paddingHorizontal: 22, paddingVertical: 14,
   },
   joinButtonDisabled: { opacity: 0.5 },
-  joinButtonText: { color: Colors.white, fontSize: 14.5, fontWeight: '700' },
+  joinButtonText: { color: colors.white, fontSize: 14.5, fontWeight: '700' },
 });

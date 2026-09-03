@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Alert, Animated, Dimensions,
+  Alert, Animated, Dimensions, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -81,6 +81,23 @@ export default function ActivityDetailScreen() {
     })();
   }, [id]);
 
+  const handleShare = async () => {
+    if (!activity) return;
+    const pace = calcPace(activity.distanceMeters, activity.durationSeconds);
+    const message =
+      `${ACT_CFG[activity.type].emoji} ${ACT_CFG[activity.type].label} — ${activity.title}\n\n` +
+      `📍 Distance: ${formatDist(activity.distanceMeters)}\n` +
+      `⏱️ Duration: ${formatTime(activity.durationSeconds)}\n` +
+      `🏃 Pace: ${pace} min/km\n` +
+      `⚡ Max Speed: ${activity.maxSpeedKmh.toFixed(1)} km/h\n` +
+      `⛰️ Elevation: ${activity.elevationGainMeters}m gain`;
+    try {
+      await Share.share({ message });
+    } catch {
+      // User cancelled the share sheet — no error surfaced.
+    }
+  };
+
   const handleDelete = () => {
     Alert.alert('Delete Activity', 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
@@ -126,6 +143,9 @@ export default function ActivityDetailScreen() {
             </Text>
           </View>
         </View>
+        <TouchableOpacity onPress={handleShare} style={styles.shareIconBtn}>
+          <Share2 color={Colors.white} size={18} />
+        </TouchableOpacity>
         <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
           <Trash2 color={Colors.error} size={18} />
         </TouchableOpacity>
@@ -261,10 +281,17 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 16, fontWeight: '900', color: Colors.white },
   headerMeta: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
   headerDate: { fontSize: 11, color: Colors.neutral500, fontWeight: '600' },
+  shareIconBtn: {
+    width: 36, height: 36, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center', justifyContent: 'center',
+    marginLeft: 8,
+  },
   deleteBtn: {
     width: 36, height: 36, borderRadius: 12,
     backgroundColor: 'rgba(239,68,68,0.12)',
     alignItems: 'center', justifyContent: 'center',
+    marginLeft: 8,
   },
 
   mapCard: {

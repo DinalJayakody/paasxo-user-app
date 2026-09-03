@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, Image, Pressable, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Heart, MessageCircle, Share2, Bookmark, Camera, Sparkles } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { PostSummary } from '../types/api';
 import { parseMediaUrl, formatTimeAgo } from '../utils/postFormat';
 import { resolveAvatarUri } from '../utils/mediaUrl';
@@ -16,6 +17,8 @@ interface PostCardProps {
 }
 
 export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const interaction = usePostInteraction(post);
   const [likeBusy, setLikeBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
@@ -79,7 +82,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
         </View>
 
         <Pressable style={styles.iconButtonSmall} onPress={onShare}>
-          <Share2 color={Colors.neutral600} size={18} strokeWidth={2.5} />
+          <Share2 color={colors.neutral600} size={18} strokeWidth={2.5} />
         </Pressable>
       </View>
 
@@ -89,17 +92,17 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
       {/* IMAGE */}
       {isProfileUpdate ? (
         <LinearGradient
-          colors={[Colors.primaryLight, Colors.background]}
+          colors={[colors.primaryLight, colors.background]}
           style={styles.profileUpdateGradient}
         >
           <View style={styles.profileUpdateRing}>
             <Image source={{ uri: imageUri || avatarUri }} style={styles.profileUpdateAvatar} />
             <View style={styles.profileUpdateCameraBadge}>
-              <Camera color={Colors.white} size={13} strokeWidth={2.5} />
+              <Camera color={colors.white} size={13} strokeWidth={2.5} />
             </View>
           </View>
           <View style={styles.profileUpdatePill}>
-            <Sparkles color={Colors.primary} size={12} strokeWidth={2.5} />
+            <Sparkles color={colors.primary} size={12} strokeWidth={2.5} />
             <Text style={styles.profileUpdatePillText}>New Profile Photo</Text>
           </View>
         </LinearGradient>
@@ -112,26 +115,26 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
         <View style={styles.postActionsLeft}>
           <Pressable style={styles.postStats} onPress={handleToggleLike} disabled={likeBusy} hitSlop={8}>
             <Heart
-              color={interaction.likedByCurrentUser ? Colors.liveRed : Colors.neutral600}
-              fill={interaction.likedByCurrentUser ? Colors.liveRed : 'none'}
+              color={interaction.likedByCurrentUser ? colors.liveRed : colors.neutral600}
+              fill={interaction.likedByCurrentUser ? colors.liveRed : 'none'}
               size={18}
               strokeWidth={2.5}
             />
-            <Text style={[styles.postStatText, interaction.likedByCurrentUser && { color: Colors.liveRed }]}>
+            <Text style={[styles.postStatText, interaction.likedByCurrentUser && { color: colors.liveRed }]}>
               {interaction.likeCount}
             </Text>
           </Pressable>
 
           <Pressable style={styles.postStats} onPress={() => setCommentsVisible(true)} hitSlop={8}>
-            <MessageCircle color={Colors.neutral600} size={18} strokeWidth={2.5} />
+            <MessageCircle color={colors.neutral600} size={18} strokeWidth={2.5} />
             <Text style={styles.postStatText}>{interaction.commentCount}</Text>
           </Pressable>
         </View>
 
         <Pressable style={styles.saveAction} onPress={handleToggleSave} disabled={saveBusy} hitSlop={8}>
           <Bookmark
-            color={interaction.savedByCurrentUser ? Colors.primary : Colors.neutral600}
-            fill={interaction.savedByCurrentUser ? Colors.primary : 'none'}
+            color={interaction.savedByCurrentUser ? colors.primary : colors.neutral600}
+            fill={interaction.savedByCurrentUser ? colors.primary : 'none'}
             size={18}
             strokeWidth={2.5}
           />
@@ -143,9 +146,9 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   postCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.cardBg,
     borderRadius: 18,
     padding: 14,
     marginBottom: 16,
@@ -174,12 +177,12 @@ const styles = StyleSheet.create({
   postName: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#111827',
+    color: colors.text,
   },
 
   postSubtitle: {
     fontSize: 12,
-    color: '#6b7280',
+    color: colors.textSecondary,
   },
 
   iconButtonSmall: {
@@ -206,16 +209,16 @@ const styles = StyleSheet.create({
     height: 148,
     borderRadius: 74,
     padding: 5,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: Colors.primary,
+    shadowColor: colors.primary,
     shadowOpacity: 0.3,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
     elevation: 8,
     borderWidth: 3,
-    borderColor: Colors.primary,
+    borderColor: colors.primary,
   },
   profileUpdateAvatar: {
     width: '100%',
@@ -229,17 +232,17 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: Colors.white,
+    borderColor: colors.cardBg,
   },
   profileUpdatePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 999,
@@ -252,14 +255,14 @@ const styles = StyleSheet.create({
   profileUpdatePillText: {
     fontSize: 12,
     fontWeight: '800',
-    color: Colors.primary,
+    color: colors.primary,
     letterSpacing: 0.2,
   },
 
   postText: {
     marginTop: 10,
     fontSize: 13,
-    color: '#374151',
+    color: colors.text,
     lineHeight: 18,
   },
 

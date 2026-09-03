@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   BellOff,
   Bell,
@@ -34,12 +35,14 @@ import {
 } from 'lucide-react-native';
 import { notificationApi, NotificationCategory, NotificationResponse } from '../api/notificationApi';
 import { invitationApi } from '../api/invitationApi';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { AuthContext } from '../context/AuthContext';
 import { extractApiError } from '../utils/apiError';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import ScreenGlow from '../components/ScreenGlow';
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -53,37 +56,38 @@ function timeAgo(iso: string): string {
 }
 
 function NotificationIcon({ type }: { type: string }) {
+  const { colors } = useTheme();
   const size = 20;
   const sw = 2;
   switch (type) {
-    case 'INVITATION_RECEIVED':   return <UserPlus color={Colors.primary} size={size} strokeWidth={sw} />;
-    case 'INVITATION_ACCEPTED':   return <UserCheck color={Colors.success} size={size} strokeWidth={sw} />;
-    case 'INVITATION_DECLINED':   return <UserMinus color={Colors.error} size={size} strokeWidth={sw} />;
+    case 'INVITATION_RECEIVED':   return <UserPlus color={colors.primary} size={size} strokeWidth={sw} />;
+    case 'INVITATION_ACCEPTED':   return <UserCheck color={colors.success} size={size} strokeWidth={sw} />;
+    case 'INVITATION_DECLINED':   return <UserMinus color={colors.error} size={size} strokeWidth={sw} />;
     case 'PAYMENT_REQUIRED':      return <CreditCard color='#F59E0B' size={size} strokeWidth={sw} />;
-    case 'PAYMENT_SUCCESSFUL':    return <Check color={Colors.success} size={size} strokeWidth={sw} />;
-    case 'PLAYER_JOINED':         return <Trophy color={Colors.primary} size={size} strokeWidth={sw} />;
-    case 'PLAYER_ADDED_DIRECTLY': return <UserCheck color={Colors.primary} size={size} strokeWidth={sw} />;
-    case 'BOOKING_CONFIRMED':     return <CircleCheckBig color={Colors.success} size={size} strokeWidth={sw} />;
-    case 'BOOKING_REJECTED':      return <CircleX color={Colors.error} size={size} strokeWidth={sw} />;
-    case 'MATCH_CANCELLED_NOTIFY': return <CircleX color={Colors.error} size={size} strokeWidth={sw} />;
-    case 'FOLLOW_REQUEST_RECEIVED': return <UserPlus color={Colors.primary} size={size} strokeWidth={sw} />;
-    case 'FOLLOW_REQUEST_ACCEPTED': return <UserCheck color={Colors.success} size={size} strokeWidth={sw} />;
-    case 'NEW_FOLLOWER':          return <UserPlus color={Colors.success} size={size} strokeWidth={sw} />;
+    case 'PAYMENT_SUCCESSFUL':    return <Check color={colors.success} size={size} strokeWidth={sw} />;
+    case 'PLAYER_JOINED':         return <Trophy color={colors.primary} size={size} strokeWidth={sw} />;
+    case 'PLAYER_ADDED_DIRECTLY': return <UserCheck color={colors.primary} size={size} strokeWidth={sw} />;
+    case 'BOOKING_CONFIRMED':     return <CircleCheckBig color={colors.success} size={size} strokeWidth={sw} />;
+    case 'BOOKING_REJECTED':      return <CircleX color={colors.error} size={size} strokeWidth={sw} />;
+    case 'MATCH_CANCELLED_NOTIFY': return <CircleX color={colors.error} size={size} strokeWidth={sw} />;
+    case 'FOLLOW_REQUEST_RECEIVED': return <UserPlus color={colors.primary} size={size} strokeWidth={sw} />;
+    case 'FOLLOW_REQUEST_ACCEPTED': return <UserCheck color={colors.success} size={size} strokeWidth={sw} />;
+    case 'NEW_FOLLOWER':          return <UserPlus color={colors.success} size={size} strokeWidth={sw} />;
     case 'POST_LIKED':            return <Heart color="#EF4444" size={size} strokeWidth={sw} />;
-    case 'POST_COMMENTED':        return <MessageCircle color={Colors.primary} size={size} strokeWidth={sw} />;
+    case 'POST_COMMENTED':        return <MessageCircle color={colors.primary} size={size} strokeWidth={sw} />;
     case 'REEL_LIKED':            return <Heart color="#EF4444" size={size} strokeWidth={sw} />;
-    case 'TOURNAMENT_PLAYER_ADDED': return <Trophy color={Colors.primary} size={size} strokeWidth={sw} />;
-    case 'WALK_RUN_INVITE_RECEIVED': return <UserPlus color={Colors.primary} size={size} strokeWidth={sw} />;
-    case 'WALK_RUN_INVITE_ACCEPTED': return <UserCheck color={Colors.success} size={size} strokeWidth={sw} />;
-    case 'WALK_RUN_INVITE_DECLINED': return <UserMinus color={Colors.error} size={size} strokeWidth={sw} />;
-    case 'TRAINER_NEW_SESSION':   return <Dumbbell color={Colors.trainer} size={size} strokeWidth={sw} />;
+    case 'TOURNAMENT_PLAYER_ADDED': return <Trophy color={colors.primary} size={size} strokeWidth={sw} />;
+    case 'WALK_RUN_INVITE_RECEIVED': return <UserPlus color={colors.primary} size={size} strokeWidth={sw} />;
+    case 'WALK_RUN_INVITE_ACCEPTED': return <UserCheck color={colors.success} size={size} strokeWidth={sw} />;
+    case 'WALK_RUN_INVITE_DECLINED': return <UserMinus color={colors.error} size={size} strokeWidth={sw} />;
+    case 'TRAINER_NEW_SESSION':   return <Dumbbell color={colors.trainer} size={size} strokeWidth={sw} />;
     case 'NEARBY_SUGGESTION':     return <Sparkles color="#F59E0B" size={size} strokeWidth={sw} />;
-    case 'SESSION_REMINDER':      return <Clock color={Colors.trainer} size={size} strokeWidth={sw} />;
-    case 'MATCH_REMINDER':        return <Clock color={Colors.primary} size={size} strokeWidth={sw} />;
-    case 'TOURNAMENT_REMINDER':   return <Calendar color={Colors.primary} size={size} strokeWidth={sw} />;
+    case 'SESSION_REMINDER':      return <Clock color={colors.trainer} size={size} strokeWidth={sw} />;
+    case 'MATCH_REMINDER':        return <Clock color={colors.primary} size={size} strokeWidth={sw} />;
+    case 'TOURNAMENT_REMINDER':   return <Calendar color={colors.primary} size={size} strokeWidth={sw} />;
     case 'VENUE_CLOSED':          return <MapPin color="#F59E0B" size={size} strokeWidth={sw} />;
     case 'BOOKING_PENDING_VENDOR_APPROVAL': return <Clock color="#F59E0B" size={size} strokeWidth={sw} />;
-    default:                      return <Bell color={Colors.textMuted} size={size} strokeWidth={sw} />;
+    default:                      return <Bell color={colors.textMuted} size={size} strokeWidth={sw} />;
   }
 }
 
@@ -94,6 +98,7 @@ interface NotificationCardProps {
   onPayNow: (n: NotificationResponse) => void;
   onPress: (n: NotificationResponse) => void;
   isActionInProgress: boolean;
+  styles: ReturnType<typeof createStyles>;
 }
 
 function NotificationCard({
@@ -103,7 +108,9 @@ function NotificationCard({
   onPayNow,
   onPress,
   isActionInProgress,
+  styles,
 }: NotificationCardProps) {
+  const { colors } = useTheme();
   const snap = n.matchSnapshot ?? {};
   const isInviteReceived = n.type === 'INVITATION_RECEIVED';
   const isPaymentRequired = n.type === 'PAYMENT_REQUIRED';
@@ -130,7 +137,7 @@ function NotificationCard({
           <View style={styles.snapRow}>
             {snap.venueName && (
               <View style={styles.snapItem}>
-                <MapPin color={Colors.textMuted} size={11} strokeWidth={2} />
+                <MapPin color={colors.textMuted} size={11} strokeWidth={2} />
                 <Text style={styles.snapText} numberOfLines={1}>{snap.venueName}</Text>
               </View>
             )}
@@ -155,9 +162,9 @@ function NotificationCard({
               disabled={isActionInProgress}
             >
               {isActionInProgress
-                ? <ActivityIndicator size="small" color={Colors.white} />
+                ? <ActivityIndicator size="small" color={colors.white} />
                 : <>
-                    <Check color={Colors.white} size={14} strokeWidth={2.5} />
+                    <Check color={colors.white} size={14} strokeWidth={2.5} />
                     <Text style={styles.acceptTxt}>Accept</Text>
                   </>
               }
@@ -175,7 +182,7 @@ function NotificationCard({
         {/* Pay Now */}
         {showPayNow && (
           <Pressable style={styles.payBtn} onPress={() => onPayNow(n)}>
-            <CreditCard color={Colors.white} size={14} strokeWidth={2.5} />
+            <CreditCard color={colors.white} size={14} strokeWidth={2.5} />
             <Text style={styles.payTxt}>Pay Now</Text>
           </Pressable>
         )}
@@ -202,11 +209,34 @@ const CATEGORY_COPY: Record<NotificationCategory, { title: string; emptyTitle: s
   GENERAL: {
     title: 'Activity',
     emptyTitle: 'No updates yet',
-    emptyBody: 'Match invites, booking updates, and reminders will show up here.',
+    emptyBody: 'Match invites and booking updates will show up here.',
   },
 };
 
+// Per the client's request, the GENERAL bell (Home/Explore) is scoped strictly to
+// match and booking activity — tournament/walk-run/trainer/discovery notifications
+// are still tagged GENERAL server-side, but filtered out of this list client-side
+// so they don't dilute the "match and booking only" feed.
+const MATCH_AND_BOOKING_TYPES = new Set<string>([
+  'INVITATION_RECEIVED',
+  'INVITATION_ACCEPTED',
+  'INVITATION_DECLINED',
+  'INVITATION_EXPIRED',
+  'PAYMENT_REQUIRED',
+  'PAYMENT_SUCCESSFUL',
+  'PLAYER_JOINED',
+  'PLAYER_ADDED_DIRECTLY',
+  'MATCH_CANCELLED_NOTIFY',
+  'BOOKING_PENDING_VENDOR_APPROVAL',
+  'BOOKING_CONFIRMED',
+  'BOOKING_REJECTED',
+  'MATCH_REMINDER',
+  'VENUE_CLOSED',
+]);
+
 export default function NotificationScreen({ category }: NotificationScreenProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { user } = useContext(AuthContext);
   const router = useRouter();
   const [notifications, setNotifications] = useState<NotificationResponse[]>([]);
@@ -218,7 +248,9 @@ export default function NotificationScreen({ category }: NotificationScreenProps
   const load = useCallback(async () => {
     try {
       const data = await notificationApi.getAll(category);
-      setNotifications(data);
+      setNotifications(
+        category === 'GENERAL' ? data.filter((n) => MATCH_AND_BOOKING_TYPES.has(n.type)) : data
+      );
     } catch {
       // silently fail on background refresh
     } finally {
@@ -337,14 +369,26 @@ export default function NotificationScreen({ category }: NotificationScreenProps
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <View style={styles.topBar}>
-        <Text style={styles.screenTitle}>{copy ? copy.title : 'Notifications'}</Text>
-        {unreadCount > 0 && (
-          <Pressable style={styles.markAllBtn} onPress={handleMarkAllRead}>
-            <CheckCheck color={Colors.primary} size={16} strokeWidth={2} />
-            <Text style={styles.markAllTxt}>Mark all read</Text>
-          </Pressable>
-        )}
+      <ScreenGlow />
+      {/* Floating glass-gradient header */}
+      <View style={styles.topHeaderShadow}>
+        <View style={styles.topBar}>
+          <LinearGradient
+            colors={[colors.primaryAccent, colors.primary, colors.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.headerGlassStroke} pointerEvents="none" />
+
+          <Text style={styles.screenTitle}>{copy ? copy.title : 'Notifications'}</Text>
+          {unreadCount > 0 && (
+            <Pressable style={styles.markAllBtn} onPress={handleMarkAllRead}>
+              <CheckCheck color={colors.white} size={16} strokeWidth={2} />
+              <Text style={styles.markAllTxt}>Mark all read</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
       <PaasxoRefreshLogo refreshing={refreshing} />
@@ -360,7 +404,7 @@ export default function NotificationScreen({ category }: NotificationScreenProps
       >
         {notifications.length === 0 && (
           <View style={styles.emptyWrap}>
-            <BellOff color={Colors.textMuted} size={48} strokeWidth={1.5} />
+            <BellOff color={colors.textMuted} size={48} strokeWidth={1.5} />
             <Text style={styles.emptyTitle}>{copy ? copy.emptyTitle : 'No notifications yet'}</Text>
             <Text style={styles.emptyBody}>
               {copy ? copy.emptyBody : 'When players invite you or join your matches, you\'ll see it here.'}
@@ -376,6 +420,7 @@ export default function NotificationScreen({ category }: NotificationScreenProps
             onPayNow={handlePayNow}
             onPress={handlePress}
             isActionInProgress={actionInProgress === n.invitationId}
+            styles={styles}
           />
         ))}
       </ScrollView>
@@ -383,28 +428,46 @@ export default function NotificationScreen({ category }: NotificationScreenProps
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
   },
   loadingWrap: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  topHeaderShadow: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    marginBottom: 2,
+    borderRadius: 26,
+    shadowColor: colors.primaryDark,
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderRadius: 26,
+    overflow: 'hidden',
+  },
+  headerGlassStroke: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
   },
   screenTitle: {
     flex: 1,
     fontSize: 22,
     fontWeight: '800',
-    color: Colors.text,
+    color: colors.white,
   },
   markAllBtn: {
     flexDirection: 'row',
@@ -413,12 +476,12 @@ const styles = StyleSheet.create({
   },
   markAllTxt: {
     fontSize: 13,
-    color: Colors.primary,
+    color: colors.white,
     fontWeight: '600',
   },
   card: {
     flexDirection: 'row',
-    backgroundColor: Colors.primary + '12',
+    backgroundColor: colors.primary + '12',
     marginHorizontal: 16,
     marginBottom: 8,
     borderRadius: 14,
@@ -426,7 +489,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   cardRead: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
   },
   cardLeft: {
     paddingTop: 2,
@@ -435,7 +498,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -445,12 +508,12 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
     marginBottom: 2,
   },
   cardBodyText: {
     fontSize: 13,
-    color: Colors.textMuted,
+    color: colors.textMuted,
     marginBottom: 6,
     lineHeight: 18,
   },
@@ -467,7 +530,7 @@ const styles = StyleSheet.create({
   },
   snapText: {
     fontSize: 11,
-    color: Colors.textMuted,
+    color: colors.textMuted,
   },
   actionRow: {
     flexDirection: 'row',
@@ -479,26 +542,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    backgroundColor: Colors.success,
+    backgroundColor: colors.success,
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 7,
     minWidth: 80,
   },
   acceptTxt: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 13,
     fontWeight: '700',
   },
   declineBtn: {
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: Colors.error,
+    borderColor: colors.error,
     paddingHorizontal: 14,
     paddingVertical: 7,
   },
   declineTxt: {
-    color: Colors.error,
+    color: colors.error,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -517,20 +580,20 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   payTxt: {
-    color: Colors.white,
+    color: colors.white,
     fontSize: 13,
     fontWeight: '700',
   },
   timeAgo: {
     fontSize: 11,
-    color: Colors.textMuted,
+    color: colors.textMuted,
     marginTop: 4,
   },
   unreadDot: {
     width: 9,
     height: 9,
     borderRadius: 5,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     alignSelf: 'flex-start',
     marginTop: 4,
   },
@@ -543,11 +606,11 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
   },
   emptyBody: {
     fontSize: 14,
-    color: Colors.textMuted,
+    color: colors.textMuted,
     textAlign: 'center',
     lineHeight: 20,
   },

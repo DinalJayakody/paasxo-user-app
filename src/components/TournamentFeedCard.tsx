@@ -2,7 +2,8 @@ import React, { useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MapPin, Calendar, Users, Trophy, Radio, ChevronRight } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { Colors, ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 
 export interface TournamentFeedItem {
   id: string | number;
@@ -29,6 +30,8 @@ interface Props {
 }
 
 export function TournamentFeedCard({ tournament, onPress }: Props) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const sport = SPORT_CONFIG[tournament.sport?.toUpperCase()] || SPORT_CONFIG.FUTSAL;
   const pulseAnim = useRef(new Animated.Value(0.6)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
@@ -53,9 +56,9 @@ export function TournamentFeedCard({ tournament, onPress }: Props) {
   }, [tournament.lifecycle]);
 
   const lifecycleConfig = {
-    UPCOMING: { label: 'UPCOMING', bg: Colors.primary + '18', text: Colors.primary },
-    LIVE: { label: '● LIVE', bg: Colors.liveRed + '18', text: Colors.liveRed },
-    COMPLETED: { label: 'COMPLETED', bg: Colors.success + '18', text: Colors.success },
+    UPCOMING: { label: 'UPCOMING', bg: colors.primary + '18', text: colors.primary },
+    LIVE: { label: '● LIVE', bg: colors.liveRed + '18', text: colors.liveRed },
+    COMPLETED: { label: 'COMPLETED', bg: colors.success + '18', text: colors.success },
   }[tournament.lifecycle];
 
   const spotsLabel = `${tournament.teamsCount}/${tournament.expectedTeams} teams`;
@@ -91,7 +94,7 @@ export function TournamentFeedCard({ tournament, onPress }: Props) {
               </View>
               {tournament.isOwner && (
                 <View style={styles.ownerBadge}>
-                  <Trophy color={Colors.primary} size={10} strokeWidth={2.5} />
+                  <Trophy color={colors.primary} size={10} strokeWidth={2.5} />
                   <Text style={styles.ownerBadgeText}>Organiser</Text>
                 </View>
               )}
@@ -105,12 +108,12 @@ export function TournamentFeedCard({ tournament, onPress }: Props) {
           <View style={styles.metaRow}>
             {tournament.venueName && (
               <View style={styles.metaItem}>
-                <MapPin color={Colors.textMuted} size={13} strokeWidth={2} />
+                <MapPin color={colors.textMuted} size={13} strokeWidth={2} />
                 <Text style={styles.metaText} numberOfLines={1}>{tournament.venueName}</Text>
               </View>
             )}
             <View style={styles.metaItem}>
-              <Calendar color={Colors.textMuted} size={13} strokeWidth={2} />
+              <Calendar color={colors.textMuted} size={13} strokeWidth={2} />
               <Text style={styles.metaText}>{tournament.date}</Text>
             </View>
           </View>
@@ -119,7 +122,7 @@ export function TournamentFeedCard({ tournament, onPress }: Props) {
           <View style={styles.progressSection}>
             <View style={styles.progressHeader}>
               <View style={styles.progressLabel}>
-                <Users color={Colors.textSecondary} size={13} strokeWidth={2} />
+                <Users color={colors.textSecondary} size={13} strokeWidth={2} />
                 <Text style={styles.progressText}>{spotsLabel}</Text>
               </View>
               <Text style={styles.progressPct}>{Math.round(fillPct * 100)}% full</Text>
@@ -134,7 +137,7 @@ export function TournamentFeedCard({ tournament, onPress }: Props) {
             <Text style={styles.ctaText}>
               {tournament.lifecycle === 'UPCOMING' ? 'View & Join' : tournament.lifecycle === 'LIVE' ? 'Watch Live' : 'View Results'}
             </Text>
-            <ChevronRight color={Colors.white} size={14} strokeWidth={2.5} />
+            <ChevronRight color={colors.white} size={14} strokeWidth={2.5} />
           </Pressable>
         </View>
       </Pressable>
@@ -142,9 +145,9 @@ export function TournamentFeedCard({ tournament, onPress }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   card: {
-    backgroundColor: Colors.white, borderRadius: 20, marginBottom: 14,
+    backgroundColor: colors.cardBg, borderRadius: 20, marginBottom: 14,
     overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.09, shadowRadius: 16, elevation: 5,
@@ -157,32 +160,32 @@ const styles = StyleSheet.create({
   sportEmoji: { fontSize: 18 },
   sportLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase' },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.liveRed },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.liveRed },
   lifecycleBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
   lifecycleText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   ownerBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: Colors.primaryLight, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8,
+    backgroundColor: colors.primaryLight, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8,
   },
-  ownerBadgeText: { fontSize: 9, fontWeight: '700', color: Colors.primary },
+  ownerBadgeText: { fontSize: 9, fontWeight: '700', color: colors.primary },
 
-  tournamentName: { fontSize: 17, fontWeight: '800', color: Colors.text, marginBottom: 10, lineHeight: 22 },
+  tournamentName: { fontSize: 17, fontWeight: '800', color: colors.text, marginBottom: 10, lineHeight: 22 },
 
   metaRow: { flexDirection: 'row', gap: 16, marginBottom: 12, flexWrap: 'wrap' },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  metaText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' },
+  metaText: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
 
   progressSection: { marginBottom: 14 },
   progressHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   progressLabel: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  progressText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' },
-  progressPct: { fontSize: 11, fontWeight: '700', color: Colors.textMuted },
-  progressBarBg: { height: 6, backgroundColor: Colors.neutral100, borderRadius: 3 },
+  progressText: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
+  progressPct: { fontSize: 11, fontWeight: '700', color: colors.textMuted },
+  progressBarBg: { height: 6, backgroundColor: colors.neutral100, borderRadius: 3 },
   progressBarFill: { height: 6, borderRadius: 3 },
 
   ctaButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, paddingVertical: 10, borderRadius: 12,
   },
-  ctaText: { fontSize: 13, fontWeight: '700', color: Colors.white },
+  ctaText: { fontSize: 13, fontWeight: '700', color: colors.white },
 });

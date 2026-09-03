@@ -8,7 +8,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 
 interface ScreenContainerProps {
   children: React.ReactNode;
@@ -23,8 +23,10 @@ export const ScreenContainer: React.FC<ScreenContainerProps> = ({
   scrollable = false,
   style,
   contentStyle,
-  backgroundColor = Colors.background,
+  backgroundColor,
 }) => {
+  const { colors } = useTheme();
+  const bg = backgroundColor ?? colors.background;
   const content = scrollable ? (
     <ScrollView
       style={styles.scroll}
@@ -39,7 +41,7 @@ export const ScreenContainer: React.FC<ScreenContainerProps> = ({
   );
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor }, style]}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: bg }, style]}>
       <KeyboardAvoidingView
         style={styles.keyboard}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

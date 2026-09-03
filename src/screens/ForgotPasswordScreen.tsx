@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -13,18 +13,22 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, AtSign, CheckCircle, MailOpen } from 'lucide-react-native';
 import { sendPasswordResetEmail } from 'firebase/auth';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
 import { InputField } from '../components/InputField';
 import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
 import axiosInstance from '../api/axios';
 import { ENDPOINTS } from '../api/endpoints';
+import ScreenGlow from '../components/ScreenGlow';
 
 const isValidEmail = (val: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
 
 type Step = 'input' | 'sent';
 
 export default function ForgotPasswordScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [step, setStep] = useState<Step>('input');
@@ -104,6 +108,7 @@ export default function ForgotPasswordScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <ScreenGlow />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -116,7 +121,7 @@ export default function ForgotPasswordScreen() {
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
-              <ArrowLeft color={Colors.primary} size={22} strokeWidth={2.5} />
+              <ArrowLeft color={colors.primary} size={22} strokeWidth={2.5} />
             </TouchableOpacity>
             <Image
               source={require('../../assets/logo.jpeg')}
@@ -131,7 +136,7 @@ export default function ForgotPasswordScreen() {
               {/* Icon */}
               <View style={styles.iconWrap}>
                 <View style={styles.iconCircle}>
-                  <MailOpen color={Colors.primary} size={38} strokeWidth={1.8} />
+                  <MailOpen color={colors.primary} size={38} strokeWidth={1.8} />
                 </View>
               </View>
 
@@ -150,7 +155,7 @@ export default function ForgotPasswordScreen() {
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
-                  leftIcon={<AtSign color={Colors.textMuted} size={18} strokeWidth={2} />}
+                  leftIcon={<AtSign color={colors.textMuted} size={18} strokeWidth={2} />}
                   error={error}
                   containerStyle={{ marginBottom: 4 }}
                 />
@@ -176,7 +181,7 @@ export default function ForgotPasswordScreen() {
               {/* Success state */}
               <View style={styles.iconWrap}>
                 <View style={[styles.iconCircle, styles.iconCircleSuccess]}>
-                  <CheckCircle color={Colors.success} size={42} strokeWidth={1.8} />
+                  <CheckCircle color={colors.success} size={42} strokeWidth={1.8} />
                 </View>
               </View>
 
@@ -209,10 +214,10 @@ export default function ForgotPasswordScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
   },
   scroll: {
     paddingHorizontal: 24,
@@ -239,34 +244,34 @@ const styles = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 44,
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  iconCircleSuccess: { backgroundColor: Colors.success + '18' },
+  iconCircleSuccess: { backgroundColor: colors.success + '18' },
 
   title: {
     fontSize: 28,
     fontWeight: '800',
-    color: Colors.text,
+    color: colors.text,
     textAlign: 'center',
     marginBottom: 10,
     letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 32,
   },
   emailHighlight: {
     fontWeight: '700',
-    color: Colors.primary,
+    color: colors.primary,
   },
 
   card: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 24,
     padding: 20,
     shadowColor: '#000',
@@ -280,7 +285,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.5,
-    color: Colors.neutral500,
+    color: colors.neutral500,
     marginBottom: 8,
     textTransform: 'uppercase',
   },
@@ -290,6 +295,6 @@ const styles = StyleSheet.create({
   backToLoginText: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.primary,
+    color: colors.primary,
   },
 });

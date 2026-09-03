@@ -11,7 +11,8 @@ import {
   View,
 } from 'react-native';
 import { Search, X } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { giphyApi, GifResult } from '../api/giphyApi';
 
 interface GifPickerSheetProps {
@@ -23,6 +24,8 @@ interface GifPickerSheetProps {
 const COLUMNS = 3;
 
 export function GifPickerSheet({ visible, onClose, onSelect }: GifPickerSheetProps) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const [query, setQuery] = useState('');
   const [gifs, setGifs] = useState<GifResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -72,21 +75,21 @@ export function GifPickerSheet({ visible, onClose, onSelect }: GifPickerSheetPro
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Send a GIF</Text>
             <Pressable onPress={onClose} style={styles.closeBtn}>
-              <X color={Colors.text} size={20} strokeWidth={2.5} />
+              <X color={colors.text} size={20} strokeWidth={2.5} />
             </Pressable>
           </View>
 
           <View style={styles.searchBox}>
-            <Search color={Colors.textMuted} size={15} strokeWidth={2} />
+            <Search color={colors.textMuted} size={15} strokeWidth={2} />
             <TextInput
               style={styles.searchInput}
               placeholder="Search GIPHY..."
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={colors.textMuted}
               value={query}
               onChangeText={setQuery}
               autoFocus
             />
-            {loading && <ActivityIndicator size="small" color={Colors.primary} />}
+            {loading && <ActivityIndicator size="small" color={colors.primary} />}
           </View>
 
           <FlatList
@@ -115,11 +118,11 @@ export function GifPickerSheet({ visible, onClose, onSelect }: GifPickerSheetPro
 
 const TILE_SIZE = 110;
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     height: '75%',
@@ -127,24 +130,24 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   handle: {
-    width: 40, height: 4, backgroundColor: Colors.neutral200, borderRadius: 2,
+    width: 40, height: 4, backgroundColor: colors.neutral200, borderRadius: 2,
     alignSelf: 'center', marginTop: 12, marginBottom: 16,
   },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: Colors.text },
+  headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: colors.text },
   closeBtn: { padding: 4 },
   searchBox: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: Colors.neutral100, borderRadius: 10,
+    backgroundColor: colors.neutral100, borderRadius: 10,
     paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12,
   },
-  searchInput: { flex: 1, fontSize: 14, color: Colors.text },
-  emptyText: { textAlign: 'center', color: Colors.textMuted, fontSize: 13, marginTop: 24 },
+  searchInput: { flex: 1, fontSize: 14, color: colors.text },
+  emptyText: { textAlign: 'center', color: colors.textMuted, fontSize: 13, marginTop: 24 },
   grid: { paddingBottom: 12, gap: 6 },
   gifTile: {
     width: TILE_SIZE, height: TILE_SIZE, margin: 3,
-    borderRadius: 10, overflow: 'hidden', backgroundColor: Colors.neutral100,
+    borderRadius: 10, overflow: 'hidden', backgroundColor: colors.neutral100,
   },
   gifImage: { width: '100%', height: '100%' },
-  attribution: { textAlign: 'center', fontSize: 10, color: Colors.textMuted, paddingVertical: 4 },
+  attribution: { textAlign: 'center', fontSize: 10, color: colors.textMuted, paddingVertical: 4 },
 });

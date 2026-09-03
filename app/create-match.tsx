@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
   ArrowLeft,
@@ -34,16 +34,20 @@ import {
   ShieldCheck,
   AlertCircle,
   ChevronDown,
+  Globe,
+  Lock,
 } from 'lucide-react-native';
 import Svg, { Path as SvgPath } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Colors } from '../src/styles/colors';
+import { Colors, ThemeColors } from '../src/styles/colors';
+import { useTheme } from '@/src/context/ThemeContext';
 import { futsalApi } from '../src/api/futsalApi';
 import { socialMediaApi } from '../src/api/socialMediaApi';
 import { bookingApi } from '../src/api/bookingApi';
 import { invitationApi } from '../src/api/invitationApi';
 import { PlayerSearchSheet, SearchedPlayer } from '../src/components/PlayerSearchSheet';
 import { extractApiError } from '../src/utils/apiError';
+import ScreenGlow from '../src/components/ScreenGlow';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -59,6 +63,8 @@ const SPORTS = [
 // ─── Animated Sport Tile ──────────────────────────────────────────────────────
 
 function SportTile({ sport, selected, onPress }: { sport: typeof SPORTS[0]; selected: boolean; onPress: () => void }) {
+  const { colors } = useTheme();
+  const sportTileStyles = React.useMemo(() => createSportTileStyles(colors), [colors]);
   const scale = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = () => Animated.spring(scale, { toValue: 0.93, useNativeDriver: true, friction: 6 }).start();
@@ -88,15 +94,15 @@ function SportTile({ sport, selected, onPress }: { sport: typeof SPORTS[0]; sele
   );
 }
 
-const sportTileStyles = StyleSheet.create({
+const createSportTileStyles = (colors: ThemeColors) => StyleSheet.create({
   wrap: { width: '31%', margin: '1%' },
   tile: {
     borderRadius: 16, paddingVertical: 14, paddingHorizontal: 8,
     alignItems: 'center', gap: 6,
   },
   tileIdle: {
-    backgroundColor: Colors.white,
-    borderWidth: 1.5, borderColor: Colors.neutral200,
+    backgroundColor: colors.cardBg,
+    borderWidth: 1.5, borderColor: colors.neutral200,
   },
   emoji: { fontSize: 26 },
   label: { fontSize: 11, fontWeight: '800', textAlign: 'center' },
@@ -142,6 +148,8 @@ function RadialSportMenu({
   onSelect: (id: string) => void;
   onClose: () => void;
 }) {
+  const { colors } = useTheme();
+  const spStyles = React.useMemo(() => createSpStyles(colors), [colors]);
   // All animations use useNativeDriver: false so entrance+hover can mix on the same views
   const backdrop   = useRef(new Animated.Value(0)).current;
   const pieScale   = useRef(new Animated.Value(0)).current;
@@ -324,7 +332,7 @@ function RadialSportMenu({
   );
 }
 
-const spStyles = StyleSheet.create({
+const createSpStyles = (colors: ThemeColors) => StyleSheet.create({
   guideAbove: {
     fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.55)',
     marginBottom: 26, letterSpacing: 0.5, textAlign: 'center', paddingHorizontal: 32,
@@ -340,19 +348,19 @@ const spStyles = StyleSheet.create({
     marginTop: 3, textAlign: 'center',
   },
   itemLabelActive: {
-    color: Colors.white, fontWeight: '900',
+    color: colors.white, fontWeight: '900',
   },
   centerBtn: {
     position: 'absolute',
     width: 80, height: 80, borderRadius: 40,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 16,
     shadowOffset: { width: 0, height: 5 }, elevation: 12,
     gap: 2,
   },
   centerLabel: {
-    fontSize: 9, fontWeight: '800', color: Colors.textSecondary, letterSpacing: 0.3,
+    fontSize: 9, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.3,
   },
 });
 
@@ -376,6 +384,8 @@ function CalendarModal({
   onSelect: (date: string) => void;
   onClose: () => void;
 }) {
+  const { colors } = useTheme();
+  const calStyles = React.useMemo(() => createCalStyles(colors), [colors]);
   const [viewDate, setViewDate] = useState(() => {
     const d = selectedDate ? new Date(selectedDate + 'T00:00:00') : new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -419,11 +429,11 @@ function CalendarModal({
           {/* Month row */}
           <View style={calStyles.monthRow}>
             <Pressable onPress={prevMonth} style={calStyles.monthBtn} hitSlop={10}>
-              <ChevronLeft color={Colors.text} size={20} strokeWidth={2.5} />
+              <ChevronLeft color={colors.text} size={20} strokeWidth={2.5} />
             </Pressable>
             <Text style={calStyles.monthText}>{MONTH_NAMES[month]}</Text>
             <Pressable onPress={nextMonth} style={calStyles.monthBtn} hitSlop={10}>
-              <ChevronRight color={Colors.text} size={20} strokeWidth={2.5} />
+              <ChevronRight color={colors.text} size={20} strokeWidth={2.5} />
             </Pressable>
           </View>
 
@@ -477,6 +487,8 @@ function CalendarModal({
 // ─── Animated Venue Item ──────────────────────────────────────────────────────
 
 function VenueItem({ item, index, onSelect }: { item: any; index: number; onSelect: (v: any) => void }) {
+  const { colors } = useTheme();
+  const venueStyles = React.useMemo(() => createVenueStyles(colors), [colors]);
   const slideAnim = useRef(new Animated.Value(30)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -491,15 +503,15 @@ function VenueItem({ item, index, onSelect }: { item: any; index: number; onSele
   return (
     <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
       <Pressable style={venueStyles.item} onPress={() => onSelect(item)}>
-        <LinearGradient colors={[Colors.primaryLight, Colors.primary + '20']} style={venueStyles.iconWrap}>
-          <MapPin color={Colors.primary} size={20} strokeWidth={2} />
+        <LinearGradient colors={[colors.primaryLight, colors.primary + '20']} style={venueStyles.iconWrap}>
+          <MapPin color={colors.primary} size={20} strokeWidth={2} />
         </LinearGradient>
         <View style={venueStyles.info}>
           <Text style={venueStyles.name}>{item.name}</Text>
           <Text style={venueStyles.location}>{item.location || item.city || 'Location not listed'}</Text>
           {item.rating != null && (
             <View style={venueStyles.ratingRow}>
-              <Star color={Colors.warning} size={11} fill={Colors.warning} />
+              <Star color={colors.warning} size={11} fill={colors.warning} />
               <Text style={venueStyles.ratingText}>{Number(item.rating).toFixed(1)}</Text>
             </View>
           )}
@@ -521,7 +533,10 @@ function VenueItem({ item, index, onSelect }: { item: any; index: number; onSele
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CreateMatch() {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [submitting, setSubmitting] = useState(false);
   const [selectedSport, setSelectedSport] = useState('FUTSAL');
   const [eventTitle, setEventTitle] = useState('');
@@ -544,6 +559,7 @@ export default function CreateMatch() {
   const [showSportMenu, setShowSportMenu] = useState(false);
   const [maxCapacity, setMaxCapacity] = useState('10');
   const [minPlayers, setMinPlayers] = useState('6');
+  const [isPublic, setIsPublic] = useState(true);
   const [description, setDescription] = useState('');
   const [rulesModalVisible, setRulesModalVisible] = useState(false);
   const [rulesAccepted, setRulesAccepted] = useState(false);
@@ -661,6 +677,7 @@ export default function CreateMatch() {
         sport: selectedSport,
         maxPlayers: maxP,
         minPlayers: minP,
+        isPublic,
         players: directPlayers.length > 0
           ? directPlayers.map((p) => p.firebaseUid)
           : undefined,
@@ -703,11 +720,19 @@ export default function CreateMatch() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* Gradient header */}
-      <LinearGradient colors={[currentSport.color, currentSport.color + 'CC']} style={styles.headerGrad}>
+    <View style={styles.safeArea}>
+      <ScreenGlow />
+      {/* Gradient header — paddingTop applied from insets.top directly (rather than
+          relying on SafeAreaView's automatic top edge) so the back button never sits
+          under the status bar, matching the fix used for the venue-search modal below,
+          which needs this explicitly since RN's Modal renders in its own native window
+          that doesn't reliably inherit SafeAreaView's edge insetting on Android. */}
+      <LinearGradient
+        colors={[currentSport.color, currentSport.color + 'CC']}
+        style={[styles.headerGrad, { paddingTop: insets.top + 12 }]}
+      >
         <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
-          <ArrowLeft color={Colors.white} size={22} strokeWidth={2.5} />
+          <ArrowLeft color={colors.white} size={22} strokeWidth={2.5} />
         </Pressable>
         <View style={{ flex: 1, alignItems: 'center' }}>
           <Text style={styles.headerTitle}>Create Match</Text>
@@ -749,7 +774,7 @@ export default function CreateMatch() {
           <TextInput
             style={styles.input}
             placeholder={`e.g. ${currentSport.label} Night — ${new Date().toLocaleDateString(undefined, { weekday: 'long' })}`}
-            placeholderTextColor={Colors.neutral400}
+            placeholderTextColor={colors.neutral400}
             value={eventTitle}
             onChangeText={setEventTitle}
           />
@@ -759,13 +784,13 @@ export default function CreateMatch() {
         <View style={styles.section}>
           <Text style={styles.label}>Venue / Arena</Text>
           <Pressable style={styles.selectRow} onPress={() => setVenueSearchVisible(true)}>
-            <LinearGradient colors={[Colors.primaryLight, Colors.primary + '20']} style={styles.selectIconWrap}>
-              <MapPin color={Colors.primary} size={18} strokeWidth={2} />
+            <LinearGradient colors={[colors.primaryLight, colors.primary + '20']} style={styles.selectIconWrap}>
+              <MapPin color={colors.primary} size={18} strokeWidth={2} />
             </LinearGradient>
             <Text style={[styles.selectRowText, selectedVenue && styles.selectRowTextFilled]}>
               {selectedVenue ? selectedVenue.name : 'Search and pick a venue...'}
             </Text>
-            <ChevronRight color={Colors.neutral400} size={16} strokeWidth={2} />
+            <ChevronRight color={colors.neutral400} size={16} strokeWidth={2} />
           </Pressable>
           {selectedVenue?.location && (
             <Text style={styles.venueSubtext}>{selectedVenue.location}</Text>
@@ -777,13 +802,13 @@ export default function CreateMatch() {
           <View style={styles.section}>
             <Text style={styles.label}>Date</Text>
             <Pressable style={styles.selectRow} onPress={() => setCalendarVisible(true)}>
-              <LinearGradient colors={[Colors.primaryLight, Colors.primary + '20']} style={styles.selectIconWrap}>
-                <Calendar color={Colors.primary} size={18} strokeWidth={2} />
+              <LinearGradient colors={[colors.primaryLight, colors.primary + '20']} style={styles.selectIconWrap}>
+                <Calendar color={colors.primary} size={18} strokeWidth={2} />
               </LinearGradient>
               <Text style={[styles.selectRowText, selectedDate && styles.selectRowTextFilled]}>
                 {formatDisplayDate(selectedDate)}
               </Text>
-              <ChevronRight color={Colors.neutral400} size={16} strokeWidth={2} />
+              <ChevronRight color={colors.neutral400} size={16} strokeWidth={2} />
             </Pressable>
           </View>
         )}
@@ -794,7 +819,7 @@ export default function CreateMatch() {
             <Text style={styles.label}>Available Time Slots</Text>
             {loadingSlots ? (
               <View style={styles.slotsLoading}>
-                <ActivityIndicator color={Colors.primary} />
+                <ActivityIndicator color={colors.primary} />
                 <Text style={styles.emptyText}>Loading slots...</Text>
               </View>
             ) : slots.length > 0 ? (
@@ -814,13 +839,13 @@ export default function CreateMatch() {
                       disabled={!isAvailable}
                     >
                       <Clock
-                        color={isAvailable ? (isSelected ? Colors.white : Colors.primary) : Colors.neutral400}
+                        color={isAvailable ? (isSelected ? colors.white : colors.primary) : colors.neutral400}
                         size={14} strokeWidth={2}
                       />
                       <Text style={[styles.slotText, !isAvailable && styles.slotTextDisabled, isSelected && styles.slotTextSelected]}>
                         {slot.time}
                       </Text>
-                      {isSelected && <CheckCircle2 color={Colors.white} size={12} fill={Colors.white} />}
+                      {isSelected && <CheckCircle2 color={colors.white} size={12} fill={colors.white} />}
                     </Pressable>
                   );
                 })}
@@ -862,7 +887,7 @@ export default function CreateMatch() {
                 <TextInput
                   style={[styles.input, { flex: 1, marginLeft: 8, borderWidth: 0 }]}
                   placeholder="0.00"
-                  placeholderTextColor={Colors.neutral400}
+                  placeholderTextColor={colors.neutral400}
                   keyboardType="decimal-pad"
                   value={pricePerSlot}
                   onChangeText={setPricePerSlot}
@@ -873,18 +898,41 @@ export default function CreateMatch() {
               </Text>
             </View>
 
+            {/* Visibility — public discovery vs. invitees-only */}
+            <View style={styles.section}>
+              <Text style={styles.label}>Who can see this match?</Text>
+              <View style={styles.visibilityRow}>
+                <Pressable
+                  style={[styles.visibilityOption, isPublic && { borderColor: currentSport.color, backgroundColor: currentSport.color + '12' }]}
+                  onPress={() => setIsPublic(true)}
+                >
+                  <Globe color={isPublic ? currentSport.color : colors.neutral400} size={18} strokeWidth={2} />
+                  <Text style={[styles.visibilityOptionTitle, isPublic && { color: currentSport.color }]}>Public</Text>
+                  <Text style={styles.visibilityOptionSub}>Anyone can find and join in search</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.visibilityOption, !isPublic && { borderColor: currentSport.color, backgroundColor: currentSport.color + '12' }]}
+                  onPress={() => setIsPublic(false)}
+                >
+                  <Lock color={!isPublic ? currentSport.color : colors.neutral400} size={18} strokeWidth={2} />
+                  <Text style={[styles.visibilityOptionTitle, !isPublic && { color: currentSport.color }]}>Invitees Only</Text>
+                  <Text style={styles.visibilityOptionSub}>Only people you invite can join</Text>
+                </Pressable>
+              </View>
+            </View>
+
             {/* Max & Min Players side by side */}
             <View style={styles.row}>
               <View style={[styles.section, { flex: 1, marginRight: 8 }]}>
                 <View style={styles.labelRow}>
-                  <Users color={Colors.primary} size={14} strokeWidth={2} />
+                  <Users color={colors.primary} size={14} strokeWidth={2} />
                   <Text style={styles.label}>Max Players</Text>
                 </View>
                 <View style={styles.inputWithIcon}>
                   <TextInput
                     style={[styles.input, { flex: 1, borderWidth: 0 }]}
                     placeholder="10"
-                    placeholderTextColor={Colors.neutral400}
+                    placeholderTextColor={colors.neutral400}
                     keyboardType="number-pad"
                     value={maxCapacity}
                     onChangeText={setMaxCapacity}
@@ -904,7 +952,7 @@ export default function CreateMatch() {
                   <TextInput
                     style={[styles.input, { flex: 1, borderWidth: 0 }]}
                     placeholder="6"
-                    placeholderTextColor={Colors.neutral400}
+                    placeholderTextColor={colors.neutral400}
                     keyboardType="number-pad"
                     value={minPlayers}
                     onChangeText={setMinPlayers}
@@ -920,7 +968,7 @@ export default function CreateMatch() {
             {totalCost > 0 && maxP > 0 && (
               <View style={styles.priceBreakdownCard}>
                 <View style={styles.priceBreakdownHeader}>
-                  <Info color={Colors.primary} size={15} strokeWidth={2} />
+                  <Info color={colors.primary} size={15} strokeWidth={2} />
                   <Text style={styles.priceBreakdownTitle}>Price Breakdown & Guarantee</Text>
                 </View>
 
@@ -930,7 +978,7 @@ export default function CreateMatch() {
                 </View>
                 <View style={styles.priceBreakdownRow}>
                   <Text style={styles.pbLabel}>Per player (if {maxP} join)</Text>
-                  <Text style={[styles.pbValue, { color: Colors.primary, fontWeight: '800' }]}>
+                  <Text style={[styles.pbValue, { color: colors.primary, fontWeight: '800' }]}>
                     LKR {perPlayer.toFixed(2)} / player
                   </Text>
                 </View>
@@ -957,7 +1005,7 @@ export default function CreateMatch() {
                 </View>
                 {minPlayersValid && (
                   <View style={[styles.pbInfoRow, { marginTop: 6 }]}>
-                    <ShieldCheck color={Colors.success} size={13} strokeWidth={2} />
+                    <ShieldCheck color={colors.success} size={13} strokeWidth={2} />
                     <Text style={styles.pbInfoText}>
                       {'Cancel for a full refund before 48 h of the match — if fewer than '}
                       {minP}
@@ -973,7 +1021,7 @@ export default function CreateMatch() {
               <View style={styles.playerHeader}>
                 <Text style={styles.label}>Invite Players</Text>
                 <Pressable style={styles.addPlayerChip} onPress={() => setShowInviteSheet(true)}>
-                  <UserPlus color={Colors.primary} size={14} strokeWidth={2.5} />
+                  <UserPlus color={colors.primary} size={14} strokeWidth={2.5} />
                   <Text style={styles.addPlayerChipText}>Search</Text>
                 </Pressable>
               </View>
@@ -983,15 +1031,15 @@ export default function CreateMatch() {
                     <View key={p.firebaseUid} style={styles.playerChip}>
                       <Text style={styles.playerChipText}>{p.displayName.split(' ')[0]}</Text>
                       <Pressable onPress={() => setDirectPlayers((prev) => prev.filter((dp) => dp.firebaseUid !== p.firebaseUid))} hitSlop={6}>
-                        <X color={Colors.primary} size={12} strokeWidth={3} />
+                        <X color={colors.primary} size={12} strokeWidth={3} />
                       </Pressable>
                     </View>
                   ))}
                   {requestedPlayers.map((p) => (
-                    <View key={p.firebaseUid} style={[styles.playerChip, { borderColor: Colors.primary + '60', backgroundColor: Colors.primary + '18' }]}>
+                    <View key={p.firebaseUid} style={[styles.playerChip, { borderColor: colors.primary + '60', backgroundColor: colors.primary + '18' }]}>
                       <Text style={styles.playerChipText}>{p.displayName.split(' ')[0]} ✉</Text>
                       <Pressable onPress={() => setRequestedPlayers((prev) => prev.filter((rp) => rp.firebaseUid !== p.firebaseUid))} hitSlop={6}>
-                        <X color={Colors.primary} size={12} strokeWidth={3} />
+                        <X color={colors.primary} size={12} strokeWidth={3} />
                       </Pressable>
                     </View>
                   ))}
@@ -1007,22 +1055,22 @@ export default function CreateMatch() {
               <TextInput
                 style={[styles.input, styles.descriptionInput]}
                 placeholder="Meeting point, what to bring, special rules..."
-                placeholderTextColor={Colors.neutral400}
+                placeholderTextColor={colors.neutral400}
                 multiline
                 numberOfLines={3}
                 value={description}
                 onChangeText={setDescription}
               />
               <Pressable onPress={() => setRulesModalVisible(true)} style={styles.rulesLink}>
-                <FileText color={Colors.primary} size={16} strokeWidth={2} />
+                <FileText color={colors.primary} size={16} strokeWidth={2} />
                 <Text style={styles.rulesLinkText}>View Rules & Guidelines</Text>
               </Pressable>
             </View>
 
             {/* Rules acceptance */}
             <Pressable style={styles.rulesAcceptance} onPress={() => setRulesAccepted(!rulesAccepted)}>
-              <View style={[styles.checkbox, rulesAccepted && { backgroundColor: Colors.primary, borderColor: Colors.primary }]}>
-                {rulesAccepted && <Check color={Colors.white} size={13} strokeWidth={3} />}
+              <View style={[styles.checkbox, rulesAccepted && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
+                {rulesAccepted && <Check color={colors.white} size={13} strokeWidth={3} />}
               </View>
               <Text style={styles.rulesText}>
                 I accept Paasxo's Terms of Service and Community Guidelines
@@ -1036,10 +1084,10 @@ export default function CreateMatch() {
               disabled={!rulesAccepted || submitting}
             >
               {submitting ? (
-                <ActivityIndicator color={Colors.white} />
+                <ActivityIndicator color={colors.white} />
               ) : (
                 <>
-                  <Trophy color={Colors.white} size={20} strokeWidth={2.5} />
+                  <Trophy color={colors.white} size={20} strokeWidth={2.5} />
                   <Text style={styles.createButtonText}>Continue to Checkout</Text>
                 </>
               )}
@@ -1049,11 +1097,21 @@ export default function CreateMatch() {
       </ScrollView>
 
       {/* ── Venue Search Modal ──────────────────────────────────────────────── */}
-      <Modal visible={venueSearchVisible} transparent animationType="slide">
-        <SafeAreaView style={styles.modal} edges={['top', 'bottom']}>
-          <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.modalHeader}>
+      {/* statusBarTranslucent is required on Android: without it, RN's Modal
+          presents in its own native window that doesn't extend under the status
+          bar, so anything rendered at the top of the modal (this header, the back
+          button) ends up drawn underneath it instead of below it. paddingTop is
+          also applied directly from insets.top rather than left to the nested
+          SafeAreaView's own top edge, since that edge inset isn't always reliably
+          picked up for content presented inside a Modal. */}
+      <Modal visible={venueSearchVisible} transparent animationType="slide" statusBarTranslucent>
+        <SafeAreaView style={styles.modal} edges={['bottom']}>
+          <LinearGradient
+            colors={[colors.primary, colors.primaryDark]}
+            style={[styles.modalHeader, { paddingTop: insets.top + 14 }]}
+          >
             <Pressable onPress={() => setVenueSearchVisible(false)} style={styles.modalBackBtn} hitSlop={10}>
-              <ArrowLeft color={Colors.white} size={22} strokeWidth={2.5} />
+              <ArrowLeft color={colors.white} size={22} strokeWidth={2.5} />
             </Pressable>
             <View style={styles.modalHeaderText}>
               <Text style={styles.modalTitle}>Select Venue</Text>
@@ -1063,18 +1121,18 @@ export default function CreateMatch() {
 
           <View style={styles.searchBarWrap}>
             <View style={styles.searchBar}>
-              <Search color={Colors.neutral400} size={18} strokeWidth={2} />
+              <Search color={colors.neutral400} size={18} strokeWidth={2} />
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search by name or location..."
-                placeholderTextColor={Colors.neutral400}
+                placeholderTextColor={colors.neutral400}
                 value={venueSearch}
                 onChangeText={setVenueSearch}
                 autoFocus
               />
               {venueSearch.length > 0 && (
                 <Pressable onPress={() => setVenueSearch('')} hitSlop={8}>
-                  <X color={Colors.neutral400} size={16} strokeWidth={2} />
+                  <X color={colors.neutral400} size={16} strokeWidth={2} />
                 </Pressable>
               )}
             </View>
@@ -1082,12 +1140,12 @@ export default function CreateMatch() {
 
           {loadingVenues ? (
             <View style={styles.modalLoading}>
-              <ActivityIndicator color={Colors.primary} size="large" />
+              <ActivityIndicator color={colors.primary} size="large" />
               <Text style={styles.modalLoadingText}>Finding venues...</Text>
             </View>
           ) : venueError ? (
             <View style={styles.modalEmpty}>
-              <AlertCircle color={Colors.neutral300} size={48} strokeWidth={1} />
+              <AlertCircle color={colors.neutral300} size={48} strokeWidth={1} />
               <Text style={styles.modalEmptyText}>Couldn't load venues</Text>
               <Text style={styles.modalEmptySubtext}>{venueError}</Text>
               <Pressable onPress={fetchVenueOptions} style={styles.modalRetryBtn}>
@@ -1096,7 +1154,7 @@ export default function CreateMatch() {
             </View>
           ) : filteredVenues.length === 0 ? (
             <View style={styles.modalEmpty}>
-              <MapPin color={Colors.neutral300} size={48} strokeWidth={1} />
+              <MapPin color={colors.neutral300} size={48} strokeWidth={1} />
               <Text style={styles.modalEmptyText}>No venues found</Text>
               <Text style={styles.modalEmptySubtext}>
                 {venueOptions.length === 0 ? 'No venues have been added yet' : 'Try a different search term'}
@@ -1149,9 +1207,9 @@ export default function CreateMatch() {
         <View style={styles.rulesOverlay}>
           <View style={styles.rulesContent}>
             <Pressable onPress={() => setRulesModalVisible(false)} style={styles.rulesClose}>
-              <X color={Colors.text} size={18} strokeWidth={2.5} />
+              <X color={colors.text} size={18} strokeWidth={2.5} />
             </Pressable>
-            <FileText color={Colors.primary} size={36} strokeWidth={1.5} />
+            <FileText color={colors.primary} size={36} strokeWidth={1.5} />
             <Text style={styles.rulesTitle}>Rules & Guidelines</Text>
             <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }}>
               <Text style={styles.rulesBody}>
@@ -1182,13 +1240,13 @@ export default function CreateMatch() {
         onSelect={setSelectedSport}
         onClose={() => setShowSportMenu(false)}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
 // ─── Calendar Styles ──────────────────────────────────────────────────────────
 
-const calStyles = StyleSheet.create({
+const createCalStyles = (colors: ThemeColors) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -1197,7 +1255,7 @@ const calStyles = StyleSheet.create({
     padding: 16,
   },
   card: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 24,
     padding: 20,
     width: '100%',
@@ -1216,8 +1274,8 @@ const calStyles = StyleSheet.create({
     marginBottom: 6,
   },
   yearBtn: { padding: 6 },
-  yearArrow: { fontSize: 22, fontWeight: '700', color: Colors.neutral600 },
-  yearText: { fontSize: 16, fontWeight: '800', color: Colors.text, minWidth: 60, textAlign: 'center' },
+  yearArrow: { fontSize: 22, fontWeight: '700', color: colors.neutral600 },
+  yearText: { fontSize: 16, fontWeight: '800', color: colors.text, minWidth: 60, textAlign: 'center' },
   monthRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1226,7 +1284,7 @@ const calStyles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   monthBtn: { padding: 6 },
-  monthText: { fontSize: 20, fontWeight: '800', color: Colors.text },
+  monthText: { fontSize: 20, fontWeight: '800', color: colors.text },
   dayHeaderRow: {
     flexDirection: 'row',
     marginBottom: 8,
@@ -1236,7 +1294,7 @@ const calStyles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 11,
     fontWeight: '700',
-    color: Colors.neutral500,
+    color: colors.neutral500,
     letterSpacing: 0.3,
   },
   daysGrid: {
@@ -1251,30 +1309,30 @@ const calStyles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 100,
   },
-  dayCellSelected: { backgroundColor: Colors.primary },
-  dayCellToday: { backgroundColor: Colors.primaryLight },
-  dayText: { fontSize: 14, fontWeight: '600', color: Colors.text },
-  dayTextSelected: { color: Colors.white, fontWeight: '800' },
-  dayTextToday: { color: Colors.primary, fontWeight: '800' },
+  dayCellSelected: { backgroundColor: colors.primary },
+  dayCellToday: { backgroundColor: colors.primaryLight },
+  dayText: { fontSize: 14, fontWeight: '600', color: colors.text },
+  dayTextSelected: { color: colors.white, fontWeight: '800' },
+  dayTextToday: { color: colors.primary, fontWeight: '800' },
   closeBtn: {
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
   },
-  closeBtnText: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  closeBtnText: { fontSize: 14, fontWeight: '700', color: colors.text },
 });
 
 // ─── Venue Item Styles ────────────────────────────────────────────────────────
 
-const venueStyles = StyleSheet.create({
+const createVenueStyles = (colors: ThemeColors) => StyleSheet.create({
   item: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.neutral100,
+    borderBottomColor: colors.neutral100,
     gap: 12,
   },
   iconWrap: {
@@ -1285,19 +1343,19 @@ const venueStyles = StyleSheet.create({
     justifyContent: 'center',
   },
   info: { flex: 1 },
-  name: { fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 2 },
-  location: { fontSize: 12, color: Colors.textSecondary },
+  name: { fontSize: 14, fontWeight: '700', color: colors.text, marginBottom: 2 },
+  location: { fontSize: 12, color: colors.textSecondary },
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 },
-  ratingText: { fontSize: 11, fontWeight: '600', color: Colors.textSecondary },
+  ratingText: { fontSize: 11, fontWeight: '600', color: colors.textSecondary },
   priceBadge: {
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 6,
     alignItems: 'center',
   },
-  priceText: { fontSize: 13, fontWeight: '800', color: Colors.primaryDark },
-  perSlot: { fontSize: 9, color: Colors.primary, fontWeight: '600' },
+  priceText: { fontSize: 13, fontWeight: '800', color: colors.primaryDark },
+  perSlot: { fontSize: 9, color: colors.primary, fontWeight: '600' },
 });
 
 // ─── Player Item Styles ───────────────────────────────────────────────────────
@@ -1305,8 +1363,8 @@ const venueStyles = StyleSheet.create({
 
 // ─── Main Styles ──────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.background },
   scrollContent: { paddingHorizontal: 16, paddingVertical: 16, paddingBottom: 40 },
 
   headerGrad: {
@@ -1316,12 +1374,12 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: Colors.white },
-  headerSub: { fontSize: 11, color: Colors.white + 'CC', marginTop: 2 },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: colors.white },
+  headerSub: { fontSize: 11, color: colors.white + 'CC', marginTop: 2 },
 
   section: { marginBottom: 22 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 12 },
-  label: { fontSize: 13, fontWeight: '700', color: Colors.text, marginBottom: 8 },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.text, marginBottom: 12 },
+  label: { fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 8 },
 
   sportGrid: { flexDirection: 'row', flexWrap: 'wrap' },
 
@@ -1330,7 +1388,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 18,
     borderWidth: 2,
     padding: 12,
@@ -1350,7 +1408,7 @@ const styles = StyleSheet.create({
   sportTriggerHint: {
     fontSize: 9,
     fontWeight: '700',
-    color: Colors.textMuted,
+    color: colors.textMuted,
     letterSpacing: 0.8,
     marginBottom: 2,
   },
@@ -1367,133 +1425,133 @@ const styles = StyleSheet.create({
   },
   sportTriggerGuide: {
     fontSize: 11,
-    color: Colors.textMuted,
+    color: colors.textMuted,
     marginTop: 8,
     textAlign: 'center',
   },
 
   input: {
-    backgroundColor: Colors.white, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13,
-    fontSize: 14, color: Colors.text, borderWidth: 1, borderColor: Colors.neutral200,
+    backgroundColor: colors.inputBg, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13,
+    fontSize: 14, color: colors.text, borderWidth: 1, borderColor: colors.neutral200,
   },
   selectRow: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.white,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.inputBg,
     borderRadius: 14, paddingHorizontal: 12, paddingVertical: 12,
-    borderWidth: 1, borderColor: Colors.neutral200, gap: 10,
+    borderWidth: 1, borderColor: colors.neutral200, gap: 10,
   },
   selectIconWrap: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  selectRowText: { flex: 1, fontSize: 14, color: Colors.neutral400 },
-  selectRowTextFilled: { color: Colors.text, fontWeight: '600' },
-  venueSubtext: { fontSize: 11, color: Colors.textSecondary, marginTop: 6, paddingHorizontal: 4 },
+  selectRowText: { flex: 1, fontSize: 14, color: colors.neutral400 },
+  selectRowTextFilled: { color: colors.text, fontWeight: '600' },
+  venueSubtext: { fontSize: 11, color: colors.textSecondary, marginTop: 6, paddingHorizontal: 4 },
 
   slotsLoading: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
   slotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   slotButton: {
     flex: 1, minWidth: '30%', paddingVertical: 12, paddingHorizontal: 8,
-    backgroundColor: Colors.white, borderRadius: 12, borderWidth: 1.5, borderColor: Colors.primary,
+    backgroundColor: colors.cardBg, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary,
     alignItems: 'center', gap: 4,
   },
-  slotButtonDisabled: { backgroundColor: Colors.neutral100, borderColor: Colors.neutral300, opacity: 0.5 },
-  slotButtonSelected: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  slotText: { fontSize: 11, fontWeight: '600', color: Colors.primary },
-  slotTextDisabled: { color: Colors.neutral400 },
-  slotTextSelected: { color: Colors.white },
-  emptyText: { fontSize: 13, color: Colors.neutral400, paddingVertical: 8 },
+  slotButtonDisabled: { backgroundColor: colors.neutral100, borderColor: colors.neutral300, opacity: 0.5 },
+  slotButtonSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
+  slotText: { fontSize: 11, fontWeight: '600', color: colors.primary },
+  slotTextDisabled: { color: colors.neutral400 },
+  slotTextSelected: { color: colors.white },
+  emptyText: { fontSize: 13, color: colors.neutral400, paddingVertical: 8 },
 
   row: { flexDirection: 'row' },
   inputWithIcon: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.white,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.inputBg,
     borderRadius: 12, paddingHorizontal: 12, paddingVertical: 4,
-    borderWidth: 1, borderColor: Colors.neutral200,
+    borderWidth: 1, borderColor: colors.neutral200,
   },
-  currencySymbol: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  currencySymbol: { fontSize: 14, fontWeight: '700', color: colors.text },
 
   playerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   addPlayerChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.primaryLight,
+    flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.primaryLight,
     paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
   },
-  addPlayerChipText: { fontSize: 12, fontWeight: '700', color: Colors.primary },
+  addPlayerChipText: { fontSize: 12, fontWeight: '700', color: colors.primary },
   selectedPlayersRow: { marginBottom: 8 },
   playerChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primaryLight,
+    flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.primaryLight,
     paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, marginRight: 8,
   },
-  playerChipText: { fontSize: 13, fontWeight: '600', color: Colors.primary },
+  playerChipText: { fontSize: 13, fontWeight: '600', color: colors.primary },
 
   descriptionInput: { textAlignVertical: 'top', height: 88 },
   rulesLink: { flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 8 },
-  rulesLinkText: { fontSize: 13, fontWeight: '600', color: Colors.primary, textDecorationLine: 'underline' },
+  rulesLinkText: { fontSize: 13, fontWeight: '600', color: colors.primary, textDecorationLine: 'underline' },
 
   rulesAcceptance: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.white,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.cardBg,
     borderRadius: 14, padding: 14, marginBottom: 18, gap: 12,
-    borderWidth: 1, borderColor: Colors.neutral200,
+    borderWidth: 1, borderColor: colors.neutral200,
   },
   checkbox: {
-    width: 24, height: 24, borderRadius: 7, borderWidth: 2, borderColor: Colors.primary,
+    width: 24, height: 24, borderRadius: 7, borderWidth: 2, borderColor: colors.primary,
     alignItems: 'center', justifyContent: 'center',
   },
-  rulesText: { flex: 1, fontSize: 12, fontWeight: '500', color: Colors.text },
+  rulesText: { flex: 1, fontSize: 12, fontWeight: '500', color: colors.text },
 
   createButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     borderRadius: 16, paddingVertical: 16, gap: 10, marginBottom: 20,
   },
   createButtonDisabled: { opacity: 0.5 },
-  createButtonText: { fontSize: 16, fontWeight: '800', color: Colors.white },
+  createButtonText: { fontSize: 16, fontWeight: '800', color: colors.white },
 
   // Modal shared
-  modal: { flex: 1, backgroundColor: Colors.background },
+  modal: { flex: 1, backgroundColor: colors.background },
   modalHeader: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 18, gap: 14,
   },
   modalBackBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   modalHeaderText: { flex: 1 },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: Colors.white },
-  modalSubtitle: { fontSize: 12, color: Colors.white + 'CC', marginTop: 2 },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: colors.white },
+  modalSubtitle: { fontSize: 12, color: colors.white + 'CC', marginTop: 2 },
   searchBarWrap: { paddingHorizontal: 16, paddingVertical: 12 },
   searchBar: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.white,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.inputBg,
     borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12,
-    borderWidth: 1, borderColor: Colors.neutral200, gap: 10,
+    borderWidth: 1, borderColor: colors.neutral200, gap: 10,
   },
-  searchInput: { flex: 1, fontSize: 14, color: Colors.text },
+  searchInput: { flex: 1, fontSize: 14, color: colors.text },
   modalLoading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  modalLoadingText: { fontSize: 14, color: Colors.textSecondary },
+  modalLoadingText: { fontSize: 14, color: colors.textSecondary },
   modalEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 32 },
-  modalEmptyText: { fontSize: 16, fontWeight: '700', color: Colors.text },
-  modalEmptySubtext: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center' },
+  modalEmptyText: { fontSize: 16, fontWeight: '700', color: colors.text },
+  modalEmptySubtext: { fontSize: 13, color: colors.textSecondary, textAlign: 'center' },
   modalRetryBtn: {
     marginTop: 8, paddingHorizontal: 20, paddingVertical: 10,
-    borderRadius: 12, backgroundColor: Colors.primary,
+    borderRadius: 12, backgroundColor: colors.primary,
   },
-  modalRetryText: { fontSize: 14, fontWeight: '700', color: Colors.white },
+  modalRetryText: { fontSize: 14, fontWeight: '700', color: colors.white },
 
-  selectedBarWrap: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.neutral100 },
+  selectedBarWrap: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.neutral100 },
   selectedBar: { paddingHorizontal: 16, gap: 8 },
   selectedTag: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: Colors.primary, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+    backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
   },
-  selectedTagText: { fontSize: 12, fontWeight: '700', color: Colors.white },
+  selectedTagText: { fontSize: 12, fontWeight: '700', color: colors.white },
 
   rulesOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
   rulesContent: {
-    backgroundColor: Colors.white, borderRadius: 20, padding: 20,
+    backgroundColor: colors.cardBg, borderRadius: 20, padding: 20,
     width: '90%', maxHeight: '80%', alignItems: 'center',
   },
   rulesClose: {
     position: 'absolute', top: 14, right: 14, width: 32, height: 32,
-    borderRadius: 16, backgroundColor: Colors.neutral100,
+    borderRadius: 16, backgroundColor: colors.neutral100,
     alignItems: 'center', justifyContent: 'center', zIndex: 10,
   },
-  rulesTitle: { fontSize: 18, fontWeight: '800', color: Colors.text, marginTop: 14, marginBottom: 14 },
-  rulesBody: { fontSize: 13, color: Colors.neutral600, lineHeight: 21, marginBottom: 16 },
+  rulesTitle: { fontSize: 18, fontWeight: '800', color: colors.text, marginTop: 14, marginBottom: 14 },
+  rulesBody: { fontSize: 13, color: colors.neutral600, lineHeight: 21, marginBottom: 16 },
   rulesAcceptButton: {
     borderRadius: 12, paddingVertical: 13, paddingHorizontal: 24, width: '100%', alignItems: 'center',
   },
-  rulesAcceptButtonText: { fontSize: 14, fontWeight: '700', color: Colors.white },
+  rulesAcceptButtonText: { fontSize: 14, fontWeight: '700', color: colors.white },
   sessionSummary: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1501,17 +1559,17 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingVertical: 8,
     paddingHorizontal: 12,
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     borderRadius: 10,
   },
   sessionSummaryText: { fontSize: 13, fontWeight: '700' },
-  sessionSummarySlots: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' },
-  totalPriceLabel: { fontSize: 11, color: Colors.primary, fontWeight: '700', marginTop: 4 },
+  sessionSummarySlots: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
+  totalPriceLabel: { fontSize: 11, color: colors.primary, fontWeight: '700', marginTop: 4 },
 
   // ── Field guide text (below each input)
   fieldGuide: {
     fontSize: 11,
-    color: Colors.textMuted,
+    color: colors.textMuted,
     marginTop: 6,
     lineHeight: 16,
   },
@@ -1522,15 +1580,43 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 
+  // ── Visibility toggle
+  visibilityRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  visibilityOption: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: colors.neutral200,
+    backgroundColor: colors.cardBg,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    gap: 4,
+  },
+  visibilityOptionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  visibilityOptionSub: {
+    fontSize: 10,
+    color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 13,
+  },
+
   // ── Price breakdown card
   priceBreakdownCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 18,
     padding: 16,
     marginHorizontal: 16,
     marginBottom: 4,
     borderLeftWidth: 3,
-    borderLeftColor: Colors.primary,
+    borderLeftColor: colors.primary,
     shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 8,
@@ -1546,7 +1632,7 @@ const styles = StyleSheet.create({
   priceBreakdownTitle: {
     fontSize: 13,
     fontWeight: '800',
-    color: Colors.text,
+    color: colors.text,
   },
   priceBreakdownRow: {
     flexDirection: 'row',
@@ -1554,23 +1640,23 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     paddingVertical: 6,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.neutral100,
+    borderBottomColor: colors.neutral100,
   },
   pbLabel: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     flex: 1,
     lineHeight: 18,
   },
   pbValue: {
     fontSize: 13,
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
     marginLeft: 12,
   },
   priceBreakdownDivider: {
     height: 1,
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
     marginVertical: 10,
   },
   pbInfoRow: {
@@ -1580,7 +1666,7 @@ const styles = StyleSheet.create({
   },
   pbInfoText: {
     fontSize: 11,
-    color: Colors.textMuted,
+    color: colors.textMuted,
     flex: 1,
     lineHeight: 16,
   },

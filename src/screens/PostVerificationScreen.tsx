@@ -12,8 +12,10 @@ import {
 } from 'react-native';
 import { X, ArrowRight, CircleCheck as CheckCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
+import ScreenGlow from '../components/ScreenGlow';
 
 const SPORT_CHARS = [
   { emoji: '⚽', left: '8%',  delay: 0,    duration: 2600 },
@@ -24,7 +26,7 @@ const SPORT_CHARS = [
   { emoji: '🏆', left: '84%', delay: 600,  duration: 2700 },
 ];
 
-function FloatingChar({ emoji, left, delay, duration }: { emoji: string; left: string; delay: number; duration: number }) {
+function FloatingChar({ emoji, left, delay, duration, styles }: { emoji: string; left: string; delay: number; duration: number; styles: ReturnType<typeof createStyles> }) {
   const translateY = useRef(new Animated.Value(0)).current;
   const opacity    = useRef(new Animated.Value(0)).current;
 
@@ -60,6 +62,8 @@ function FloatingChar({ emoji, left, delay, duration }: { emoji: string; left: s
 }
 
 export default function PostVerificationScreen() {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
 
   const logoScale   = useRef(new Animated.Value(1)).current;
@@ -72,6 +76,7 @@ export default function PostVerificationScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <ScreenGlow />
       {/* Header */}
       <View style={styles.header}>
         <View style={{ width: 44 }} />
@@ -80,14 +85,14 @@ export default function PostVerificationScreen() {
           activeOpacity={0.7}
           style={styles.closeBtn}
         >
-          <X color={Colors.primary} size={28} strokeWidth={2.5} />
+          <X color={colors.primary} size={28} strokeWidth={2.5} />
         </TouchableOpacity>
       </View>
 
       {/* Floating sport emojis behind logo */}
       <View style={styles.floatStage} pointerEvents="none">
         {SPORT_CHARS.map((c) => (
-          <FloatingChar key={c.emoji} {...c} />
+          <FloatingChar key={c.emoji} {...c} styles={styles} />
         ))}
       </View>
 
@@ -111,7 +116,7 @@ export default function PostVerificationScreen() {
       {/* Text + CTA */}
       <Animated.View style={[styles.content, { opacity: textOpacity }]}>
         <View style={styles.verifiedRow}>
-          <CheckCircle color={Colors.success} size={20} strokeWidth={2} />
+          <CheckCircle color={colors.success} size={20} strokeWidth={2} />
           <Text style={styles.verifiedText}>Account Verified!</Text>
         </View>
 
@@ -126,17 +131,17 @@ export default function PostVerificationScreen() {
           title="Get Started"
           onPress={() => router.push('/home')}
           style={styles.ctaButton}
-          icon={<ArrowRight color={Colors.white} size={20} strokeWidth={2.5} />}
+          icon={<ArrowRight color={colors.white} size={20} strokeWidth={2.5} />}
         />
       </Animated.View>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -178,10 +183,10 @@ const styles = StyleSheet.create({
     width: 140,
     height: 140,
     borderRadius: 36,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: Colors.primary,
+    shadowColor: colors.primary,
     shadowOpacity: 0.28,
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 12 },
@@ -199,7 +204,7 @@ const styles = StyleSheet.create({
     height: 160,
     borderRadius: 44,
     borderWidth: 2,
-    borderColor: Colors.primary + '50',
+    borderColor: colors.primary + '50',
   },
 
   content: {
@@ -211,21 +216,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: Colors.success + '18',
+    backgroundColor: colors.success + '18',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,
     marginBottom: 20,
   },
   verifiedText: {
-    color: Colors.success,
+    color: colors.success,
     fontSize: 13,
     fontWeight: '700',
   },
   mainTitle: {
     fontSize: 38,
     fontWeight: '800',
-    color: Colors.text,
+    color: colors.text,
     textAlign: 'center',
     lineHeight: 46,
     letterSpacing: -0.8,
@@ -233,7 +238,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 32,

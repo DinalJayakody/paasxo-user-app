@@ -13,9 +13,11 @@ import {
   Modal,
   TouchableOpacity,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import MapView, { Marker } from 'react-native-maps';
 import {
   ArrowLeft,
@@ -39,11 +41,13 @@ import {
   ShieldCheck,
   AlertCircle,
   Navigation,
+  Check,
 } from 'lucide-react-native';
 import { PlayerSearchSheet } from '../components/PlayerSearchSheet';
-import { invitationApi } from '../api/invitationApi';
+import { invitationApi, InvitationResponse } from '../api/invitationApi';
 import { extractApiError } from '../utils/apiError';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
 import { bookingApi } from '../api/bookingApi';
 import { socialMediaApi } from '../api/socialMediaApi';
@@ -57,6 +61,8 @@ import { LiveScoreboard } from '../components/scoring/LiveScoreboard';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import HeaderIconButton from '../components/HeaderIconButton';
+import ScreenGlow from '../components/ScreenGlow';
 
 const SCOREABLE_SPORTS = new Set(['FUTSAL', 'CRICKET', 'PICKLEBALL', 'PADDLEBALL']);
 
@@ -146,6 +152,8 @@ const DEFAULT_VENUE_LAT = 6.9271;
 const DEFAULT_VENUE_LNG = 79.8612;
 
 function MapPreview({ match, height = 130 }: { match: MatchDetails; height?: number }) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const latitude = match.venue.latitude ?? DEFAULT_VENUE_LAT;
   const longitude = match.venue.longitude ?? DEFAULT_VENUE_LNG;
   return (
@@ -158,7 +166,7 @@ function MapPreview({ match, height = 130 }: { match: MatchDetails; height?: num
         <Marker coordinate={{ latitude, longitude }} />
       </MapView>
       <View style={styles.mapNavBadge}>
-        <Navigation color={Colors.white} size={13} strokeWidth={2.4} />
+        <Navigation color={colors.white} size={13} strokeWidth={2.4} />
         <Text style={styles.mapNavBadgeText}>Tap to navigate</Text>
       </View>
     </Pressable>
@@ -176,6 +184,8 @@ function PlayerAvatar({
   index?: number;
   overlap?: boolean;
 }) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   return (
     <View
       style={[
@@ -204,6 +214,8 @@ function AvatarRow({
   maxVisible?: number;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const visible = players.slice(0, maxVisible);
   const extra = players.length - visible.length;
 
@@ -219,7 +231,7 @@ function AvatarRow({
           <Text style={styles.avatarExtraText}>+{extra}</Text>
         </View>
       )}
-      <ChevronRight color={Colors.primary} size={16} strokeWidth={2.5} style={{ marginLeft: 8 }} />
+      <ChevronRight color={colors.primary} size={16} strokeWidth={2.5} style={{ marginLeft: 8 }} />
     </TouchableOpacity>
   );
 }
@@ -235,6 +247,8 @@ function ParticipantsModal({
   onClose: () => void;
   onPlayerPress: (p: PlayerProfile) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.modalOverlay} onPress={onClose}>
@@ -245,7 +259,7 @@ function ParticipantsModal({
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Participants ({players.length})</Text>
             <Pressable onPress={onClose} hitSlop={10}>
-              <X color={Colors.text} size={20} strokeWidth={2.5} />
+              <X color={colors.text} size={20} strokeWidth={2.5} />
             </Pressable>
           </View>
           <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
@@ -272,7 +286,7 @@ function ParticipantsModal({
                     <Text style={styles.modalPlayerName}>{player.name}</Text>
                     <Text style={styles.modalPlayerSub}>Tap to view profile</Text>
                   </View>
-                  <ChevronRight color={Colors.neutral400} size={18} strokeWidth={2} />
+                  <ChevronRight color={colors.neutral400} size={18} strokeWidth={2} />
                 </TouchableOpacity>
               ))
             )}
@@ -290,6 +304,8 @@ interface MatchDetailsScreenProps {
 }
 
 export default function MatchDetailsScreen({ matchId }: MatchDetailsScreenProps) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const { user } = useContext(AuthContext);
   const { active: isPro } = useSubscription();
@@ -399,6 +415,7 @@ export default function MatchDetailsScreen({ matchId }: MatchDetailsScreenProps)
   if (error || !match) {
     return (
       <SafeAreaView style={styles.loadingScreen}>
+        <ScreenGlow />
         <Text style={styles.errorText}>{error || 'Match not found.'}</Text>
         <Button title="Go back" onPress={() => router.back()} style={{ marginTop: 16 }} />
       </SafeAreaView>
@@ -474,6 +491,8 @@ function JoinerView({
   playerProfiles: PlayerProfile[];
   onViewPlayers: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const [showInviteSheet, setShowInviteSheet] = useState(false);
   const { score, displaySeconds } = useLiveMatchScore(matchId);
@@ -499,6 +518,7 @@ function JoinerView({
 
   return (
     <View style={styles.flex1}>
+      <ScreenGlow />
       <PaasxoRefreshLogo refreshing={refreshing} />
       <ScrollView
         style={styles.flex1}
@@ -512,12 +532,12 @@ function JoinerView({
             <View style={[styles.heroImage, styles.heroPlaceholder]} />
           )}
           <SafeAreaView style={styles.heroOverlay} edges={['top']}>
-            <Pressable style={styles.circleBtn} onPress={() => router.back()}>
-              <ArrowLeft color={Colors.white} size={20} strokeWidth={2.5} />
-            </Pressable>
-            <Pressable style={styles.circleBtn} onPress={() => shareMatch(match)}>
-              <Share2 color={Colors.white} size={18} strokeWidth={2.5} />
-            </Pressable>
+            <HeaderIconButton style={styles.circleBtn} onPress={() => router.back()}>
+              <ArrowLeft color={colors.white} size={20} strokeWidth={2.5} />
+            </HeaderIconButton>
+            <HeaderIconButton style={styles.circleBtn} onPress={() => shareMatch(match)}>
+              <Share2 color={colors.white} size={18} strokeWidth={2.5} />
+            </HeaderIconButton>
           </SafeAreaView>
         </View>
 
@@ -541,7 +561,7 @@ function JoinerView({
 
           <View style={styles.infoRow}>
             <View style={styles.infoIconWrap}>
-              <Calendar color={Colors.primary} size={18} strokeWidth={2} />
+              <Calendar color={colors.primary} size={18} strokeWidth={2} />
             </View>
             <View style={styles.flex1}>
               <Text style={styles.infoPrimary}>
@@ -564,7 +584,7 @@ function JoinerView({
             return (
               <View style={styles.infoRow}>
                 <View style={styles.infoIconWrap}>
-                  <Clock color={Colors.primary} size={18} strokeWidth={2} />
+                  <Clock color={colors.primary} size={18} strokeWidth={2} />
                 </View>
                 <View style={styles.flex1}>
                   <Text style={styles.infoPrimary}>
@@ -583,7 +603,7 @@ function JoinerView({
 
           <View style={styles.infoRow}>
             <View style={styles.infoIconWrap}>
-              <MapPin color={Colors.primary} size={18} strokeWidth={2} />
+              <MapPin color={colors.primary} size={18} strokeWidth={2} />
             </View>
             <View style={styles.flex1}>
               <Text style={styles.infoPrimary}>{match.venue.name}</Text>
@@ -608,7 +628,7 @@ function JoinerView({
                   <Text style={styles.organizerName}>{match.organizer.name}</Text>
                   {match.organizer.rating != null && (
                     <View style={styles.organizerRatingRow}>
-                      <Star color={Colors.warning} size={13} fill={Colors.warning} />
+                      <Star color={colors.warning} size={13} fill={colors.warning} />
                       <Text style={styles.organizerRatingText}>
                         {match.organizer.rating.toFixed(1)} ({match.organizer.matchesPlayed ?? 0} matches)
                       </Text>
@@ -616,7 +636,7 @@ function JoinerView({
                   )}
                 </View>
                 <Pressable style={styles.messageBtn}>
-                  <MessageCircle color={Colors.primary} size={14} strokeWidth={2.5} />
+                  <MessageCircle color={colors.primary} size={14} strokeWidth={2.5} />
                   <Text style={styles.messageBtnText}>Message</Text>
                 </Pressable>
               </View>
@@ -631,7 +651,7 @@ function JoinerView({
                 const Icon = AMENITY_ICONS[key] || Wifi;
                 return (
                   <View key={key} style={styles.amenityItem}>
-                    <Icon color={Colors.textSecondary} size={20} strokeWidth={1.8} />
+                    <Icon color={colors.textSecondary} size={20} strokeWidth={1.8} />
                     <Text style={styles.amenityLabel}>
                       {key.charAt(0).toUpperCase() + key.slice(1)}
                     </Text>
@@ -666,7 +686,7 @@ function JoinerView({
           {/* Joined players can invite others as long as the match isn't full or cancelled */}
           {hasJoined && !isFull && !isCancelled && (
             <Pressable style={styles.invitePlayersBtn} onPress={() => setShowInviteSheet(true)}>
-              <UserPlus color={Colors.primary} size={16} strokeWidth={2} />
+              <UserPlus color={colors.primary} size={16} strokeWidth={2} />
               <Text style={styles.invitePlayersTxt}>Invite Players</Text>
             </Pressable>
           )}
@@ -751,14 +771,75 @@ function OwnerView({
   onViewPlayers: () => void;
   isPro: boolean;
 }) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const [cancelling, setCancelling] = useState(false);
   const [showInviteSheet, setShowInviteSheet] = useState(false);
   const { score, displaySeconds } = useLiveMatchScore(matchId);
   const [refreshing, setRefreshing] = useState(false);
+
+  // ── Pending join requests (players who requested to join this match) ──────
+  // Reuses invitationApi.getReceived() (every invitation/request addressed to
+  // the organizer, across all their matches) filtered to this booking — no
+  // dedicated backend endpoint needed. Surfaces them inline so the organizer
+  // doesn't have to hunt through Notifications to manage their own match.
+  const [pendingRequests, setPendingRequests] = useState<(InvitationResponse & { name: string; imageUri: string | null })[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(true);
+  const [actioningId, setActioningId] = useState<string | null>(null);
+
+  const loadPendingRequests = useCallback(async () => {
+    try {
+      const received = await invitationApi.getReceived();
+      const forThisMatch = received.filter(
+        (inv) => String(inv.bookingId) === String(matchId) && inv.status === 'REQUEST_SENT' && !inv.directAdd
+      );
+      if (forThisMatch.length === 0) {
+        setPendingRequests([]);
+        return;
+      }
+      const uids = forThisMatch.map((inv) => inv.senderFirebaseUid);
+      const raw = await socialMediaApi.getUsersByFirebaseUids(uids).catch(() => []);
+      const byUid: Record<string, any> = {};
+      raw.forEach((u: any) => { byUid[u.firebaseUid ?? u.id ?? ''] = u; });
+      setPendingRequests(
+        forThisMatch.map((inv) => ({
+          ...inv,
+          name: byUid[inv.senderFirebaseUid]?.displayName || 'A player',
+          imageUri: resolveImageUri(byUid[inv.senderFirebaseUid]?.profileImageUrl),
+        }))
+      );
+    } catch {
+      setPendingRequests([]);
+    } finally {
+      setLoadingRequests(false);
+    }
+  }, [matchId]);
+
+  useEffect(() => {
+    loadPendingRequests();
+  }, [loadPendingRequests]);
+
+  const handleRequestDecision = async (invitationId: string, decision: 'accept' | 'decline') => {
+    setActioningId(invitationId);
+    try {
+      if (decision === 'accept') {
+        await invitationApi.accept(invitationId);
+      } else {
+        await invitationApi.decline(invitationId);
+      }
+      setPendingRequests((prev) => prev.filter((r) => r.id !== invitationId));
+      onChanged();
+    } catch (err) {
+      Alert.alert('Something went wrong', extractApiError(err, 'Could not process this request. Please try again.'));
+    } finally {
+      setActioningId(null);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await onChanged();
+      await Promise.all([onChanged(), loadPendingRequests()]);
     } finally {
       setRefreshing(false);
     }
@@ -775,8 +856,23 @@ function OwnerView({
     match.status === 'PENDING_VENDOR' ||
     match.status === 'PENDING';
 
+  // NOT_APPLICABLE covers walk-ins and legacy free bookings — nothing was ever
+  // charged, so there's nothing to refund. Everything else (including undefined,
+  // for bookings the backend hasn't stamped yet) is treated as paid, matching the
+  // backend's own conservative default.
+  const isPaidBooking = match.paymentStatus !== 'NOT_APPLICABLE';
+  // Mirrors BookingService.enforceCancellationWindow: past 48h-before-kickoff (for
+  // bookings over 1h), the backend rejects the cancel outright. Default to
+  // cancellable when the backend hasn't sent this field yet, so older app builds
+  // hitting an unupdated backend still show the button (server-side stays the
+  // real gate either way).
+  const canCancelForRefund = match.isWithinCancellationWindow !== false;
+
   const handleCancel = () => {
-    Alert.alert('Cancel booking?', 'This will free up the slot for other players.', [
+    const refundLine = isPaidBooking
+      ? "Your payment will be refunded in full to your original payment method — typically within 5–10 business days. Any players who already paid to join will also be refunded automatically; you don't need to do anything for them."
+      : 'This booking was free, so there is nothing to refund.';
+    Alert.alert('Cancel booking?', `This will free up the slot for other players. ${refundLine}`, [
       { text: 'No', style: 'cancel' },
       {
         text: 'Yes, cancel',
@@ -798,12 +894,24 @@ function OwnerView({
 
   return (
     <SafeAreaView style={styles.flex1} edges={['top']}>
-      <View style={styles.plainHeader}>
-        <Pressable onPress={() => router.back()}>
-          <ArrowLeft color={Colors.text} size={22} strokeWidth={2.5} />
-        </Pressable>
-        <Text style={styles.plainHeaderTitle}>Match Control Center</Text>
-        <View style={{ width: 22 }} />
+      <ScreenGlow />
+      {/* Floating glass-gradient header */}
+      <View style={styles.plainHeaderShadow}>
+        <View style={styles.plainHeader}>
+          <LinearGradient
+            colors={[colors.primaryAccent, colors.primary, colors.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.plainHeaderGlassStroke} pointerEvents="none" />
+
+          <HeaderIconButton onPress={() => router.back()} style={styles.plainHeaderBack}>
+            <ArrowLeft color={colors.white} size={20} strokeWidth={2.5} />
+          </HeaderIconButton>
+          <Text style={styles.plainHeaderTitle}>Match Control Center</Text>
+          <View style={styles.plainHeaderSpacer} />
+        </View>
       </View>
 
       <View style={styles.refreshableArea}>
@@ -831,12 +939,12 @@ function OwnerView({
 
         {/* Vendor rejection banner */}
         {isCancelled && match.rejectionReason && (
-          <View style={[styles.vendorBanner, { backgroundColor: Colors.error + '12', borderColor: Colors.error + '30' }]}>
-            <View style={[styles.vendorBannerIcon, { backgroundColor: Colors.error + '20' }]}>
-              <CircleX color={Colors.error} size={20} strokeWidth={2} />
+          <View style={[styles.vendorBanner, { backgroundColor: colors.error + '12', borderColor: colors.error + '30' }]}>
+            <View style={[styles.vendorBannerIcon, { backgroundColor: colors.error + '20' }]}>
+              <CircleX color={colors.error} size={20} strokeWidth={2} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.vendorBannerTitle, { color: Colors.error }]}>Request Declined by Venue</Text>
+              <Text style={[styles.vendorBannerTitle, { color: colors.error }]}>Request Declined by Venue</Text>
               <Text style={styles.vendorBannerText}>{match.rejectionReason}</Text>
             </View>
           </View>
@@ -845,7 +953,7 @@ function OwnerView({
         <Text style={styles.ownerSportLabel}>{match.sportType.toUpperCase()}</Text>
         <Text style={styles.ownerTitle}>{match.title}</Text>
         <View style={styles.ownerLocationRow}>
-          <MapPin color={Colors.textSecondary} size={14} strokeWidth={2} />
+          <MapPin color={colors.textSecondary} size={14} strokeWidth={2} />
           <Text style={styles.ownerLocationText}>{match.venue.name}</Text>
         </View>
 
@@ -862,7 +970,7 @@ function OwnerView({
           <View style={styles.card}>
             <View style={styles.playersRow}>
               <View style={styles.playersLabelRow}>
-                <Users color={Colors.text} size={16} strokeWidth={2} />
+                <Users color={colors.text} size={16} strokeWidth={2} />
                 <Text style={styles.playersLabel}>
                   {joinedCount}/{totalSpots} Players
                 </Text>
@@ -884,7 +992,7 @@ function OwnerView({
           <Text style={styles.cardTitle}>Match Information</Text>
           <View style={styles.matchInfoRow}>
             <View style={styles.matchInfoLabelRow}>
-              <Calendar color={Colors.textSecondary} size={16} strokeWidth={2} />
+              <Calendar color={colors.textSecondary} size={16} strokeWidth={2} />
               <Text style={styles.matchInfoLabel}>Date & Time</Text>
             </View>
             <Text style={styles.matchInfoValue}>
@@ -904,19 +1012,19 @@ function OwnerView({
               <>
                 <View style={styles.matchInfoRow}>
                   <View style={styles.matchInfoLabelRow}>
-                    <Clock color={Colors.textSecondary} size={16} strokeWidth={2} />
+                    <Clock color={colors.textSecondary} size={16} strokeWidth={2} />
                     <Text style={styles.matchInfoLabel}>
                       {slotCount > 1 ? `Total Cost (${slotCount} slots)` : 'Total Cost'}
                     </Text>
                   </View>
-                  <Text style={[styles.matchInfoValue, { color: Colors.primary }]}>
+                  <Text style={[styles.matchInfoValue, { color: colors.primary }]}>
                     {total != null ? `${sym}${Number(total).toFixed(2)}` : 'Not set'}
                   </Text>
                 </View>
                 {perPlayer != null && (
                   <View style={styles.matchInfoRow}>
                     <View style={styles.matchInfoLabelRow}>
-                      <Users color={Colors.textSecondary} size={16} strokeWidth={2} />
+                      <Users color={colors.textSecondary} size={16} strokeWidth={2} />
                       <Text style={styles.matchInfoLabel}>Per Player</Text>
                     </View>
                     <Text style={styles.matchInfoValue}>
@@ -938,7 +1046,7 @@ function OwnerView({
           )}
           <View style={styles.matchInfoRow}>
             <View style={styles.matchInfoLabelRow}>
-              <Users color={Colors.textSecondary} size={16} strokeWidth={2} />
+              <Users color={colors.textSecondary} size={16} strokeWidth={2} />
               <Text style={styles.matchInfoLabel}>Organizer</Text>
             </View>
             <Text style={styles.matchInfoValue}>{match.organizer?.name || 'You'}</Text>
@@ -972,7 +1080,7 @@ function OwnerView({
               const Icon = AMENITY_ICONS[key] || Wifi;
               return (
                 <View key={key} style={styles.amenityCard}>
-                  <Icon color={Colors.primary} size={20} strokeWidth={1.8} />
+                  <Icon color={colors.primary} size={20} strokeWidth={1.8} />
                   <Text style={styles.amenityCardLabel}>
                     {key.charAt(0).toUpperCase() + key.slice(1)}
                   </Text>
@@ -1008,10 +1116,52 @@ function OwnerView({
           <Text style={styles.placeholderText}>No participants invited yet.</Text>
         )}
 
+        {/* Pending join requests — players who asked to join, awaiting your decision */}
+        {!loadingRequests && pendingRequests.length > 0 && (
+          <View style={styles.pendingRequestsBlock}>
+            <Text style={styles.pendingRequestsTitle}>
+              Pending Requests ({pendingRequests.length})
+            </Text>
+            {pendingRequests.map((req) => {
+              const isActioning = actioningId === req.id;
+              return (
+                <View key={req.id} style={styles.pendingRequestRow}>
+                  {req.imageUri ? (
+                    <Image source={{ uri: req.imageUri }} style={styles.pendingRequestAvatar} />
+                  ) : (
+                    <View style={[styles.pendingRequestAvatar, styles.pendingRequestAvatarFallback]}>
+                      <Text style={styles.pendingRequestAvatarInitial}>{req.name[0]?.toUpperCase() ?? '?'}</Text>
+                    </View>
+                  )}
+                  <Text style={styles.pendingRequestName} numberOfLines={1}>{req.name}</Text>
+                  {isActioning ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <View style={styles.pendingRequestActions}>
+                      <Pressable
+                        style={styles.pendingRequestDecline}
+                        onPress={() => handleRequestDecision(req.id, 'decline')}
+                      >
+                        <X color={colors.textSecondary} size={14} strokeWidth={2.5} />
+                      </Pressable>
+                      <Pressable
+                        style={styles.pendingRequestAccept}
+                        onPress={() => handleRequestDecision(req.id, 'accept')}
+                      >
+                        <Check color={colors.white} size={14} strokeWidth={3} />
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        )}
+
         {/* Invite Players */}
         {!isFull && match.status !== 'CANCELLED' && (
           <Pressable style={styles.invitePlayersBtn} onPress={() => setShowInviteSheet(true)}>
-            <UserPlus color={Colors.primary} size={16} strokeWidth={2} />
+            <UserPlus color={colors.primary} size={16} strokeWidth={2} />
             <Text style={styles.invitePlayersTxt}>Invite Players</Text>
           </Pressable>
         )}
@@ -1044,10 +1194,10 @@ function OwnerView({
             }}
           >
             {isPendingVendor
-              ? <Clock color={Colors.white} size={18} strokeWidth={2.2} />
+              ? <Clock color={colors.white} size={18} strokeWidth={2.2} />
               : isPro
-              ? <Goal color={Colors.white} size={18} strokeWidth={2.2} />
-              : <Lock color={Colors.white} size={18} strokeWidth={2.2} />
+              ? <Goal color={colors.white} size={18} strokeWidth={2.2} />
+              : <Lock color={colors.white} size={18} strokeWidth={2.2} />
             }
             <Text style={styles.scoringButtonText}>
               {isPendingVendor
@@ -1063,13 +1213,22 @@ function OwnerView({
           </Pressable>
         )}
 
-        {!isCancelled && (
+        {!isCancelled && canCancelForRefund && (
           <Pressable style={styles.manageButton} onPress={handleCancel} disabled={cancelling}>
-            <CircleX color={Colors.error} size={18} strokeWidth={2} />
-            <Text style={[styles.manageButtonText, { color: Colors.error }]}>
+            <CircleX color={colors.error} size={18} strokeWidth={2} />
+            <Text style={[styles.manageButtonText, { color: colors.error }]}>
               {cancelling ? 'Cancelling...' : 'Cancel Booking'}
             </Text>
           </Pressable>
+        )}
+
+        {!isCancelled && !canCancelForRefund && (
+          <View style={styles.cancelBlockedNotice}>
+            <Lock color={colors.textMuted} size={14} strokeWidth={2} />
+            <Text style={styles.cancelBlockedText}>
+              This match starts within 48 hours, so it can no longer be cancelled for a refund.
+            </Text>
+          </View>
         )}
 
         <View style={styles.footer}>
@@ -1098,27 +1257,31 @@ function OwnerView({
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   flex1: { flex: 1 },
   refreshableArea: { flex: 1, position: 'relative' },
   scoreboardWrap: { marginTop: 14, marginBottom: 4 },
   loadingScreen: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
   },
   errorText: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
   },
 
   // ─── Hero (JoinerView) ──────────────────────────────────────────────────────
-  heroWrap: { height: 320, backgroundColor: Colors.neutral800 },
+  // Fixed dark image-frame color (not theme-reactive) — this sits behind the
+  // hero photo as a loading/placeholder backdrop, so it must stay dark in
+  // both themes rather than flipping to near-white the way colors.neutral800
+  // (a text-oriented token) does in dark mode.
+  heroWrap: { height: 320, backgroundColor: '#1E293B' },
   heroImage: { width: '100%', height: '100%' },
-  heroPlaceholder: { backgroundColor: Colors.neutral800 },
+  heroPlaceholder: { backgroundColor: '#1E293B' },
   heroOverlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0,
@@ -1133,7 +1296,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   sheet: {
-    backgroundColor: Colors.background,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     marginTop: -28,
@@ -1145,68 +1307,68 @@ const styles = StyleSheet.create({
   // ─── Tags ───────────────────────────────────────────────────────────────────
   tagRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   tagPrimary: {
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
   },
-  tagPrimaryText: { fontSize: 11, fontWeight: '700', color: Colors.primary },
+  tagPrimaryText: { fontSize: 11, fontWeight: '700', color: colors.primary },
   tagSecondary: {
-    backgroundColor: Colors.neutral200,
+    backgroundColor: colors.neutral200,
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
   },
-  tagSecondaryText: { fontSize: 11, fontWeight: '700', color: Colors.neutral600 },
+  tagSecondaryText: { fontSize: 11, fontWeight: '700', color: colors.neutral600 },
 
   // ─── Info rows ──────────────────────────────────────────────────────────────
-  title: { fontSize: 24, fontWeight: '800', color: Colors.text, marginBottom: 18 },
+  title: { fontSize: 24, fontWeight: '800', color: colors.text, marginBottom: 18 },
   infoRow: { flexDirection: 'row', gap: 12, marginBottom: 18 },
   infoIconWrap: {
     width: 38, height: 38, borderRadius: 12,
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center', justifyContent: 'center',
   },
-  infoPrimary: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  infoSecondary: { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
-  infoLink: { fontSize: 13, color: Colors.primary, marginTop: 2 },
+  infoPrimary: { fontSize: 15, fontWeight: '700', color: colors.text },
+  infoSecondary: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  infoLink: { fontSize: 13, color: colors.primary, marginTop: 2 },
 
   // ─── Section labels ─────────────────────────────────────────────────────────
   sectionLabel: {
     fontSize: 12, fontWeight: '800', letterSpacing: 0.6,
-    color: Colors.text, marginBottom: 12, marginTop: 4,
+    color: colors.text, marginBottom: 12, marginTop: 4,
   },
   sectionHeaderRow: {
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'center', marginBottom: 12,
   },
-  sectionLinkText: { fontSize: 13, fontWeight: '700', color: Colors.primary },
+  sectionLinkText: { fontSize: 13, fontWeight: '700', color: colors.primary },
 
   // ─── Organizer ──────────────────────────────────────────────────────────────
   organizerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 24 },
   organizerAvatar: {
     width: 48, height: 48, borderRadius: 24,
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
-  organizerName: { fontSize: 15, fontWeight: '700', color: Colors.text },
+  organizerName: { fontSize: 15, fontWeight: '700', color: colors.text },
   organizerRatingRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  organizerRatingText: { fontSize: 12, color: Colors.textSecondary },
+  organizerRatingText: { fontSize: 12, color: colors.textSecondary },
   messageBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: Colors.primaryLight, paddingHorizontal: 14,
+    backgroundColor: colors.primaryLight, paddingHorizontal: 14,
     paddingVertical: 9, borderRadius: 20,
   },
-  messageBtnText: { fontSize: 13, fontWeight: '700', color: Colors.primary },
+  messageBtnText: { fontSize: 13, fontWeight: '700', color: colors.primary },
 
   // ─── Map ────────────────────────────────────────────────────────────────────
-  mapWrap: { borderRadius: 16, overflow: 'hidden', marginBottom: 16, backgroundColor: Colors.neutral200 },
+  mapWrap: { borderRadius: 16, overflow: 'hidden', marginBottom: 16, backgroundColor: colors.neutral200 },
   mapNavBadge: {
     position: 'absolute', right: 10, bottom: 10, flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: 'rgba(20,20,20,0.72)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6,
   },
-  mapNavBadgeText: { color: Colors.white, fontSize: 11, fontWeight: '700' },
+  mapNavBadgeText: { color: colors.white, fontSize: 11, fontWeight: '700' },
 
   // ─── Amenities ──────────────────────────────────────────────────────────────
   amenityRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
   amenityItem: { alignItems: 'center', gap: 6, flex: 1 },
-  amenityLabel: { fontSize: 11, color: Colors.textSecondary },
+  amenityLabel: { fontSize: 11, color: colors.textSecondary },
 
   // ─── Avatars ────────────────────────────────────────────────────────────────
   avatarRow: {
@@ -1216,108 +1378,161 @@ const styles = StyleSheet.create({
   },
   avatarCircle: {
     width: 44, height: 44, borderRadius: 22,
-    backgroundColor: Colors.primaryLight,
-    borderWidth: 2.5, borderColor: Colors.background,
+    backgroundColor: colors.primaryLight,
+    borderWidth: 2.5, borderColor: colors.background,
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
   avatarImage: { width: '100%', height: '100%' },
-  avatarInitial: { fontSize: 16, fontWeight: '700', color: Colors.primary },
-  avatarExtra: { backgroundColor: Colors.neutral300 },
-  avatarExtraText: { fontSize: 11, fontWeight: '700', color: Colors.text },
+  avatarInitial: { fontSize: 16, fontWeight: '700', color: colors.primary },
+  avatarExtra: { backgroundColor: colors.neutral300 },
+  avatarExtraText: { fontSize: 11, fontWeight: '700', color: colors.text },
 
   // ─── Participants ────────────────────────────────────────────────────────────
   participantsBlock: { marginBottom: 20 },
-  participantsSummary: { fontSize: 13, color: Colors.textSecondary, marginTop: 4 },
+  participantsSummary: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
 
   // ─── Rules ──────────────────────────────────────────────────────────────────
   rulesList: { gap: 10 },
-  ruleText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 19 },
-  placeholderText: { fontSize: 12, color: Colors.textMuted, marginBottom: 20, lineHeight: 18 },
+  ruleText: { fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
+  placeholderText: { fontSize: 12, color: colors.textMuted, marginBottom: 20, lineHeight: 18 },
 
   // ─── Bottom bar (JoinerView) ─────────────────────────────────────────────────
   bottomBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingVertical: 14,
     paddingBottom: Platform.OS === 'ios' ? 24 : 16,
-    backgroundColor: Colors.white,
-    borderTopWidth: 1, borderTopColor: Colors.neutral200,
+    backgroundColor: colors.cardBg,
+    borderTopWidth: 1, borderTopColor: colors.neutral200,
   },
-  bottomBarLabel: { fontSize: 11, color: Colors.textSecondary, fontWeight: '600' },
-  bottomBarPrice: { fontSize: 22, fontWeight: '800', color: Colors.text },
-  bottomBarPerPlayer: { fontSize: 11, color: Colors.primary, fontWeight: '600', marginTop: 2 },
+  bottomBarLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
+  bottomBarPrice: { fontSize: 22, fontWeight: '800', color: colors.text },
+  bottomBarPerPlayer: { fontSize: 11, color: colors.primary, fontWeight: '600', marginTop: 2 },
   joinButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     paddingHorizontal: 32, paddingVertical: 16, borderRadius: 28,
   },
   joinButtonDisabled: { opacity: 0.5 },
-  joinButtonText: { fontSize: 15, fontWeight: '700', color: Colors.white },
+  joinButtonText: { fontSize: 15, fontWeight: '700', color: colors.white },
 
   // ─── Owner header ────────────────────────────────────────────────────────────
+  plainHeaderShadow: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    marginBottom: 2,
+    borderRadius: 26,
+    shadowColor: colors.primaryDark,
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
   plainHeader: {
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 12,
+    borderRadius: 26,
+    overflow: 'hidden',
   },
-  plainHeaderTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
+  plainHeaderGlassStroke: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  plainHeaderBack: {
+    width: 38, height: 38, borderRadius: 19,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  plainHeaderSpacer: { width: 38 },
+  plainHeaderTitle: { fontSize: 17, fontWeight: '700', color: colors.white },
   ownerScrollContent: { paddingHorizontal: 16, paddingBottom: 32 },
 
   // ─── Owner text ──────────────────────────────────────────────────────────────
-  ownerSportLabel: { fontSize: 11, fontWeight: '700', color: Colors.primary, letterSpacing: 0.5, marginBottom: 4 },
-  ownerTitle: { fontSize: 20, fontWeight: '800', color: Colors.text, marginBottom: 6 },
+  ownerSportLabel: { fontSize: 11, fontWeight: '700', color: colors.primary, letterSpacing: 0.5, marginBottom: 4 },
+  ownerTitle: { fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: 6 },
   ownerLocationRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
-  ownerLocationText: { fontSize: 13, color: Colors.textSecondary },
+  ownerLocationText: { fontSize: 13, color: colors.textSecondary },
 
   // ─── Cards ───────────────────────────────────────────────────────────────────
-  card: { backgroundColor: Colors.white, borderRadius: 14, padding: 16, marginBottom: 14 },
-  cardTitle: { fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 14 },
-  cardTitleLoose: { fontSize: 15, fontWeight: '700', color: Colors.text, marginBottom: 12 },
+  card: { backgroundColor: colors.cardBg, borderRadius: 14, padding: 16, marginBottom: 14 },
+  cardTitle: { fontSize: 14, fontWeight: '700', color: colors.text, marginBottom: 14 },
+  cardTitleLoose: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 12 },
 
   // ─── Players progress ────────────────────────────────────────────────────────
   playersRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   playersLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  playersLabel: { fontSize: 15, fontWeight: '700', color: Colors.text },
+  playersLabel: { fontSize: 15, fontWeight: '700', color: colors.text },
   fullBadge: { backgroundColor: '#E7F8EE', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  fullBadgeText: { fontSize: 11, fontWeight: '700', color: Colors.success },
-  progressTrack: { height: 6, borderRadius: 3, backgroundColor: Colors.neutral200, overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: Colors.primary },
+  fullBadgeText: { fontSize: 11, fontWeight: '700', color: colors.success },
+  progressTrack: { height: 6, borderRadius: 3, backgroundColor: colors.neutral200, overflow: 'hidden' },
+  progressFill: { height: '100%', backgroundColor: colors.primary },
 
   // ─── Match info rows ─────────────────────────────────────────────────────────
   matchInfoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   matchInfoLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  matchInfoLabel: { fontSize: 13, color: Colors.textSecondary },
-  matchInfoValue: { fontSize: 13, fontWeight: '700', color: Colors.text },
+  matchInfoLabel: { fontSize: 13, color: colors.textSecondary },
+  matchInfoValue: { fontSize: 13, fontWeight: '700', color: colors.text },
 
   // ─── Amenity grid ────────────────────────────────────────────────────────────
   amenityGrid: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  amenityCard: { flex: 1, backgroundColor: Colors.white, borderRadius: 12, paddingVertical: 14, alignItems: 'center', gap: 6 },
-  amenityCardLabel: { fontSize: 11, color: Colors.textSecondary, textAlign: 'center' },
+  amenityCard: { flex: 1, backgroundColor: colors.cardBg, borderRadius: 12, paddingVertical: 14, alignItems: 'center', gap: 6 },
+  amenityCardLabel: { fontSize: 11, color: colors.textSecondary, textAlign: 'center' },
 
   // ─── Scoring / manage buttons ────────────────────────────────────────────────
   scoringButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 10, backgroundColor: Colors.primary,
+    gap: 10, backgroundColor: colors.primary,
     borderRadius: 14, paddingVertical: 15, marginBottom: 12,
   },
-  scoringButtonLocked: { backgroundColor: Colors.neutral400 },
-  scoringButtonText: { fontSize: 15, fontWeight: '700', color: Colors.white },
+  scoringButtonLocked: { backgroundColor: colors.neutral400 },
+  scoringButtonText: { fontSize: 15, fontWeight: '700', color: colors.white },
   invitePlayersBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, borderRadius: 14, paddingVertical: 14, marginBottom: 12,
-    borderWidth: 1.5, borderColor: Colors.primary, backgroundColor: Colors.primaryLight,
+    borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.primaryLight,
   },
-  invitePlayersTxt: { fontSize: 15, fontWeight: '700', color: Colors.primary },
+  invitePlayersTxt: { fontSize: 15, fontWeight: '700', color: colors.primary },
+  pendingRequestsBlock: {
+    backgroundColor: colors.cardBg, borderRadius: 16, padding: 14, marginBottom: 12,
+    borderWidth: 1, borderColor: colors.neutral200,
+  },
+  pendingRequestsTitle: { fontSize: 13, fontWeight: '800', color: colors.text, marginBottom: 10 },
+  pendingRequestRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  pendingRequestAvatar: { width: 36, height: 36, borderRadius: 18 },
+  pendingRequestAvatarFallback: {
+    backgroundColor: colors.primary + '22', alignItems: 'center', justifyContent: 'center',
+  },
+  pendingRequestAvatarInitial: { fontSize: 14, fontWeight: '800', color: colors.primary },
+  pendingRequestName: { flex: 1, fontSize: 13, fontWeight: '700', color: colors.text },
+  pendingRequestActions: { flexDirection: 'row', gap: 8 },
+  pendingRequestDecline: {
+    width: 30, height: 30, borderRadius: 15, backgroundColor: colors.neutral100,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  pendingRequestAccept: {
+    width: 30, height: 30, borderRadius: 15, backgroundColor: colors.success,
+    alignItems: 'center', justifyContent: 'center',
+  },
   manageButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 10, backgroundColor: Colors.white,
+    gap: 10, backgroundColor: colors.cardBg,
     borderRadius: 14, paddingVertical: 15, marginBottom: 20,
-    borderWidth: 1, borderColor: Colors.neutral200,
+    borderWidth: 1, borderColor: colors.neutral200,
   },
-  manageButtonText: { fontSize: 15, fontWeight: '700', color: Colors.text },
+  manageButtonText: { fontSize: 15, fontWeight: '700', color: colors.text },
+  cancelBlockedNotice: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: colors.cardBg, borderRadius: 14,
+    paddingVertical: 13, paddingHorizontal: 14, marginBottom: 20,
+    borderWidth: 1, borderColor: colors.neutral200,
+  },
+  cancelBlockedText: { flex: 1, fontSize: 12.5, lineHeight: 17, color: colors.textMuted },
 
   // ─── Footer ──────────────────────────────────────────────────────────────────
   footer: { alignItems: 'center', marginTop: 8 },
-  footerCaps: { fontSize: 10, fontWeight: '700', color: Colors.textMuted, letterSpacing: 1 },
-  footerText: { fontSize: 11, color: Colors.textMuted, marginTop: 4 },
+  footerCaps: { fontSize: 10, fontWeight: '700', color: colors.textMuted, letterSpacing: 1 },
+  footerText: { fontSize: 11, color: colors.textMuted, marginTop: 4 },
 
   // ─── Participants modal ───────────────────────────────────────────────────────
   modalOverlay: {
@@ -1326,7 +1541,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalSheet: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 20,
@@ -1335,23 +1550,23 @@ const styles = StyleSheet.create({
   },
   modalHandle: {
     width: 40, height: 4, borderRadius: 2,
-    backgroundColor: Colors.neutral300,
+    backgroundColor: colors.neutral300,
     alignSelf: 'center', marginBottom: 16,
   },
   modalHeader: {
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between', marginBottom: 16,
   },
-  modalTitle: { fontSize: 17, fontWeight: '800', color: Colors.text },
-  modalEmpty: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', paddingVertical: 24 },
+  modalTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
+  modalEmpty: { fontSize: 13, color: colors.textMuted, textAlign: 'center', paddingVertical: 24 },
   modalPlayerRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.neutral200,
+    borderBottomColor: colors.neutral200,
   },
-  modalPlayerName: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  modalPlayerSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  modalPlayerName: { fontSize: 15, fontWeight: '700', color: colors.text },
+  modalPlayerSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
 
   // ── Vendor approval banner (OwnerView)
   vendorBanner: {

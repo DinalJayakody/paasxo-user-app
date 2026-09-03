@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -20,19 +20,20 @@ import {
   Lock,
   Eye,
   EyeOff,
-  LogIn,
-  UserPlus,
 } from 'lucide-react-native';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleAuthProvider, signInWithCredential, signInWithRedirect } from 'firebase/auth';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
 import { InputField } from '../components/InputField';
+import AuthTabBar from '../components/AuthTabBar';
 import { AuthContext, useAuth } from '../context/AuthContext';
 import { GOOGLE_CLIENT_IDS, GOOGLE_CONFIGURED } from '../config/googleAuth';
 import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
 import { APPLE_SIGN_IN_AVAILABLE, performAppleSignIn } from '../utils/appleSignIn';
+import ScreenGlow from '../components/ScreenGlow';
 
 // Required by expo-auth-session on web to close the auth popup and
 // return the result to the app. Must be called at module level.
@@ -42,6 +43,8 @@ const isValidEmail = (val: string) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val) || val.length === 0;
 
 export default function SignInScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const auth = useContext(AuthContext);
   const { signInWithGoogle, signInWithApple } = useAuth();
   const router = useRouter();
@@ -216,6 +219,7 @@ export default function SignInScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <ScreenGlow />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -233,7 +237,7 @@ export default function SignInScreen() {
               style={styles.backBtn}
               activeOpacity={0.7}
             >
-              <ArrowLeft color={Colors.primary} size={22} strokeWidth={2.5} />
+              <ArrowLeft color={colors.primary} size={22} strokeWidth={2.5} />
             </TouchableOpacity>
             <View style={{ width: 40 }} />
           </View>
@@ -241,7 +245,7 @@ export default function SignInScreen() {
           {/* Colorful gradient hero with logo */}
           <Animated.View style={{ opacity: heroFade, transform: [{ translateY: heroSlide }] }}>
             <LinearGradient
-              colors={[Colors.primaryLight, Colors.background]}
+              colors={[colors.primaryLight, colors.background]}
               style={styles.heroGradient}
             >
               <View style={styles.heroContainer}>
@@ -269,7 +273,7 @@ export default function SignInScreen() {
               style={{ marginBottom: 10 }}
               icon={
                 googleLoading ? (
-                  <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 8 }} />
+                  <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: 8 }} />
                 ) : (
                   <Image
                     source={{ uri: 'https://img.icons8.com/color/48/000000/google-logo.png' }}
@@ -287,7 +291,7 @@ export default function SignInScreen() {
                 variant="secondary"
                 icon={
                   appleLoading ? (
-                    <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 8 }} />
+                    <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: 8 }} />
                   ) : (
                     <Image
                       source={{ uri: 'https://img.icons8.com/ios-filled/50/000000/mac-os.png' }}
@@ -311,7 +315,7 @@ export default function SignInScreen() {
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
-              leftIcon={<AtSign color={Colors.textMuted} size={18} strokeWidth={2} />}
+              leftIcon={<AtSign color={colors.textMuted} size={18} strokeWidth={2} />}
               error={errors.email}
               containerStyle={styles.inputContainer}
             />
@@ -331,12 +335,12 @@ export default function SignInScreen() {
               onChangeText={(t) => { setPassword(t); setErrors((e) => ({ ...e, password: undefined })); }}
               secureTextEntry={!showPassword}
               autoCapitalize="none"
-              leftIcon={<Lock color={Colors.textMuted} size={18} strokeWidth={2} />}
+              leftIcon={<Lock color={colors.textMuted} size={18} strokeWidth={2} />}
               rightIcon={
                 showPassword ? (
-                  <EyeOff color={Colors.textMuted} size={18} strokeWidth={2} />
+                  <EyeOff color={colors.textMuted} size={18} strokeWidth={2} />
                 ) : (
-                  <Eye color={Colors.textMuted} size={18} strokeWidth={2} />
+                  <Eye color={colors.textMuted} size={18} strokeWidth={2} />
                 )
               }
               onRightIconPress={() => setShowPassword((v) => !v)}
@@ -366,59 +370,15 @@ export default function SignInScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Login / Register tab bar - a normal flex sibling (not absolutely
-          positioned) so it always sits above Android's gesture/button nav
-          bar and never overlaps/steals touches from scrolled content. */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity style={[styles.tab, styles.tabActive]} activeOpacity={0.9}>
-          <LogIn color={Colors.primary} size={20} strokeWidth={2} />
-          <Text style={styles.tabLabelActive}>LOGIN</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.tab}
-          onPress={() => router.push('/sign-up')}
-          activeOpacity={0.7}
-        >
-          <UserPlus color={Colors.neutral400} size={20} strokeWidth={2} />
-          <Text style={styles.tabLabel}>REGISTER</Text>
-        </TouchableOpacity>
-      </View>
+      <AuthTabBar active="login" />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
-  },
-  tabBar: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: Colors.divider,
-    backgroundColor: Colors.white,
-    paddingBottom: 8,
-  },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 10,
-    paddingBottom: 4,
-    gap: 4,
-  },
-  tabActive: { backgroundColor: Colors.primaryLight },
-  tabLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
-    color: Colors.neutral400,
-  },
-  tabLabelActive: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
-    color: Colors.primary,
+    backgroundColor: colors.background,
   },
   scroll: {
     paddingHorizontal: 20,
@@ -432,7 +392,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   heroLogoWrap: {
-    shadowColor: Colors.neutral900, shadowOpacity: 0.1, shadowRadius: 14,
+    shadowColor: colors.neutral900, shadowOpacity: 0.1, shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 }, elevation: 4,
     borderRadius: 26, marginBottom: 4,
   },
@@ -461,21 +421,21 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '800',
-    color: Colors.text,
+    color: colors.text,
     textAlign: 'center',
     marginBottom: 8,
     letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 28,
   },
   socialIcon: { width: 20, height: 20, marginRight: 8 },
   card: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 24,
     padding: 20,
     shadowColor: '#000',
@@ -489,7 +449,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.5,
-    color: Colors.neutral500,
+    color: colors.neutral500,
     marginBottom: 8,
     textTransform: 'uppercase',
   },
@@ -503,12 +463,12 @@ const styles = StyleSheet.create({
   forgotText: {
     fontSize: 11,
     fontWeight: '700',
-    color: Colors.primary,
+    color: colors.primary,
     letterSpacing: 1,
   },
   inputContainer: { marginBottom: 4 },
   generalError: {
-    color: Colors.error,
+    color: colors.error,
     fontSize: 13,
     textAlign: 'center',
     marginTop: 8,
@@ -516,6 +476,6 @@ const styles = StyleSheet.create({
   },
   signInButton: { marginTop: 20, marginBottom: 4 },
   footer: { alignItems: 'center', gap: 6, marginBottom: 16 },
-  footerText: { fontSize: 14, color: Colors.textSecondary },
-  footerLink: { fontSize: 15, fontWeight: '700', color: Colors.primary },
+  footerText: { fontSize: 14, color: colors.textSecondary },
+  footerLink: { fontSize: 15, fontWeight: '700', color: colors.primary },
 });

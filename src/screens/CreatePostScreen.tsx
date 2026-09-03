@@ -1,4 +1,4 @@
-import React, { JSXElementConstructor, ReactElement, useEffect, useState } from 'react';
+import React, { JSXElementConstructor, ReactElement, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,8 @@ import {
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { resolveAvatarUri } from '../utils/mediaUrl';
 
 import {
@@ -45,8 +46,11 @@ import MapView, {
 import { socialMediaApi } from '../api/socialMediaApi';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { SearchBar } from '../components/SearchBar';
+import ScreenGlow from '../components/ScreenGlow';
 
 export default function CreatePostScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const router = useRouter();
 
@@ -239,28 +243,40 @@ const fetchUsers = async () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-        >
-          <Text style={styles.cancelText}>
-            Cancel
-          </Text>
-        </TouchableOpacity>
+      <ScreenGlow />
+      {/* Floating glass-gradient header */}
+      <View style={styles.topHeaderShadow}>
+        <View style={styles.header}>
+          <LinearGradient
+            colors={[colors.primaryAccent, colors.primary, colors.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.headerGlassStroke} pointerEvents="none" />
 
-        <Text style={styles.headerTitle}>
-          Create Post
-        </Text>
+          <TouchableOpacity
+            onPress={() => router.back()}
+          >
+            <Text style={styles.cancelText}>
+              Cancel
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.postButton}
-          onPress={createPost}
-          disabled={loading}
-        >
-          <Text style={styles.postButtonText}>
-            {loading ? 'Posting...' : 'Post'}
+          <Text style={styles.headerTitle}>
+            Create Post
           </Text>
-        </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.postButton}
+            onPress={createPost}
+            disabled={loading}
+          >
+            <Text style={styles.postButtonText}>
+              {loading ? 'Posting...' : 'Post'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -283,12 +299,12 @@ const fetchUsers = async () => {
             >
               <ImageIcon
                 size={24}
-                color={Colors.primary}
+                color={colors.primary}
               />
 
               <LayoutGrid
                 size={14}
-                color={Colors.primary}
+                color={colors.primary}
                 style={styles.gridIcon}
               />
             </View>
@@ -304,7 +320,7 @@ const fetchUsers = async () => {
           >
             <Camera
               size={28}
-              color={Colors.primary}
+              color={colors.primary}
             />
 
             <Text style={styles.mediaLabel}>
@@ -330,7 +346,7 @@ const fetchUsers = async () => {
           <TextInput
             style={styles.captionInput}
             placeholder="Write a caption..."
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={colors.textMuted}
             multiline
             value={caption}
             onChangeText={setCaption}
@@ -349,7 +365,7 @@ const fetchUsers = async () => {
           >
             <UserPlus
               size={20}
-              color="#6b7280"
+              color={colors.textSecondary}
             />
           </View>
 
@@ -369,7 +385,7 @@ const fetchUsers = async () => {
 
           <ChevronRight
             size={20}
-            color="#9ca3af"
+            color={colors.textMuted}
           />
         </TouchableOpacity>
 
@@ -384,7 +400,7 @@ const fetchUsers = async () => {
           >
             <MapPin
               size={20}
-              color="#6b7280"
+              color={colors.textSecondary}
             />
           </View>
 
@@ -403,7 +419,7 @@ const fetchUsers = async () => {
 
           <ChevronRight
             size={20}
-            color="#9ca3af"
+            color={colors.textMuted}
           />
         </TouchableOpacity>
 
@@ -424,8 +440,8 @@ const fetchUsers = async () => {
               size={18}
               color={
                 visibility === 'public'
-                  ? '#fff'
-                  : '#374151'
+                  ? colors.white
+                  : colors.textSecondary
               }
             />
 
@@ -454,8 +470,8 @@ const fetchUsers = async () => {
               size={18}
               color={
                 visibility === 'private'
-                  ? '#fff'
-                  : '#374151'
+                  ? colors.white
+                  : colors.textSecondary
               }
             />
 
@@ -524,7 +540,7 @@ const fetchUsers = async () => {
         <TouchableOpacity
           onPress={() => setTagModalVisible(false)}
         >
-          <X size={22} color="#1e3a8a" />
+          <X size={22} color={colors.text} />
         </TouchableOpacity>
       </View>
 
@@ -541,7 +557,7 @@ const fetchUsers = async () => {
       {loading && (
         <ActivityIndicator
           size="small"
-          color="#2563eb"
+          color={colors.primary}
           style={{ marginTop: 10 }}
         />
       )}
@@ -589,7 +605,7 @@ const fetchUsers = async () => {
                   Tagged
                 </Text>
               ) : (
-                <ChevronRight size={18} color="#94a3b8" />
+                <ChevronRight size={18} color={colors.textMuted} />
               )}
             </TouchableOpacity>
           );
@@ -651,14 +667,26 @@ const fetchUsers = async () => {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
   },
 
   flexOne: {
     flex: 1,
+  },
+
+  topHeaderShadow: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    marginBottom: 2,
+    borderRadius: 26,
+    shadowColor: colors.primaryDark,
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
   },
 
   header: {
@@ -667,7 +695,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: Colors.primary,
+    borderRadius: 26,
+    overflow: 'hidden',
+  },
+
+  headerGlassStroke: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
   },
 
   cancelText: {
@@ -684,7 +720,7 @@ const styles = StyleSheet.create({
   },
 
   postButton: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.cardBg,
     paddingHorizontal: 20,
     paddingVertical: 8,
     borderRadius: 20,
@@ -693,7 +729,7 @@ const styles = StyleSheet.create({
   postButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: Colors.primary,
+    color: colors.primary,
   },
 
   content: {
@@ -709,7 +745,7 @@ const styles = StyleSheet.create({
 
   mediaCard: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.cardBg,
     borderRadius: 16,
     paddingVertical: 40,
     alignItems: 'center',
@@ -729,7 +765,7 @@ const styles = StyleSheet.create({
   mediaLabel: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#374151',
+    color: colors.text,
     marginTop: 12,
   },
 
@@ -741,7 +777,7 @@ const styles = StyleSheet.create({
   },
 
   captionCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.cardBg,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
@@ -751,21 +787,21 @@ const styles = StyleSheet.create({
   captionLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: Colors.primary,
+    color: colors.primary,
     marginBottom: 8,
   },
 
   captionInput: {
     flex: 1,
     fontSize: 15,
-    color: '#374151',
+    color: colors.text,
     lineHeight: 22,
   },
 
   optionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.cardBg,
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
@@ -775,7 +811,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.neutral100,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -788,18 +824,18 @@ const styles = StyleSheet.create({
   optionTitle: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#111827',
+    color: colors.text,
   },
 
   optionSubtitle: {
     fontSize: 12,
-    color: '#6b7280',
+    color: colors.textSecondary,
     marginTop: 2,
   },
 
   visibilityContainer: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
+    backgroundColor: colors.cardBg,
     borderRadius: 16,
     padding: 4,
     marginBottom: 16,
@@ -816,13 +852,13 @@ const styles = StyleSheet.create({
   },
 
   visibilityButtonActive: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
   },
 
   visibilityText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#374151',
+    color: colors.text,
   },
 
   visibilityTextActive: {
@@ -838,7 +874,7 @@ const styles = StyleSheet.create({
   routeGradient: {
     flex: 1,
     position: 'relative',
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
   },
 
   routeTextContainer: {
@@ -863,7 +899,7 @@ const styles = StyleSheet.create({
 
   modalContainer: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.background,
   },
 
   modalHeader: {
@@ -876,10 +912,11 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: '700',
+    color: colors.text,
   },
 
   searchInput: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.inputBg,
     marginHorizontal: 16,
     borderRadius: 12,
     paddingHorizontal: 16,
@@ -890,18 +927,19 @@ const styles = StyleSheet.create({
   userCard: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomColor: colors.divider,
   },
 
   userName: {
     fontSize: 16,
     fontWeight: '600',
+    color: colors.text,
   },
 
 
   tagModalContainer: {
   flex: 1,
-  backgroundColor: '#eff6ff', // light blue
+  backgroundColor: colors.background,
 },
 
 tagModalHeader: {
@@ -909,19 +947,19 @@ tagModalHeader: {
   justifyContent: 'space-between',
   alignItems: 'center',
   padding: 16,
-  backgroundColor: '#eff6ff',
+  backgroundColor: colors.background,
 },
 
 tagModalTitle: {
   fontSize: 20,
   fontWeight: '800',
-  color: '#1e3a8a',
+  color: colors.text,
 },
 
 tagUserCard: {
   flexDirection: 'row',
   alignItems: 'center',
-  backgroundColor: '#ffffff',
+  backgroundColor: colors.cardBg,
   padding: 12,
   borderRadius: 14,
   marginBottom: 10,
@@ -942,12 +980,12 @@ tagAvatar: {
 tagUserName: {
   fontSize: 15,
   fontWeight: '700',
-  color: '#0f172a',
+  color: colors.text,
 },
 
 tagUserSub: {
   fontSize: 12,
-  color: '#64748b',
+  color: colors.textSecondary,
 },
 
 tagOverlay: {
@@ -960,7 +998,7 @@ tagOverlay: {
 tagPopup: {
   width: '90%',
   maxHeight: '70%',
-  backgroundColor: '#eff6ff',
+  backgroundColor: colors.cardBg,
   borderRadius: 18,
   padding: 14,
   shadowColor: '#000',
@@ -978,7 +1016,7 @@ tagPopupHeader: {
 tagPopupTitle: {
   fontSize: 18,
   fontWeight: '800',
-  color: '#1e3a8a',
+  color: colors.text,
 },
 
 tagPopupItem: {
@@ -986,7 +1024,7 @@ tagPopupItem: {
   alignItems: 'center',
   paddingVertical: 10,
   borderBottomWidth: 1,
-  borderBottomColor: '#dbeafe',
+  borderBottomColor: colors.divider,
 },
 
 tagPopupAvatar: {
@@ -999,17 +1037,17 @@ tagPopupAvatar: {
 tagPopupName: {
   fontSize: 14,
   fontWeight: '700',
-  color: '#0f172a',
+  color: colors.text,
 },
 
 tagPopupSub: {
   fontSize: 12,
-  color: '#64748b',
+  color: colors.textSecondary,
 },
 
 taggedBadge: {
   fontSize: 12,
   fontWeight: '700',
-  color: '#16a34a',
+  color: colors.success,
 },
 });

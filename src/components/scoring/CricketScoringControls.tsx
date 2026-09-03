@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Undo2 } from 'lucide-react-native';
-import { Colors } from '../../styles/colors';
+import { ThemeColors } from '../../styles/colors';
+import { useTheme } from '../../context/ThemeContext';
 import { MatchScoreState } from '../../types/api';
 
 interface Innings {
@@ -38,6 +39,8 @@ function teamScoresFrom(innings: Innings[]): { teamAScore: number; teamBScore: n
 }
 
 export function CricketScoringControls({ score, teamAName, teamBName, updating, onUpdateState }: CricketScoringControlsProps) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const currentInnings: number = score.state?.currentInnings ?? 1;
   const inningsList: Innings[] = Array.isArray(score.state?.innings) ? score.state.innings : [];
   const active: Innings = inningsList[currentInnings - 1] || {
@@ -107,7 +110,7 @@ export function CricketScoringControls({ score, teamAName, teamBName, updating, 
         </View>
         <Text style={styles.battingText}>{battingName} batting</Text>
         <Pressable onPress={undo} disabled={updating || historyRef.current.length === 0} hitSlop={8} style={styles.undoBtn}>
-          <Undo2 color={historyRef.current.length === 0 ? Colors.neutral300 : Colors.neutral600} size={16} strokeWidth={2.2} />
+          <Undo2 color={historyRef.current.length === 0 ? colors.neutral300 : colors.neutral600} size={16} strokeWidth={2.2} />
         </Pressable>
       </View>
 
@@ -120,14 +123,14 @@ export function CricketScoringControls({ score, teamAName, teamBName, updating, 
         <TextInput
           style={styles.nameInput}
           placeholder="Batsman"
-          placeholderTextColor={Colors.textMuted}
+          placeholderTextColor={colors.textMuted}
           value={batsman}
           onChangeText={setBatsman}
         />
         <TextInput
           style={styles.nameInput}
           placeholder="Bowler"
-          placeholderTextColor={Colors.textMuted}
+          placeholderTextColor={colors.textMuted}
           value={bowler}
           onChangeText={setBowler}
         />
@@ -148,13 +151,13 @@ export function CricketScoringControls({ score, teamAName, teamBName, updating, 
       </View>
 
       <View style={styles.eventsRow}>
-        <Pressable style={[styles.eventBtn, { backgroundColor: Colors.liveRed }]} onPress={recordWicket} disabled={updating}>
+        <Pressable style={[styles.eventBtn, { backgroundColor: colors.liveRed }]} onPress={recordWicket} disabled={updating}>
           <Text style={styles.eventBtnText}>WICKET</Text>
         </Pressable>
-        <Pressable style={[styles.eventBtn, { backgroundColor: Colors.warning }]} onPress={() => recordExtra('wide')} disabled={updating}>
+        <Pressable style={[styles.eventBtn, { backgroundColor: colors.warning }]} onPress={() => recordExtra('wide')} disabled={updating}>
           <Text style={styles.eventBtnText}>WIDE</Text>
         </Pressable>
-        <Pressable style={[styles.eventBtn, { backgroundColor: Colors.primaryAccent }]} onPress={() => recordExtra('noball')} disabled={updating}>
+        <Pressable style={[styles.eventBtn, { backgroundColor: colors.primaryAccent }]} onPress={() => recordExtra('noball')} disabled={updating}>
           <Text style={styles.eventBtnText}>NO BALL</Text>
         </Pressable>
       </View>
@@ -168,44 +171,44 @@ export function CricketScoringControls({ score, teamAName, teamBName, updating, 
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   wrap: { gap: 14 },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  inningsBadge: { backgroundColor: Colors.cricket, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
-  inningsBadgeText: { color: Colors.white, fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
-  battingText: { flex: 1, fontSize: 13, fontWeight: '700', color: Colors.neutral700 },
-  undoBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.neutral100, alignItems: 'center', justifyContent: 'center' },
+  inningsBadge: { backgroundColor: colors.cricket, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  inningsBadgeText: { color: colors.white, fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  battingText: { flex: 1, fontSize: 13, fontWeight: '700', color: colors.neutral700 },
+  undoBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.neutral100, alignItems: 'center', justifyContent: 'center' },
 
   tallyCard: {
-    backgroundColor: Colors.cricketLight, borderRadius: 18, paddingVertical: 18, alignItems: 'center', gap: 4,
+    backgroundColor: colors.cricketLight, borderRadius: 18, paddingVertical: 18, alignItems: 'center', gap: 4,
   },
-  tallyRuns: { fontSize: 40, fontWeight: '900', color: Colors.cricket, fontVariant: ['tabular-nums'] },
-  tallyWickets: { fontSize: 24, color: Colors.cricket },
-  tallyOvers: { fontSize: 13, fontWeight: '700', color: Colors.primaryDark },
+  tallyRuns: { fontSize: 40, fontWeight: '900', color: colors.cricket, fontVariant: ['tabular-nums'] },
+  tallyWickets: { fontSize: 24, color: colors.cricket },
+  tallyOvers: { fontSize: 13, fontWeight: '700', color: colors.primaryDark },
 
   namesRow: { flexDirection: 'row', gap: 10 },
   nameInput: {
-    flex: 1, backgroundColor: Colors.inputBg, borderRadius: 12, borderWidth: 1, borderColor: Colors.inputBorder,
-    paddingHorizontal: 12, paddingVertical: 9, fontSize: 13, color: Colors.text,
+    flex: 1, backgroundColor: colors.inputBg, borderRadius: 12, borderWidth: 1, borderColor: colors.inputBorder,
+    paddingHorizontal: 12, paddingVertical: 9, fontSize: 13, color: colors.text,
   },
 
-  sectionLabel: { fontSize: 10.5, fontWeight: '800', color: Colors.neutral500, letterSpacing: 1.2 },
+  sectionLabel: { fontSize: 10.5, fontWeight: '800', color: colors.neutral500, letterSpacing: 1.2 },
   runsGrid: { flexDirection: 'row', gap: 8 },
   runBtn: {
     flex: 1, aspectRatio: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.neutral100, borderWidth: 1.5, borderColor: Colors.neutral200,
+    backgroundColor: colors.neutral100, borderWidth: 1.5, borderColor: colors.neutral200,
   },
-  runBtnFour: { backgroundColor: Colors.primaryLight, borderColor: Colors.primary },
-  runBtnSix: { backgroundColor: Colors.cricket, borderColor: Colors.cricket },
-  runBtnText: { fontSize: 17, fontWeight: '900', color: Colors.neutral800 },
-  runBtnTextLight: { color: Colors.white },
+  runBtnFour: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
+  runBtnSix: { backgroundColor: colors.cricket, borderColor: colors.cricket },
+  runBtnText: { fontSize: 17, fontWeight: '900', color: colors.neutral800 },
+  runBtnTextLight: { color: colors.white },
 
   eventsRow: { flexDirection: 'row', gap: 8 },
   eventBtn: { flex: 1, borderRadius: 12, paddingVertical: 11, alignItems: 'center' },
-  eventBtnText: { color: Colors.white, fontSize: 11.5, fontWeight: '800', letterSpacing: 0.4 },
+  eventBtnText: { color: colors.white, fontSize: 11.5, fontWeight: '800', letterSpacing: 0.4 },
 
   nextInningsBtn: {
-    marginTop: 4, backgroundColor: Colors.neutral900, borderRadius: 14, paddingVertical: 13, alignItems: 'center',
+    marginTop: 4, backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 13, alignItems: 'center',
   },
-  nextInningsText: { color: Colors.white, fontSize: 13.5, fontWeight: '800' },
+  nextInningsText: { color: colors.white, fontSize: 13.5, fontWeight: '800' },
 });

@@ -9,7 +9,8 @@ import {
   TextInputProps,
   ViewStyle,
 } from 'react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { BorderRadius, Spacing } from '../styles/spacing';
 
 interface InputFieldProps extends TextInputProps {
@@ -28,6 +29,8 @@ export const InputField: React.FC<InputFieldProps> = ({
   containerStyle,
   ...props
 }) => {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const [focused, setFocused] = useState(false);
   const borderAnim = useRef(new Animated.Value(0)).current;
 
@@ -53,7 +56,7 @@ export const InputField: React.FC<InputFieldProps> = ({
 
   const borderColor = borderAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [Colors.inputBorder, Colors.inputBorderFocus],
+    outputRange: [colors.inputBorder, colors.inputBorderFocus],
   });
 
   const borderWidth = borderAnim.interpolate({
@@ -73,7 +76,7 @@ export const InputField: React.FC<InputFieldProps> = ({
         {leftIcon && <View style={styles.leftIcon}>{leftIcon}</View>}
         <TextInput
           style={[styles.input, leftIcon ? styles.inputWithLeft : null]}
-          placeholderTextColor={Colors.textMuted}
+          placeholderTextColor={colors.textMuted}
           {...props}
           onFocus={handleFocus}
           onBlur={handleBlur}
@@ -93,9 +96,9 @@ export const InputField: React.FC<InputFieldProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
-    backgroundColor: Colors.inputBg,
+    backgroundColor: colors.inputBg,
     borderRadius: BorderRadius.lg,
     flexDirection: 'row',
     alignItems: 'center',
@@ -105,7 +108,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 15,
-    color: Colors.text,
+    color: colors.text,
     height: '100%',
   },
   inputWithLeft: {
@@ -123,10 +126,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   errorBorder: {
-    borderColor: Colors.error,
+    borderColor: colors.error,
   },
   errorText: {
-    color: Colors.error,
+    color: colors.error,
     fontSize: 12,
     marginTop: 4,
     marginLeft: 4,

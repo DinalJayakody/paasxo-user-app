@@ -93,5 +93,8 @@ export const parseMatchDetails = (raw: any): MatchDetails => {
     ),
     rejectionReason: data.rejectionReason,
     bookedAt: data.bookedAt,
+    paymentStatus: data.paymentStatus,
+    isWithinCancellationWindow: data.isWithinCancellationWindow,
+    paidParticipants: data.paidParticipants,
   };
 };

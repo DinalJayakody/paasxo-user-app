@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, Alert, KeyboardAvoidingView, Platform,
@@ -7,14 +7,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, CreditCard, Shield, CheckCircle } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
+import ScreenGlow from '../components/ScreenGlow';
 import axiosInstance from '../api/axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const ONE_TIME_CREDIT_KEY = 'paasxo_one_time_credit';
 
 export default function OneTimePaymentScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const [cardName, setCardName] = useState('');
   const [cardNumber, setCardNumber] = useState('');
@@ -55,9 +59,10 @@ export default function OneTimePaymentScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
+      <ScreenGlow />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
-          <ArrowLeft color={Colors.primary} size={22} strokeWidth={2.5} />
+          <ArrowLeft color={colors.primary} size={22} strokeWidth={2.5} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>One-time Payment</Text>
         <View style={{ width: 40 }} />
@@ -69,8 +74,8 @@ export default function OneTimePaymentScreen() {
         keyboardVerticalOffset={0}
       >
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <LinearGradient colors={[Colors.neutral800, Colors.neutral900]} style={styles.hero}>
-          <CreditCard color={Colors.warning} size={32} strokeWidth={1.8} />
+        <LinearGradient colors={[colors.neutral800, colors.neutral900]} style={styles.hero}>
+          <CreditCard color={colors.warning} size={32} strokeWidth={1.8} />
           <Text style={styles.heroTitle}>Single Event Access</Text>
           <Text style={styles.heroDesc}>Pay LKR 2.99 once to create one match or tournament. No subscription required.</Text>
         </LinearGradient>
@@ -78,7 +83,7 @@ export default function OneTimePaymentScreen() {
         <View style={styles.featureList}>
           {['Create one match or tournament', 'Valid for 48 hours', 'No recurring charge', 'Secure payment'].map((f) => (
             <View key={f} style={styles.featureRow}>
-              <CheckCircle color={Colors.success} size={16} strokeWidth={2} />
+              <CheckCircle color={colors.success} size={16} strokeWidth={2} />
               <Text style={styles.featureText}>{f}</Text>
             </View>
           ))}
@@ -103,7 +108,7 @@ export default function OneTimePaymentScreen() {
             </View>
           </View>
           <Text style={styles.secure}>
-            <Shield color={Colors.success} size={11} strokeWidth={2} /> Secured by 256-bit encryption
+            <Shield color={colors.success} size={11} strokeWidth={2} /> Secured by 256-bit encryption
           </Text>
         </View>
 
@@ -117,29 +122,29 @@ export default function OneTimePaymentScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: Colors.text },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
   scroll: { paddingHorizontal: 20, paddingBottom: 40 },
   hero: { borderRadius: 20, padding: 22, alignItems: 'center', gap: 10, marginBottom: 20 },
-  heroTitle: { fontSize: 20, fontWeight: '900', color: Colors.white },
-  heroDesc: { fontSize: 13, color: Colors.neutral300, textAlign: 'center', lineHeight: 20 },
+  heroTitle: { fontSize: 20, fontWeight: '900', color: colors.white },
+  heroDesc: { fontSize: 13, color: colors.neutral300, textAlign: 'center', lineHeight: 20 },
   featureList: { marginBottom: 20 },
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  featureText: { fontSize: 14, color: Colors.text },
+  featureText: { fontSize: 14, color: colors.text },
   card: {
-    backgroundColor: Colors.white, borderRadius: 20, padding: 18, marginBottom: 20, gap: 8,
+    backgroundColor: colors.cardBg, borderRadius: 20, padding: 18, marginBottom: 20, gap: 8,
     shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
-  label: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: Colors.neutral500, marginTop: 4 },
+  label: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: colors.neutral500, marginTop: 4 },
   input: {
-    borderWidth: 1, borderColor: Colors.neutral200, borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: Colors.text, backgroundColor: Colors.inputBg,
+    borderWidth: 1, borderColor: colors.neutral200, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: colors.text, backgroundColor: colors.inputBg,
   },
   row: { flexDirection: 'row' },
-  secure: { fontSize: 11, color: Colors.textSecondary, textAlign: 'center', marginTop: 4 },
+  secure: { fontSize: 11, color: colors.textSecondary, textAlign: 'center', marginTop: 4 },
   subLink: { alignItems: 'center' },
-  subLinkText: { fontSize: 13, color: Colors.primary, fontWeight: '600', textAlign: 'center' },
+  subLinkText: { fontSize: 13, color: colors.primary, fontWeight: '600', textAlign: 'center' },
 });

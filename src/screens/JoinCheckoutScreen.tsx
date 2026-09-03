@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,24 +11,20 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, CreditCard, Lock, ShieldCheck, Smartphone, Users } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { LinearGradient } from 'expo-linear-gradient';
+import { ArrowLeft, Lock, RefreshCw, ShieldCheck, Users } from 'lucide-react-native';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { bookingApi } from '../api/bookingApi';
 import { invitationApi } from '../api/invitationApi';
 import { paymentApi } from '../api/paymentApi';
 import { MatchDetails, CheckoutInitiationResponse } from '../types/api';
+import HeaderIconButton from '../components/HeaderIconButton';
 import { parseMatchDetails } from '../utils/parseMatch';
 import { extractApiError } from '../utils/apiError';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { PayHereCheckoutWebView } from '../components/PayHereCheckoutWebView';
-
-type PaymentMethod = 'saved-card' | 'apple-pay' | 'new-card';
-
-const PAYMENT_OPTIONS: { id: PaymentMethod; label: string; subtitle?: string; icon: any }[] = [
-  { id: 'saved-card', label: 'Saved Card', subtitle: 'Visa •••• 4242', icon: CreditCard },
-  { id: 'apple-pay', label: 'Apple Pay', icon: Smartphone },
-  { id: 'new-card', label: 'New Credit/Debit Card', icon: CreditCard },
-];
+import ScreenGlow from '../components/ScreenGlow';
 
 // How long to keep polling GET /payments/status after PayHere's checkout UI reports
 // completion — same rationale as CheckoutScreen.tsx: onCompleted alone is never proof
@@ -47,12 +43,13 @@ interface JoinCheckoutScreenProps {
 }
 
 export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], invitationId }: JoinCheckoutScreenProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [match, setMatch] = useState<MatchDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('saved-card');
   const [paymentOrderId, setPaymentOrderId] = useState<number | null>(null);
   const [checkoutData, setCheckoutData] = useState<CheckoutInitiationResponse | null>(null);
   const [webViewVisible, setWebViewVisible] = useState(false);
@@ -177,12 +174,24 @@ export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], 
 
   return (
     <SafeAreaView style={styles.flex1} edges={['top']}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()}>
-          <ArrowLeft color={Colors.text} size={22} strokeWidth={2.5} />
-        </Pressable>
-        <Text style={styles.headerTitle}>Join Checkout</Text>
-        <View style={{ width: 22 }} />
+      <ScreenGlow />
+      {/* Floating glass-gradient header */}
+      <View style={styles.topHeaderShadow}>
+        <View style={styles.topHeader}>
+          <LinearGradient
+            colors={[colors.primaryAccent, colors.primary, colors.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.headerGlassStroke} pointerEvents="none" />
+
+          <HeaderIconButton onPress={() => router.back()} style={styles.headerBack}>
+            <ArrowLeft color={colors.white} size={20} strokeWidth={2.5} />
+          </HeaderIconButton>
+          <Text style={styles.headerTitle}>Join Checkout</Text>
+          <View style={styles.headerSpacer} />
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -190,7 +199,7 @@ export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], 
         {/* Summary chips */}
         <View style={styles.chipRow}>
           <View style={styles.chip}>
-            <Users color={Colors.primary} size={13} strokeWidth={2.5} />
+            <Users color={colors.primary} size={13} strokeWidth={2.5} />
             <Text style={styles.chipText}>
               {playersJoining === 1 ? 'You' : `You + ${additionalPlayerIds.length} player${additionalPlayerIds.length > 1 ? 's' : ''}`}
             </Text>
@@ -248,33 +257,37 @@ export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], 
           )}
         </View>
 
-        {/* Payment methods */}
+        {/* Payment method — the actual card/wallet choice happens on PayHere's own
+            hosted checkout page next, not here, so this is informational only. */}
         <Text style={styles.sectionTitle}>Payment Method</Text>
-        {PAYMENT_OPTIONS.map((option) => {
-          const Icon = option.icon;
-          const selected = selectedMethod === option.id;
-          return (
-            <Pressable
-              key={option.id}
-              style={[styles.paymentOption, selected && styles.paymentOptionSelected]}
-              onPress={() => setSelectedMethod(option.id)}
-            >
-              <View style={styles.paymentIconWrap}>
-                <Icon color={Colors.text} size={20} strokeWidth={2} />
-              </View>
-              <View style={styles.flex1}>
-                <Text style={styles.paymentLabel}>{option.label}</Text>
-                {option.subtitle && <Text style={styles.paymentSubtitle}>{option.subtitle}</Text>}
-              </View>
-              <View style={[styles.radio, selected && styles.radioSelected]}>
-                {selected && <View style={styles.radioDot} />}
-              </View>
-            </Pressable>
-          );
-        })}
+        <View style={styles.paymentOption}>
+          <View style={styles.paymentIconWrap}>
+            <Lock color={colors.text} size={18} strokeWidth={2} />
+          </View>
+          <View style={styles.flex1}>
+            <Text style={styles.paymentLabel}>Choose on the next screen</Text>
+            <Text style={styles.paymentSubtitle}>
+              Card, mobile wallet or bank — securely handled by PayHere. Paasxo never sees or stores your card number.
+            </Text>
+          </View>
+        </View>
+
+        {perPlayer != null && (
+          <View style={styles.guideCard}>
+            <View style={styles.guideHeader}>
+              <RefreshCw color={colors.primary} size={16} strokeWidth={2.2} />
+              <Text style={styles.guideTitle}>What happens to this payment</Text>
+            </View>
+            <Text style={styles.guideText}>
+              You're paying your share to join this match. If the organizer or venue cancels the match for
+              any reason, this amount is automatically refunded back to your original payment method — no
+              action needed from you.
+            </Text>
+          </View>
+        )}
 
         <View style={styles.secureRow}>
-          <Lock color={Colors.textMuted} size={13} strokeWidth={2} />
+          <Lock color={colors.textMuted} size={13} strokeWidth={2} />
           <Text style={styles.secureText}>SECURE SSL ENCRYPTION</Text>
         </View>
       </ScrollView>
@@ -282,9 +295,9 @@ export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], 
       <View style={[styles.bottomBar, { paddingBottom: (Platform.OS === 'ios' ? 24 : 16) + insets.bottom }]}>
         <Pressable style={styles.payButton} onPress={handlePayAndJoin} disabled={submitting}>
           {submitting
-            ? <ActivityIndicator color={Colors.white} />
+            ? <ActivityIndicator color={colors.white} />
             : <>
-                <ShieldCheck color={Colors.white} size={18} strokeWidth={2.2} />
+                <ShieldCheck color={colors.white} size={18} strokeWidth={2.2} />
                 <Text style={styles.payButtonText}>
                   {grandTotal != null ? `Pay & Join  ${sym}${grandTotal.toFixed(2)}` : 'Join Match'}
                 </Text>
@@ -308,65 +321,94 @@ export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], 
   );
 }
 
-const styles = StyleSheet.create({
-  flex1: { flex: 1, backgroundColor: Colors.background },
-  loadingScreen: { flex: 1, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.background,
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  flex1: { flex: 1, backgroundColor: colors.background },
+  loadingScreen: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' },
+  topHeaderShadow: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    marginBottom: 2,
+    borderRadius: 26,
+    shadowColor: colors.primaryDark,
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
   },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: Colors.text },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24, backgroundColor: Colors.background },
+  topHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderRadius: 26,
+    overflow: 'hidden',
+  },
+  headerGlassStroke: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  headerBack: {
+    width: 38, height: 38, borderRadius: 19,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  headerSpacer: { width: 38 },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: colors.white },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24 },
 
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: Colors.primaryLight, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+    backgroundColor: colors.primaryLight, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
   },
-  chipText: { fontSize: 12, fontWeight: '600', color: Colors.primary },
+  chipText: { fontSize: 12, fontWeight: '600', color: colors.primary },
 
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: Colors.text, marginBottom: 12, marginTop: 8 },
-  card: { backgroundColor: Colors.white, borderRadius: 16, padding: 16, marginBottom: 8 },
-  matchTitle: { fontSize: 15, fontWeight: '700', color: Colors.text, marginBottom: 4 },
-  matchVenue: { fontSize: 13, color: Colors.textSecondary },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 12, marginTop: 8 },
+  card: { backgroundColor: colors.cardBg, borderRadius: 16, padding: 16, marginBottom: 8 },
+  matchTitle: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 4 },
+  matchVenue: { fontSize: 13, color: colors.textSecondary },
 
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 },
   summarySubRow: { paddingBottom: 6, paddingLeft: 2 },
-  summarySubLabel: { fontSize: 12, color: Colors.textMuted },
-  summaryLabel: { fontSize: 14, color: Colors.textSecondary, flex: 1, marginRight: 8 },
-  summaryValue: { fontSize: 14, fontWeight: '600', color: Colors.text },
-  divider: { height: 1, backgroundColor: Colors.neutral200, marginVertical: 6 },
-  totalLabel: { fontSize: 16, fontWeight: '700', color: Colors.text },
-  totalValue: { fontSize: 20, fontWeight: '800', color: Colors.primary },
+  summarySubLabel: { fontSize: 12, color: colors.textMuted },
+  summaryLabel: { fontSize: 14, color: colors.textSecondary, flex: 1, marginRight: 8 },
+  summaryValue: { fontSize: 14, fontWeight: '600', color: colors.text },
+  divider: { height: 1, backgroundColor: colors.neutral200, marginVertical: 6 },
+  totalLabel: { fontSize: 16, fontWeight: '700', color: colors.text },
+  totalValue: { fontSize: 20, fontWeight: '800', color: colors.primary },
 
   paymentOption: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: Colors.white, borderRadius: 14,
+    backgroundColor: colors.cardBg, borderRadius: 14,
     padding: 14, marginBottom: 12, borderWidth: 1.5, borderColor: 'transparent',
   },
-  paymentOptionSelected: { borderColor: Colors.primary },
   paymentIconWrap: {
-    width: 38, height: 38, borderRadius: 10, backgroundColor: Colors.neutral100,
+    width: 38, height: 38, borderRadius: 10, backgroundColor: colors.neutral100,
     alignItems: 'center', justifyContent: 'center',
   },
-  paymentLabel: { fontSize: 14, fontWeight: '700', color: Colors.text },
-  paymentSubtitle: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: Colors.neutral300, alignItems: 'center', justifyContent: 'center' },
-  radioSelected: { borderColor: Colors.primary },
-  radioDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: Colors.primary },
+  paymentLabel: { fontSize: 14, fontWeight: '700', color: colors.text },
+  paymentSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+
+  guideCard: {
+    backgroundColor: colors.primaryLight, borderRadius: 14,
+    padding: 14, marginBottom: 12,
+  },
+  guideHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  guideTitle: { fontSize: 13, fontWeight: '700', color: colors.primary },
+  guideText: { fontSize: 12.5, lineHeight: 18, color: colors.textSecondary },
 
   secureRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 24 },
-  secureText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.6, color: Colors.textMuted },
+  secureText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.6, color: colors.textMuted },
 
   bottomBar: {
     paddingHorizontal: 20, paddingTop: 14,
     paddingBottom: Platform.OS === 'ios' ? 24 : 16,
-    backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.neutral200,
+    backgroundColor: colors.cardBg, borderTopWidth: 1, borderTopColor: colors.neutral200,
   },
   payButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 16,
+    backgroundColor: colors.primary, borderRadius: 16, paddingVertical: 16,
   },
-  payButtonText: { fontSize: 16, fontWeight: '700', color: Colors.white },
-  legalText: { fontSize: 11, color: Colors.textMuted, textAlign: 'center', marginTop: 10, lineHeight: 16 },
+  payButtonText: { fontSize: 16, fontWeight: '700', color: colors.white },
+  legalText: { fontSize: 11, color: colors.textMuted, textAlign: 'center', marginTop: 10, lineHeight: 16 },
 });

@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -28,7 +28,8 @@ import {
   X,
   Swords,
 } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { AuthContext } from '../context/AuthContext';
 import { tournamentApi } from '../api/tournamentApi';
 import { futsalApi } from '../api/futsalApi';
@@ -38,12 +39,16 @@ import { TournamentUI, TournamentTeamUI } from '../types/api';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import HeaderIconButton from '../components/HeaderIconButton';
+import ScreenGlow from '../components/ScreenGlow';
 
 interface TournamentDetailsScreenProps {
   tournamentId: string;
 }
 
 export default function TournamentDetailsScreen({ tournamentId }: TournamentDetailsScreenProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const { user } = useContext(AuthContext);
   const [tournament, setTournament] = useState<TournamentUI | null>(null);
@@ -179,32 +184,43 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
   }
 
   const lifecycleConfig = {
-    UPCOMING: { label: 'Upcoming', color: Colors.neutral500, bg: Colors.neutral200 },
+    UPCOMING: { label: 'Upcoming', color: colors.neutral500, bg: colors.neutral200 },
     LIVE: { label: 'Live Now', color: '#DC2626', bg: '#FDE8E8' },
-    COMPLETED: { label: 'Completed', color: Colors.success, bg: '#E7F8EE' },
+    COMPLETED: { label: 'Completed', color: colors.success, bg: '#E7F8EE' },
   }[tournament.lifecycle];
 
   return (
     <SafeAreaView style={styles.flex1} edges={['top']}>
-      <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={styles.hero}>
+      <ScreenGlow />
+      {/* Floating glass-gradient header */}
+      <View style={styles.heroShadow}>
+      <View style={styles.hero}>
+        <LinearGradient
+          colors={[colors.primaryAccent, colors.primary, colors.primaryDark]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={styles.headerGlassStroke} pointerEvents="none" />
+
         <View style={styles.heroTopRow}>
-          <Pressable style={styles.circleBtn} onPress={() => router.back()}>
-            <ArrowLeft color={Colors.white} size={20} strokeWidth={2.5} />
-          </Pressable>
-          <Pressable style={styles.circleBtn} onPress={handleShare}>
-            <Share2 color={Colors.white} size={18} strokeWidth={2.5} />
-          </Pressable>
+          <HeaderIconButton style={styles.circleBtn} onPress={() => router.back()}>
+            <ArrowLeft color={colors.white} size={20} strokeWidth={2.5} />
+          </HeaderIconButton>
+          <HeaderIconButton style={styles.circleBtn} onPress={handleShare}>
+            <Share2 color={colors.white} size={18} strokeWidth={2.5} />
+          </HeaderIconButton>
         </View>
         <Text style={styles.heroEmoji}>🏆</Text>
         <Text style={styles.heroTitle}>{tournament.name}</Text>
         {tournament.venueName && (
           <View style={styles.heroMetaRow}>
-            <MapPin color={Colors.white} size={13} strokeWidth={2.5} />
+            <MapPin color={colors.white} size={13} strokeWidth={2.5} />
             <Text style={styles.heroMetaText}>{tournament.venueName}</Text>
           </View>
         )}
         <View style={styles.heroMetaRow}>
-          <Calendar color={Colors.white} size={13} strokeWidth={2.5} />
+          <Calendar color={colors.white} size={13} strokeWidth={2.5} />
           <Text style={styles.heroMetaText}>{tournament.date}</Text>
         </View>
 
@@ -221,7 +237,8 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
             {lifecycleConfig.label}
           </Text>
         </View>
-      </LinearGradient>
+      </View>
+      </View>
 
       <View style={styles.refreshableArea}>
       <PaasxoRefreshLogo refreshing={refreshing} />
@@ -243,8 +260,8 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
           <Text style={styles.sectionTitle}>Teams ({tournament.teams.length})</Text>
           {tournament.isOwner && (
             <Pressable style={styles.addChip} onPress={() => setAddTeamVisible(true)}>
-              <Plus color={Colors.primary} size={14} strokeWidth={2.5} />
-              <Text style={[styles.addChipText, { color: Colors.primary }]}>Add Team</Text>
+              <Plus color={colors.primary} size={14} strokeWidth={2.5} />
+              <Text style={[styles.addChipText, { color: colors.primary }]}>Add Team</Text>
             </Pressable>
           )}
         </View>
@@ -266,8 +283,8 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
           <Text style={styles.sectionTitle}>Fixtures ({tournament.matches.length})</Text>
           {tournament.isOwner && (
             <Pressable style={styles.addChip} onPress={() => setAddMatchVisible(true)}>
-              <Plus color={Colors.primary} size={14} strokeWidth={2.5} />
-              <Text style={[styles.addChipText, { color: Colors.primary }]}>Schedule</Text>
+              <Plus color={colors.primary} size={14} strokeWidth={2.5} />
+              <Text style={[styles.addChipText, { color: colors.primary }]}>Schedule</Text>
             </Pressable>
           )}
         </View>
@@ -277,9 +294,9 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
         ) : (
           tournament.matches.map((match) => {
             const statusConfig = {
-              SCHEDULED: { label: 'Scheduled', color: Colors.neutral500, bg: Colors.neutral200 },
+              SCHEDULED: { label: 'Scheduled', color: colors.neutral500, bg: colors.neutral200 },
               LIVE: { label: 'Live', color: '#DC2626', bg: '#FDE8E8' },
-              COMPLETED: { label: 'Final', color: Colors.success, bg: '#E7F8EE' },
+              COMPLETED: { label: 'Final', color: colors.success, bg: '#E7F8EE' },
             }[match.derivedStatus];
 
             return (
@@ -299,7 +316,7 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
                       {match.teamAScore ?? 0} - {match.teamBScore ?? 0}
                     </Text>
                   ) : (
-                    <Swords color={Colors.neutral400} size={18} strokeWidth={2} />
+                    <Swords color={colors.neutral400} size={18} strokeWidth={2} />
                   )}
                   <View style={[styles.matchStatusPill, { backgroundColor: statusConfig.bg }]}>
                     <Text style={[styles.matchStatusPillText, { color: statusConfig.color }]}>
@@ -324,14 +341,14 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Pressable style={styles.modalClose} onPress={() => setRosterTeam(null)}>
-              <X color={Colors.text} size={18} strokeWidth={2.5} />
+              <X color={colors.text} size={18} strokeWidth={2.5} />
             </Pressable>
             <Text style={styles.modalTeamEmoji}>{rosterTeam?.emoji}</Text>
             <Text style={styles.modalTitle}>{rosterTeam?.name}</Text>
             {rosterTeam?.players.length ? (
               rosterTeam.players.map((p) => (
                 <View key={p.id} style={styles.rosterRow}>
-                  <Crown color={Colors.primary} size={14} strokeWidth={2} />
+                  <Crown color={colors.primary} size={14} strokeWidth={2} />
                   <Text style={styles.rosterRowText}>{p.playerDisplayName || p.playerFirebaseUid}</Text>
                 </View>
               ))
@@ -350,13 +367,13 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
         >
           <View style={styles.modalCard}>
             <Pressable style={styles.modalClose} onPress={() => setAddTeamVisible(false)}>
-              <X color={Colors.text} size={18} strokeWidth={2.5} />
+              <X color={colors.text} size={18} strokeWidth={2.5} />
             </Pressable>
             <Text style={styles.modalTitle}>Add a team</Text>
             <TextInput
               style={styles.modalInput}
               placeholder="Team name"
-              placeholderTextColor={Colors.neutral400}
+              placeholderTextColor={colors.neutral400}
               value={newTeamName}
               onChangeText={setNewTeamName}
             />
@@ -365,7 +382,7 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
               onPress={handleAddTeam}
               disabled={addingTeam}
             >
-              {addingTeam ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.modalSubmitText}>Add Team</Text>}
+              {addingTeam ? <ActivityIndicator color={colors.white} /> : <Text style={styles.modalSubmitText}>Add Team</Text>}
             </Pressable>
           </View>
         </KeyboardAvoidingView>
@@ -376,7 +393,7 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Pressable style={styles.modalClose} onPress={() => setAddMatchVisible(false)}>
-              <X color={Colors.text} size={18} strokeWidth={2.5} />
+              <X color={colors.text} size={18} strokeWidth={2.5} />
             </Pressable>
             <Text style={styles.modalTitle}>Schedule a match</Text>
             <View style={styles.teamChipRow}>
@@ -411,7 +428,7 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
               onPress={handleAddMatch}
               disabled={addingMatch || matchTeamA == null || matchTeamB == null}
             >
-              {addingMatch ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.modalSubmitText}>Schedule Match</Text>}
+              {addingMatch ? <ActivityIndicator color={colors.white} /> : <Text style={styles.modalSubmitText}>Schedule Match</Text>}
             </Pressable>
           </View>
         </View>
@@ -420,20 +437,38 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   flex1: { flex: 1 },
   refreshableArea: { flex: 1, position: 'relative' },
   loadingScreen: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  heroShadow: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    borderRadius: 26,
+    shadowColor: colors.primaryDark,
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
   },
   hero: {
     paddingHorizontal: 20,
     paddingBottom: 24,
     paddingTop: 8,
     alignItems: 'center',
+    borderRadius: 26,
+    overflow: 'hidden',
+  },
+  headerGlassStroke: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
   },
   heroTopRow: {
     flexDirection: 'row',
@@ -442,9 +477,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   circleBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: 'rgba(255,255,255,0.25)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -456,7 +491,7 @@ const styles = StyleSheet.create({
   heroTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: Colors.white,
+    color: colors.white,
     textAlign: 'center',
     marginBottom: 8,
   },
@@ -504,7 +539,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: Colors.text,
+    color: colors.text,
   },
   addChip: {
     flexDirection: 'row',
@@ -518,14 +553,14 @@ const styles = StyleSheet.create({
   addChipText: {
     fontSize: 11,
     fontWeight: '700',
-    color: Colors.primary,
+    color: colors.primary,
   },
   teamsRow: {
     marginBottom: 24,
   },
   teamCard: {
     width: 110,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 16,
     paddingVertical: 14,
     alignItems: 'center',
@@ -539,21 +574,21 @@ const styles = StyleSheet.create({
   teamCardName: {
     fontSize: 12,
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
     textAlign: 'center',
   },
   teamCardMeta: {
     fontSize: 10,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   emptyHint: {
     fontSize: 12,
-    color: Colors.neutral400,
+    color: colors.neutral400,
   },
   matchCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 16,
     padding: 14,
     marginBottom: 10,
@@ -571,7 +606,7 @@ const styles = StyleSheet.create({
   matchCardTeamName: {
     fontSize: 12,
     fontWeight: '700',
-    color: Colors.text,
+    color: colors.text,
     flexShrink: 1,
   },
   matchCardScoreWrap: {
@@ -582,7 +617,7 @@ const styles = StyleSheet.create({
   matchCardScore: {
     fontSize: 16,
     fontWeight: '800',
-    color: Colors.text,
+    color: colors.text,
   },
   matchStatusPill: {
     paddingHorizontal: 8,
@@ -601,7 +636,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   modalCard: {
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderRadius: 20,
     padding: 20,
     width: '100%',
@@ -614,7 +649,7 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -625,7 +660,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 17,
     fontWeight: '800',
-    color: Colors.text,
+    color: colors.text,
     marginBottom: 14,
     textAlign: 'center',
   },
@@ -638,22 +673,22 @@ const styles = StyleSheet.create({
   },
   rosterRowText: {
     fontSize: 13,
-    color: Colors.text,
+    color: colors.text,
     fontWeight: '600',
   },
   modalInput: {
     width: '100%',
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
-    color: Colors.text,
+    color: colors.text,
     marginBottom: 14,
   },
   modalSubmit: {
     width: '100%',
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
@@ -664,7 +699,7 @@ const styles = StyleSheet.create({
   modalSubmitText: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.white,
+    color: colors.white,
   },
   teamChipRow: {
     flexDirection: 'row',
@@ -680,9 +715,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 16,
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
     borderWidth: 1,
-    borderColor: Colors.neutral200,
+    borderColor: colors.neutral200,
   },
   teamChipEmoji: {
     fontSize: 14,
@@ -690,16 +725,16 @@ const styles = StyleSheet.create({
   teamChipText: {
     fontSize: 12,
     fontWeight: '600',
-    color: Colors.text,
+    color: colors.text,
   },
   teamChipTextActive: {
-    color: Colors.white,
+    color: colors.white,
   },
   vsText: {
     textAlign: 'center',
     fontSize: 11,
     fontWeight: '800',
-    color: Colors.neutral400,
+    color: colors.neutral400,
     marginBottom: 8,
   },
 });

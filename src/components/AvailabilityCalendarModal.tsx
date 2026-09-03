@@ -2,7 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Modal, Pressable, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 import { TrainerSessionSlot } from '../types/api';
 
 interface Props {
@@ -27,6 +28,8 @@ function toIsoDate(d: Date) {
 }
 
 export function AvailabilityCalendarModal({ visible, onClose, slots, selectedSlotId, onSelectSlot }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const today = useMemo(() => new Date(new Date().toDateString()), []);
   const selectedSlot = slots.find((s) => s.id === selectedSlotId) ?? null;
   const [viewMonth, setViewMonth] = useState(() =>
@@ -89,7 +92,7 @@ export function AvailabilityCalendarModal({ visible, onClose, slots, selectedSlo
             <View style={styles.header}>
               <Text style={styles.headerTitle}>Pick a Date</Text>
               <TouchableOpacity onPress={onClose} hitSlop={10} style={styles.closeBtn}>
-                <X color={Colors.textSecondary} size={20} strokeWidth={2.2} />
+                <X color={colors.textSecondary} size={20} strokeWidth={2.2} />
               </TouchableOpacity>
             </View>
 
@@ -100,7 +103,7 @@ export function AvailabilityCalendarModal({ visible, onClose, slots, selectedSlo
                 style={[styles.monthNavBtn, !canGoPrev && styles.monthNavBtnDisabled]}
                 hitSlop={8}
               >
-                <ChevronLeft color={canGoPrev ? Colors.text : Colors.neutral300} size={20} strokeWidth={2.4} />
+                <ChevronLeft color={canGoPrev ? colors.text : colors.neutral300} size={20} strokeWidth={2.4} />
               </TouchableOpacity>
               <Text style={styles.monthLabel}>{MONTH_FORMATTER.format(viewMonth)}</Text>
               <TouchableOpacity
@@ -109,7 +112,7 @@ export function AvailabilityCalendarModal({ visible, onClose, slots, selectedSlo
                 style={[styles.monthNavBtn, !canGoNext && styles.monthNavBtnDisabled]}
                 hitSlop={8}
               >
-                <ChevronRight color={canGoNext ? Colors.text : Colors.neutral300} size={20} strokeWidth={2.4} />
+                <ChevronRight color={canGoNext ? colors.text : colors.neutral300} size={20} strokeWidth={2.4} />
               </TouchableOpacity>
             </View>
 
@@ -163,11 +166,11 @@ export function AvailabilityCalendarModal({ visible, onClose, slots, selectedSlo
 
             <View style={styles.legendRow}>
               <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: Colors.trainerLight, borderColor: Colors.trainer }]} />
+                <View style={[styles.legendDot, { backgroundColor: colors.trainerLight, borderColor: colors.trainer }]} />
                 <Text style={styles.legendText}>Available</Text>
               </View>
               <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: Colors.neutral100, borderColor: Colors.neutral200 }]} />
+                <View style={[styles.legendDot, { backgroundColor: colors.neutral100, borderColor: colors.neutral200 }]} />
                 <Text style={styles.legendText}>Full / unavailable</Text>
               </View>
             </View>
@@ -178,45 +181,45 @@ export function AvailabilityCalendarModal({ visible, onClose, slots, selectedSlo
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(15,23,42,0.5)', justifyContent: 'flex-end' },
   sheetWrap: {},
   sheet: {
-    backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    backgroundColor: colors.cardBg, borderTopLeftRadius: 24, borderTopRightRadius: 24,
     paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8,
   },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: Colors.text },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
   closeBtn: {
-    width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.neutral100,
+    width: 32, height: 32, borderRadius: 16, backgroundColor: colors.neutral100,
     alignItems: 'center', justifyContent: 'center',
   },
   monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   monthNavBtn: {
-    width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.neutral100,
+    width: 34, height: 34, borderRadius: 17, backgroundColor: colors.neutral100,
     alignItems: 'center', justifyContent: 'center',
   },
   monthNavBtnDisabled: { opacity: 0.4 },
-  monthLabel: { fontSize: 15, fontWeight: '700', color: Colors.text },
+  monthLabel: { fontSize: 15, fontWeight: '700', color: colors.text },
   weekdayRow: { flexDirection: 'row', marginBottom: 4 },
-  weekdayLabel: { flex: 1, textAlign: 'center', fontSize: 11.5, fontWeight: '700', color: Colors.textMuted },
+  weekdayLabel: { flex: 1, textAlign: 'center', fontSize: 11.5, fontWeight: '700', color: colors.textMuted },
   weekRow: { flexDirection: 'row' },
   dayCell: {
     flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center',
     marginVertical: 2, borderRadius: 12,
   },
-  dayCellAvailable: { backgroundColor: Colors.trainerLight },
-  dayCellSelected: { backgroundColor: Colors.trainer },
-  dayText: { fontSize: 13.5, fontWeight: '600', color: Colors.text },
-  dayTextMuted: { color: Colors.neutral300 },
-  dayTextFull: { color: Colors.neutral400, textDecorationLine: 'line-through' },
-  dayTextAvailable: { color: Colors.trainer, fontWeight: '800' },
-  dayTextSelected: { color: Colors.white, fontWeight: '800' },
+  dayCellAvailable: { backgroundColor: colors.trainerLight },
+  dayCellSelected: { backgroundColor: colors.trainer },
+  dayText: { fontSize: 13.5, fontWeight: '600', color: colors.text },
+  dayTextMuted: { color: colors.neutral300 },
+  dayTextFull: { color: colors.neutral400, textDecorationLine: 'line-through' },
+  dayTextAvailable: { color: colors.trainer, fontWeight: '800' },
+  dayTextSelected: { color: colors.white, fontWeight: '800' },
   todayDot: {
-    position: 'absolute', bottom: 4, width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.primary,
+    position: 'absolute', bottom: 4, width: 4, height: 4, borderRadius: 2, backgroundColor: colors.primary,
   },
   legendRow: { flexDirection: 'row', gap: 20, marginTop: 14, marginBottom: 8, paddingLeft: 2 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 1.5 },
-  legendText: { fontSize: 11.5, color: Colors.textSecondary, fontWeight: '600' },
+  legendText: { fontSize: 11.5, color: colors.textSecondary, fontWeight: '600' },
 });

@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera, Eye, Image as ImageIcon, X } from 'lucide-react-native';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 
 interface AvatarActionSheetProps {
   visible: boolean;
@@ -31,6 +32,8 @@ export function AvatarActionSheet({
   onChooseLibrary,
   onTakePhoto,
 }: AvatarActionSheetProps) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
   const [mounted, setMounted] = useState(visible);
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const sheetTranslateY = useRef(new Animated.Value(300)).current;
@@ -76,7 +79,7 @@ export function AvatarActionSheet({
         <View style={styles.headerRow}>
           <Text style={styles.title}>Profile Photo</Text>
           <Pressable onPress={onClose} style={styles.closeIcon} hitSlop={10}>
-            <X color={Colors.neutral500} size={18} strokeWidth={2.5} />
+            <X color={colors.neutral500} size={18} strokeWidth={2.5} />
           </Pressable>
         </View>
 
@@ -89,7 +92,7 @@ export function AvatarActionSheet({
               onPress={opt.onPress}
             >
               <View style={styles.optionIconWrap}>
-                <Icon color={Colors.primary} size={19} strokeWidth={2.2} />
+                <Icon color={colors.primary} size={19} strokeWidth={2.2} />
               </View>
               <Text style={styles.optionLabel}>{opt.label}</Text>
             </Pressable>
@@ -104,7 +107,7 @@ export function AvatarActionSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   backdropFill: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(15,23,42,0.5)',
@@ -114,7 +117,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: Colors.white,
+    backgroundColor: colors.cardBg,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 20,
@@ -127,33 +130,33 @@ const styles = StyleSheet.create({
   },
   handle: {
     width: 40, height: 4, borderRadius: 2,
-    backgroundColor: Colors.neutral200,
+    backgroundColor: colors.neutral200,
     alignSelf: 'center', marginBottom: 14,
   },
   headerRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginBottom: 12,
   },
-  title: { fontSize: 16, fontWeight: '800', color: Colors.neutral900 },
+  title: { fontSize: 16, fontWeight: '800', color: colors.neutral900 },
   closeIcon: {
     width: 30, height: 30, borderRadius: 15,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.neutral100,
+    backgroundColor: colors.neutral100,
   },
   optionRow: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     paddingVertical: 14, borderRadius: 16, paddingHorizontal: 8,
   },
-  optionRowPressed: { backgroundColor: Colors.neutral100 },
+  optionRowPressed: { backgroundColor: colors.neutral100 },
   optionIconWrap: {
     width: 38, height: 38, borderRadius: 12,
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center', justifyContent: 'center',
   },
-  optionLabel: { fontSize: 15, fontWeight: '600', color: Colors.neutral900 },
+  optionLabel: { fontSize: 15, fontWeight: '600', color: colors.neutral900 },
   cancelButton: {
     marginTop: 8, paddingVertical: 14, borderRadius: 16,
-    alignItems: 'center', backgroundColor: Colors.neutral100,
+    alignItems: 'center', backgroundColor: colors.neutral100,
   },
-  cancelText: { fontSize: 15, fontWeight: '700', color: Colors.neutral700 },
+  cancelText: { fontSize: 15, fontWeight: '700', color: colors.neutral700 },
 });

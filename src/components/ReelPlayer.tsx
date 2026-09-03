@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -14,7 +14,8 @@ import { Eye, Heart, X } from 'lucide-react-native';
 import { ReelSummary } from '../types/api';
 import { reelApi } from '../api/reelApi';
 import { parseMediaUrl } from '../utils/postFormat';
-import { Colors } from '../styles/colors';
+import { ThemeColors } from '../styles/colors';
+import { useTheme } from '../context/ThemeContext';
 
 let useVideoPlayer: any = null;
 let VideoView: any = null;
@@ -48,7 +49,7 @@ interface ReelPlayerProps {
   onClose: () => void;
 }
 
-function LoopingVideo({ uri, muted }: { uri: string; muted: boolean }) {
+function LoopingVideo({ uri, muted, styles }: { uri: string; muted: boolean; styles: ReturnType<typeof createStyles> }) {
   if (!useVideoPlayer || !VideoView) {
     return (
       <View style={[StyleSheet.absoluteFillObject, styles.videoFallback]}>
@@ -71,6 +72,8 @@ function LoopingVideo({ uri, muted }: { uri: string; muted: boolean }) {
 }
 
 export function ReelPlayer({ visible, reel, onClose }: ReelPlayerProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -156,7 +159,7 @@ export function ReelPlayer({ visible, reel, onClose }: ReelPlayerProps) {
       <StatusBar hidden />
       <View style={styles.root}>
         {mediaUri ? (
-          <LoopingVideo uri={mediaUri} muted={!!reel.audioTrackUrl} />
+          <LoopingVideo uri={mediaUri} muted={!!reel.audioTrackUrl} styles={styles} />
         ) : (
           <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#1a1a2e' }]} />
         )}
@@ -198,7 +201,7 @@ export function ReelPlayer({ visible, reel, onClose }: ReelPlayerProps) {
           <View style={styles.actionsCol}>
             <Pressable onPress={toggleLike} style={styles.actionBtn} hitSlop={10}>
               <Animated.View style={{ transform: [{ scale: heartScale }] }}>
-                <Heart color={liked ? Colors.liveRed : '#fff'} fill={liked ? Colors.liveRed : 'none'} size={30} strokeWidth={2.2} />
+                <Heart color={liked ? colors.liveRed : '#fff'} fill={liked ? colors.liveRed : 'none'} size={30} strokeWidth={2.2} />
               </Animated.View>
               <Text style={styles.actionCount}>{likeCount}</Text>
             </Pressable>
@@ -213,7 +216,7 @@ export function ReelPlayer({ visible, reel, onClose }: ReelPlayerProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
   videoFallback: { backgroundColor: '#111', alignItems: 'center', justifyContent: 'center' },
   videoFallbackText: { color: '#fff', fontSize: 13 },
