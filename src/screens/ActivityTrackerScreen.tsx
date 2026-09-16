@@ -288,14 +288,26 @@ export default function ActivityTrackerScreen() {
 
   const beginTracking = useCallback(async () => {
     prevSplitCountRef.current = 0;
-    const started = await tracking.start();
-    if (!started) {
-      Alert.alert('Location permission needed', 'Please enable location access to track this activity.');
+    try {
+      const started = await tracking.start();
+      if (!started) {
+        Alert.alert('Location permission needed', 'Please enable location access to track this activity.');
+        setPhase('SELECT');
+        return;
+      }
+      setPhase('ACTIVE');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      // A permission/config failure here (e.g. background location not yet
+      // granted) must never leave the countdown screen frozen — surface it
+      // and let the user retry instead of failing silently.
+      console.warn('[ActivityTracker] failed to start tracking:', e);
+      Alert.alert(
+        "Couldn't start tracking",
+        'Something went wrong starting GPS tracking. Please check that location access is enabled for Paasxo and try again.'
+      );
       setPhase('SELECT');
-      return;
     }
-    setPhase('ACTIVE');
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

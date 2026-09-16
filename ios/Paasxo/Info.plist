@@ -49,10 +49,14 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>The app accesses your camera to let you share your photos with your friends.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>PaasXO tracks your walk, run, or cycling route in the background so it keeps recording distance and time even while your phone is locked.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>The app accesses your location to let you share your location with your friends and find nearby matches.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your microphone</string>
+	<key>NSMotionUsageDescription</key>
+	<string>PaasXO uses motion data to count your steps during a tracked walk, run, or cycling activity.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>The app accesses your photos to let you share them with your friends.</string>
 	<key>NSUserActivityTypes</key>
@@ -64,6 +68,7 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+		<string>location</string>
 	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>SplashScreen</string>

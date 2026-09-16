@@ -12,12 +12,14 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "buildNumber": "4",
+      "buildNumber": "7",
       "infoPlist": {
         "NSCameraUsageDescription": "Allow access to camera",
         "NSPhotoLibraryUsageDescription": "Allow access to photos",
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["remote-notification", "location"]
+        "UIBackgroundModes": ["remote-notification", "location"],
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "PaasXO tracks your walk, run, or cycling route in the background so it keeps recording distance and time even while your phone is locked.",
+        "NSMotionUsageDescription": "PaasXO uses motion data to count your steps during a tracked walk, run, or cycling activity."
       },
       "entitlements": {
         "aps-environment": "production"
@@ -69,7 +71,8 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_LOCATION"
+        "FOREGROUND_SERVICE_LOCATION",
+        "ACTIVITY_RECOGNITION"
       ]
     }
   }
