@@ -31,6 +31,7 @@ import {
   BookOpen,
   PersonStanding,
   UserCheck,
+  Landmark,
 } from 'lucide-react-native';
 import { notificationApi } from '../api/notificationApi';
 import * as Location from 'expo-location';
@@ -47,6 +48,7 @@ import { TournamentFeedCard, TournamentFeedItem } from '../components/Tournament
 import { bookingApi } from '../api/bookingApi';
 import { tournamentApi } from '../api/tournamentApi';
 import { trainerApi } from '../api/trainerApi';
+import { futsalApi } from '../api/futsalApi';
 import { tournamentStorage } from '../utils/tournamentStorage';
 import { buildTournamentUI } from '../utils/parseTournament';
 import { AuthContext } from '../context/AuthContext';
@@ -73,7 +75,11 @@ interface MatchCard {
   title: string;
   sportType?: string;
   images?: string[];
+  venueName?: string;
   locationName?: string;
+  latitude?: number;
+  longitude?: number;
+  distanceKm?: number;
   startDate?: string;
   endDate?: string;
   price?: string;
@@ -89,8 +95,32 @@ interface MatchCard {
   status?: string;
 }
 
-type MainTab = 'MATCHES' | 'TOURNAMENTS' | 'TRAINER_SESSIONS' | 'WALKING_RUNNING';
+// Same Haversine formula used by ExploreScreen and the backend's GeoUtils —
+// kept in sync so "X km away" always matches what the nearby filter itself used.
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+type MainTab = 'MATCHES' | 'VENUES' | 'TOURNAMENTS' | 'TRAINER_SESSIONS' | 'WALKING_RUNNING';
 type MatchView = 'NEARBY' | 'MY_BOOKINGS' | 'JOINED';
+
+interface VenueCard {
+  id: string;
+  name: string;
+  location: string;
+  pricePerSlot: number | null;
+  imageUri?: string;
+  latitude?: number;
+  longitude?: number;
+}
 
 function SportIcon({ sport, size = 28, color }: { sport: string; size?: number; color?: string }) {
   if (sport === 'FUTSAL') {
@@ -152,8 +182,24 @@ export default function HomeScreen() {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [recentActivities, setRecentActivities] = useState<StoredActivity[]>([]);
   const [nearbyTrainers, setNearbyTrainers] = useState<TrainerCard[]>([]);
+  // Kept from the same GPS read loadNearbyAndMine already does for the /bookings/nearby
+  // call — reused here purely for the "X km away" display, so showing distance never
+  // costs an extra location request or API call.
+  const [userLat, setUserLat] = useState<number | null>(null);
+  const [userLng, setUserLng] = useState<number | null>(null);
   const [loadingTrainers, setLoadingTrainers] = useState(false);
-  const [trainersLoaded, setTrainersLoaded] = useState(false);
+  const [loadingMoreTrainers, setLoadingMoreTrainers] = useState(false);
+  const [trainersHasMore, setTrainersHasMore] = useState(false);
+  const [venues, setVenues] = useState<VenueCard[]>([]);
+  const [loadingVenues, setLoadingVenues] = useState(false);
+  const [loadingMoreVenues, setLoadingMoreVenues] = useState(false);
+  const [venuesHasMore, setVenuesHasMore] = useState(false);
+  // null = no active text search -> show the tracked "Tournaments Near You" list;
+  // non-null = results of a live tournamentApi.filterTournaments search.
+  const [tournamentResults, setTournamentResults] = useState<TournamentFeedItem[] | null>(null);
+  const [loadingTournamentSearch, setLoadingTournamentSearch] = useState(false);
+  const [loadingMoreTournaments, setLoadingMoreTournaments] = useState(false);
+  const [tournamentSearchHasMore, setTournamentSearchHasMore] = useState(false);
   const router = useRouter();
   const { user } = useContext(AuthContext);
   const { active: isPro } = useSubscription();
@@ -161,6 +207,21 @@ export default function HomeScreen() {
   const headerScale = useRef(new Animated.Value(0.97)).current;
   const headerOpacity = useRef(new Animated.Value(1)).current;
   const tabIndicator = useRef(new Animated.Value(0)).current;
+
+  // Refs mirror userLat/userLng so the search-tab loaders below can read the
+  // latest GPS fix without listing it as a useCallback dependency — keeps
+  // their identity stable (no re-fetch storms when location resolves mid-search)
+  // while still using real coordinates once available. Page counters live in
+  // refs too (not state) so "load more" always reads the true next page
+  // instead of a value captured in a stale closure.
+  const userLatRef = useRef<number | null>(null);
+  const userLngRef = useRef<number | null>(null);
+  useEffect(() => { userLatRef.current = userLat; }, [userLat]);
+  useEffect(() => { userLngRef.current = userLng; }, [userLng]);
+  const venuesPageRef = useRef(0);
+  const trainersPageRef = useRef(0);
+  const tournamentSearchPageRef = useRef(0);
+  const PAGE_SIZE = 20;
 
   useEffect(() => {
     Animated.spring(headerScale, { toValue: 1, friction: 8, useNativeDriver: true }).start();
@@ -194,7 +255,7 @@ export default function HomeScreen() {
 
   const switchTab = (tab: MainTab) => {
     setActiveTab(tab);
-    const idx = tab === 'MATCHES' ? 0 : tab === 'TOURNAMENTS' ? 1 : tab === 'TRAINER_SESSIONS' ? 2 : 3;
+    const idx = tab === 'MATCHES' ? 0 : tab === 'VENUES' ? 1 : tab === 'TOURNAMENTS' ? 2 : tab === 'TRAINER_SESSIONS' ? 3 : 4;
     Animated.spring(tabIndicator, { toValue: idx, friction: 8, useNativeDriver: false }).start();
   };
 
@@ -241,15 +302,24 @@ export default function HomeScreen() {
           || (item.futsalName ? `Match at ${item.futsalName}` : null)
           || (item.venueName ? `Match at ${item.venueName}` : null)
           || 'Match',
-        sportType: item.sportType || item.type || item.category || 'MATCH',
+        // Backend's BookingResponse field is `sport` — sportType/type/category never
+        // exist on it, so the sport-filter chips (Futsal/Cricket/Pickleball) previously
+        // always fell back to the literal 'MATCH' here and matched nothing once a chip
+        // was selected, silently hiding every nearby result.
+        sportType: item.sport || item.sportType || item.type || item.category || 'MATCH',
         images: Array.isArray(item.images) && item.images.length > 0
           ? item.images
+          : item.imageUrl
+          ? [item.imageUrl]
           : item.image
           ? [item.image]
           : item.imageBase64
-          ? [`data:image/jpeg;base64,${item.imageBase64}`]
+          ? [`data:image/jpeg;base64,${item.imageBase64}`] // legacy fallback
           : [],
+        venueName: item.futsalName || item.venue?.name || undefined,
         locationName: item.locationName || item.location || item.venue?.name || item.futsalName || 'Unknown location',
+        latitude: item.latitude != null ? Number(item.latitude) : undefined,
+        longitude: item.longitude != null ? Number(item.longitude) : undefined,
         startDate: combinedStart,
         endDate: item.endDate || item.end ||
           (item.slotDate && item.endTime ? `${item.slotDate}T${item.endTime}` : undefined),
@@ -276,15 +346,22 @@ export default function HomeScreen() {
     setLoadingMatches(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      let nearbyRaw: any[];
+      let coords: { latitude: number; longitude: number } | null = null;
       if (status === 'granted') {
-        const coords = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        nearbyRaw = await bookingApi.getNearbyBookings(coords.coords.latitude, coords.coords.longitude, 20);
-      } else {
-        nearbyRaw = await bookingApi.getAllBookings();
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+        setUserLat(coords.latitude);
+        setUserLng(coords.longitude);
       }
+      // Nearby feed and "my bookings" are independent reads — run them together
+      // instead of sequentially so one call's latency doesn't block the other.
+      const [nearbyRaw, myRaw] = await Promise.all([
+        coords
+          ? bookingApi.getNearbyBookings(coords.latitude, coords.longitude, 20)
+          : bookingApi.getAllBookings(),
+        bookingApi.getMyBookings(),
+      ]);
       setMatches(parseMatches(nearbyRaw));
-      const myRaw = await bookingApi.getMyBookings();
       setMyMatches(parseMatches(myRaw));
     } catch {
       try {
@@ -297,7 +374,17 @@ export default function HomeScreen() {
     }
   }, []);
 
-  useEffect(() => { loadNearbyAndMine(); }, [loadNearbyAndMine]);
+  // useFocusEffect (not a plain mount-once useEffect) — Home stays mounted in the
+  // bottom-tab navigator while the user creates a match (create-match -> checkout
+  // -> booking-status -> match details), so a mount-once fetch would keep showing
+  // the Nearby list exactly as it was BEFORE that match existed, forever, until
+  // a manual pull-to-refresh. Refetching on every return to this tab is what makes
+  // a freshly-created (and already-accepted) match actually show up without that.
+  useFocusEffect(
+    React.useCallback(() => {
+      loadNearbyAndMine();
+    }, [loadNearbyAndMine])
+  );
 
   const loadJoinedMatches = React.useCallback(async () => {
     setLoadingJoined(true);
@@ -319,43 +406,175 @@ export default function HomeScreen() {
     loadJoinedMatches();
   }, [matchView, joinedLoaded, loadingJoined, loadJoinedMatches]);
 
-  const loadNearbyTrainers = React.useCallback(async () => {
-    setLoadingTrainers(true);
+  const mapTrainerContent = (content: any[]): TrainerCard[] =>
+    content.map((t: any) => ({
+      id: String(t.id),
+      name: t.trainerDisplayName ?? 'Trainer',
+      specialty: Array.isArray(t.categories) && t.categories.length
+        ? t.categories.map((c: string) => TRAINER_CATEGORY_LABELS[c] ?? c).join(' · ')
+        : undefined,
+      location: t.location,
+      hourlyRate: t.hourlyRate != null ? Number(t.hourlyRate) : null,
+      imageUri: resolveMediaUrl(t.profileImageUrl),
+    }));
+
+  // reset=true starts a fresh search from page 0 (replacing results) — used on
+  // tab switch and on every debounced keystroke. reset=false appends the next
+  // page (used by the "load more" infinite-scroll handler below).
+  const loadNearbyTrainers = React.useCallback(async (query: string, reset: boolean) => {
+    if (reset) setLoadingTrainers(true); else setLoadingMoreTrainers(true);
     try {
-      let lat: number | undefined;
-      let lng: number | undefined;
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const coords = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        lat = coords.coords.latitude;
-        lng = coords.coords.longitude;
+      let lat = userLatRef.current ?? undefined;
+      let lng = userLngRef.current ?? undefined;
+      if (lat == null) {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const coords = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          lat = coords.coords.latitude;
+          lng = coords.coords.longitude;
+          setUserLat(lat);
+          setUserLng(lng);
+        }
       }
-      const { content } = await trainerApi.filterTrainers({ lat, lng, radiusKm: 50, page: 0, size: 10 });
-      const mapped: TrainerCard[] = content.map((t: any) => ({
-        id: String(t.id),
-        name: t.trainerDisplayName ?? 'Trainer',
-        specialty: Array.isArray(t.categories) && t.categories.length
-          ? t.categories.map((c: string) => TRAINER_CATEGORY_LABELS[c] ?? c).join(' · ')
-          : undefined,
-        location: t.location,
-        hourlyRate: t.hourlyRate != null ? Number(t.hourlyRate) : null,
-        imageUri: resolveMediaUrl(t.profileImageUrl),
-      }));
-      setNearbyTrainers(mapped);
-      setTrainersLoaded(true);
-    } catch {
-      setNearbyTrainers([]);
-      setTrainersLoaded(true);
+      const pageToLoad = reset ? 0 : trainersPageRef.current + 1;
+      const { content, hasMore } = await trainerApi.filterTrainers({
+        query: query.trim() || undefined, lat, lng, radiusKm: 50, page: pageToLoad, size: PAGE_SIZE,
+      });
+      const mapped = mapTrainerContent(content);
+      trainersPageRef.current = pageToLoad;
+      setTrainersHasMore(hasMore);
+      setNearbyTrainers((prev) => (reset ? mapped : [...prev, ...mapped]));
+    } catch (err) {
+      if (__DEV__) console.warn('[HomeScreen] loadNearbyTrainers failed', err);
+      if (reset) setNearbyTrainers([]);
     } finally {
-      setLoadingTrainers(false);
+      if (reset) setLoadingTrainers(false); else setLoadingMoreTrainers(false);
     }
   }, []);
 
-  // Lazy-load nearby trainers when the user first switches to that tab.
+  const mapVenueContent = (content: any[]): VenueCard[] =>
+    content.map((v: any) => ({
+      id: String(v.id ?? v._id),
+      name: v.name ?? 'Venue',
+      location: v.location ?? v.locationName ?? '',
+      pricePerSlot: v.pricePerSlot != null ? Number(v.pricePerSlot) : null,
+      imageUri: resolveMediaUrl(v.imageUrl) || (v.imageBase64 ? `data:image/jpeg;base64,${v.imageBase64}` : undefined),
+      latitude: v.latitude != null ? Number(v.latitude) : undefined,
+      longitude: v.longitude != null ? Number(v.longitude) : undefined,
+    }));
+
+  const loadVenues = React.useCallback(async (query: string, reset: boolean) => {
+    if (reset) setLoadingVenues(true); else setLoadingMoreVenues(true);
+    try {
+      const pageToLoad = reset ? 0 : venuesPageRef.current + 1;
+      const { content, hasMore } = await futsalApi.filterVenues({
+        query: query.trim() || undefined,
+        lat: userLatRef.current ?? undefined,
+        lng: userLngRef.current ?? undefined,
+        radiusKm: 50,
+        page: pageToLoad,
+        size: PAGE_SIZE,
+      });
+      const mapped = mapVenueContent(content);
+      venuesPageRef.current = pageToLoad;
+      setVenuesHasMore(hasMore);
+      setVenues((prev) => (reset ? mapped : [...prev, ...mapped]));
+    } catch (err) {
+      if (__DEV__) console.warn('[HomeScreen] loadVenues failed', err);
+      if (reset) setVenues([]);
+    } finally {
+      if (reset) setLoadingVenues(false); else setLoadingMoreVenues(false);
+    }
+  }, []);
+
+  const mapTournamentContent = (content: any[]): TournamentFeedItem[] =>
+    content.map((t: any) => ({
+      id: String(t.id ?? t._id),
+      name: t.name ?? t.title ?? 'Tournament',
+      sport: t.sport ?? 'FUTSAL',
+      date: t.startDate ?? t.scheduledDate ?? t.date ?? '',
+      venueName: t.futsalName ?? t.venueName ?? undefined,
+      teamsCount: t.teamCount ?? (Array.isArray(t.teams) ? t.teams.length : 0),
+      expectedTeams: t.maxTeams ?? 8,
+      lifecycle: t.status === 'ACTIVE' ? 'LIVE' : t.status === 'COMPLETED' ? 'COMPLETED' : 'UPCOMING',
+      isOwner: !!user && t.createdBy === user.firebaseUid,
+    }));
+
+  const loadTournamentSearch = React.useCallback(async (query: string, reset: boolean) => {
+    if (reset) setLoadingTournamentSearch(true); else setLoadingMoreTournaments(true);
+    try {
+      const pageToLoad = reset ? 0 : tournamentSearchPageRef.current + 1;
+      const { content, hasMore } = await tournamentApi.filterTournaments({
+        query: query.trim() || undefined,
+        lat: userLatRef.current ?? undefined,
+        lng: userLngRef.current ?? undefined,
+        radiusKm: 50,
+        page: pageToLoad,
+        size: PAGE_SIZE,
+      });
+      const mapped = mapTournamentContent(content);
+      tournamentSearchPageRef.current = pageToLoad;
+      setTournamentSearchHasMore(hasMore);
+      setTournamentResults((prev) => (reset || !prev ? mapped : [...prev, ...mapped]));
+    } catch (err) {
+      if (__DEV__) console.warn('[HomeScreen] loadTournamentSearch failed', err);
+      if (reset) setTournamentResults([]);
+    } finally {
+      if (reset) setLoadingTournamentSearch(false); else setLoadingMoreTournaments(false);
+    }
+  }, [user]);
+
+  // Drives the tab-reactive search bar: switching to Venues/Tournaments/Trainer
+  // fires an immediate fetch (empty query -> "near you"), and typing re-fetches
+  // debounced. Matches keeps its existing client-side filter; Walk/Run has no
+  // search. loadVenues/loadNearbyTrainers/loadTournamentSearch have a stable
+  // ([]/[user]) identity, so this effect only re-runs on an actual tab or text
+  // change — never as a side effect of the GPS fix arriving mid-search.
   useEffect(() => {
-    if (activeTab !== 'TRAINER_SESSIONS' || trainersLoaded || loadingTrainers) return;
-    loadNearbyTrainers();
-  }, [activeTab, trainersLoaded, loadingTrainers, loadNearbyTrainers]);
+    if (activeTab === 'VENUES') {
+      const delay = searchText ? 350 : 0;
+      const t = setTimeout(() => loadVenues(searchText, true), delay);
+      return () => clearTimeout(t);
+    }
+    if (activeTab === 'TOURNAMENTS') {
+      if (!searchText.trim()) { setTournamentResults(null); return; }
+      const t = setTimeout(() => loadTournamentSearch(searchText, true), 350);
+      return () => clearTimeout(t);
+    }
+    if (activeTab === 'TRAINER_SESSIONS') {
+      const delay = searchText ? 350 : 0;
+      const t = setTimeout(() => loadNearbyTrainers(searchText, true), delay);
+      return () => clearTimeout(t);
+    }
+  }, [activeTab, searchText, loadVenues, loadTournamentSearch, loadNearbyTrainers]);
+
+  // Infinite scroll: called from the main ScrollView's onScroll handler when
+  // the user nears the bottom while an active, has-more search tab is open.
+  const loadMoreForActiveTab = React.useCallback(() => {
+    if (activeTab === 'VENUES' && venuesHasMore && !loadingVenues && !loadingMoreVenues) {
+      loadVenues(searchText, false);
+    } else if (activeTab === 'TOURNAMENTS' && searchText.trim().length > 0
+      && tournamentSearchHasMore && !loadingTournamentSearch && !loadingMoreTournaments) {
+      loadTournamentSearch(searchText, false);
+    } else if (activeTab === 'TRAINER_SESSIONS' && trainersHasMore && !loadingTrainers && !loadingMoreTrainers) {
+      loadNearbyTrainers(searchText, false);
+    }
+  }, [
+    activeTab, searchText,
+    venuesHasMore, loadingVenues, loadingMoreVenues, loadVenues,
+    tournamentSearchHasMore, loadingTournamentSearch, loadingMoreTournaments, loadTournamentSearch,
+    trainersHasMore, loadingTrainers, loadingMoreTrainers, loadNearbyTrainers,
+  ]);
+
+  const onMainScroll = React.useCallback((e: any) => {
+    const layoutMeasurement = e?.nativeEvent?.layoutMeasurement;
+    const contentOffset = e?.nativeEvent?.contentOffset;
+    const contentSize = e?.nativeEvent?.contentSize;
+    if (!layoutMeasurement || !contentOffset || !contentSize) return;
+    if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 400) {
+      loadMoreForActiveTab();
+    }
+  }, [loadMoreForActiveTab]);
 
   const loadTournaments = React.useCallback(async () => {
     setLoadingTournaments(true);
@@ -411,12 +630,14 @@ export default function HomeScreen() {
     try {
       const tasks: Promise<any>[] = [loadNearbyAndMine(), loadTournaments()];
       if (matchView === 'JOINED') tasks.push(loadJoinedMatches());
-      if (activeTab === 'TRAINER_SESSIONS') tasks.push(loadNearbyTrainers());
+      if (activeTab === 'TRAINER_SESSIONS') tasks.push(loadNearbyTrainers(searchText, true));
+      if (activeTab === 'VENUES') tasks.push(loadVenues(searchText, true));
+      if (activeTab === 'TOURNAMENTS' && searchText.trim()) tasks.push(loadTournamentSearch(searchText, true));
       await Promise.all(tasks);
     } finally {
       setRefreshing(false);
     }
-  }, [loadNearbyAndMine, loadTournaments, loadJoinedMatches, loadNearbyTrainers, matchView, activeTab]);
+  }, [loadNearbyAndMine, loadTournaments, loadJoinedMatches, loadNearbyTrainers, loadVenues, loadTournamentSearch, matchView, activeTab, searchText]);
 
   const renderMatchCard = (item: MatchCard) => {
     const spotsLabel = (() => {
@@ -497,7 +718,9 @@ export default function HomeScreen() {
             style={styles.matchMeta}
           >
             <MapPin color={colors.primary} size={13} strokeWidth={2} />
-            <Text style={[styles.matchMetaText, { color: colors.primary }]}>{item.locationName}</Text>
+            <Text style={[styles.matchMetaText, { color: colors.primary }]} numberOfLines={1}>
+              {item.venueName ? `${item.venueName} · ${item.locationName}` : item.locationName}
+            </Text>
           </TouchableOpacity>
           <View style={styles.matchMetaRow}>
             <View style={styles.matchMeta}>
@@ -508,6 +731,16 @@ export default function HomeScreen() {
               <Users color={colors.textMuted} size={13} strokeWidth={2} />
               <Text style={styles.matchMetaText}>{spotsLabel}</Text>
             </View>
+            {item.distanceKm != null && (
+              <View style={styles.matchMeta}>
+                <Navigation color={colors.textMuted} size={13} strokeWidth={2} />
+                <Text style={styles.matchMetaText}>
+                  {item.distanceKm < 1
+                    ? `${Math.round(item.distanceKm * 1000)} m away`
+                    : `${item.distanceKm.toFixed(1)} km away`}
+                </Text>
+              </View>
+            )}
           </View>
           {item.minPlayers != null && (
             <View style={styles.matchMeta}>
@@ -535,31 +768,129 @@ export default function HomeScreen() {
     );
   };
 
+  const renderVenueCard = (venue: VenueCard) => {
+    const priceLabel = venue.pricePerSlot != null ? `LKR ${venue.pricePerSlot.toFixed(2)}/slot` : 'Contact for pricing';
+    const distanceKm = userLat != null && userLng != null && venue.latitude != null && venue.longitude != null
+      ? haversineKm(userLat, userLng, venue.latitude, venue.longitude)
+      : undefined;
+    return (
+      <TouchableOpacity
+        key={venue.id}
+        activeOpacity={0.88}
+        onPress={() => router.push('/create-match' as any)}
+        style={styles.matchCard}
+      >
+        <View style={styles.matchCardHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+            <View style={[styles.sportTag, { backgroundColor: colors.primaryLight }]}>
+              <Text style={styles.sportTagText}>VENUE</Text>
+            </View>
+          </View>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={styles.matchPrice}>{priceLabel}</Text>
+          </View>
+        </View>
+
+        {venue.imageUri ? (
+          <Image source={{ uri: venue.imageUri }} style={styles.matchImage} resizeMode="cover" />
+        ) : (
+          <LinearGradient colors={[colors.primary + '30', colors.primaryDark + '20']} style={styles.matchImagePlaceholder}>
+            <Text style={styles.matchImagePlaceholderEmoji}>📍</Text>
+            <Text style={styles.matchImagePlaceholderText}>{venue.name}</Text>
+          </LinearGradient>
+        )}
+
+        <View style={styles.matchDetails}>
+          <Text style={styles.matchTitle}>{venue.name}</Text>
+          <View style={styles.matchMeta}>
+            <MapPin color={colors.primary} size={13} strokeWidth={2} />
+            <Text style={[styles.matchMetaText, { color: colors.primary }]} numberOfLines={1}>{venue.location}</Text>
+          </View>
+          {distanceKm != null && (
+            <View style={styles.matchMetaRow}>
+              <View style={styles.matchMeta}>
+                <Navigation color={colors.textMuted} size={13} strokeWidth={2} />
+                <Text style={styles.matchMetaText}>
+                  {distanceKm < 1 ? `${Math.round(distanceKm * 1000)} m away` : `${distanceKm.toFixed(1)} km away`}
+                </Text>
+              </View>
+            </View>
+          )}
+          <Button title="Book Now" onPress={() => router.push('/create-match' as any)} style={styles.joinBtn} />
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   // NEARBY / JOINED feeds hide pending-vendor bookings — only confirmed active matches are public.
-  // MY_BOOKINGS shows everything (organizer needs to see pending status too).
+  // MY_BOOKINGS shows everything (organizer needs to see pending status too). Nearby also
+  // excludes matches the current user organized themselves — those already live under My
+  // Bookings, and the point of Nearby is finding OTHER people's matches to join.
   const activeMatchSource = matchView === 'NEARBY'
-    ? matches.filter((m) => m.status !== 'PENDING_VENDOR' && m.status !== 'PENDING')
+    ? matches.filter((m) =>
+        m.status !== 'PENDING_VENDOR' && m.status !== 'PENDING' &&
+        (!user?.firebaseUid || m.userId !== user.firebaseUid)
+      )
     : matchView === 'MY_BOOKINGS'
     ? myMatches
     : joinedMatches.filter((m) => m.status !== 'PENDING_VENDOR' && m.status !== 'PENDING');
 
-  const filteredMatches = activeMatchSource.filter((m) => {
-    const textMatch = !searchText ||
-      m.title?.toLowerCase().includes(searchText.toLowerCase()) ||
-      m.locationName?.toLowerCase().includes(searchText.toLowerCase());
-    const sportMatch = selectedSportFilters.length === 0 ||
-      selectedSportFilters.some((s) => m.sportType?.toUpperCase() === s);
-    return textMatch && sportMatch;
-  });
+  // Search matches by match title, venue name, and address/area — same text query
+  // against all three fields so "CR7", "Wattala", and "Friday Futsal" all work.
+  const filteredMatches = activeMatchSource
+    .filter((m) => {
+      const q = searchText.trim().toLowerCase();
+      const textMatch = !q ||
+        m.title?.toLowerCase().includes(q) ||
+        m.venueName?.toLowerCase().includes(q) ||
+        m.locationName?.toLowerCase().includes(q);
+      const sportMatch = selectedSportFilters.length === 0 ||
+        selectedSportFilters.some((s) => m.sportType?.toUpperCase() === s);
+      return textMatch && sportMatch;
+    })
+    .map((m) => ({
+      ...m,
+      distanceKm:
+        userLat != null && userLng != null && m.latitude != null && m.longitude != null
+          ? haversineKm(userLat, userLng, m.latitude, m.longitude)
+          : undefined,
+    }))
+    // Closest-first only makes sense for the location-driven Nearby feed — My
+    // Bookings/Joined stay in the order the backend returns (most-recent-first).
+    .sort((a, b) => {
+      if (matchView !== 'NEARBY') return 0;
+      if (a.distanceKm == null && b.distanceKm == null) return 0;
+      if (a.distanceKm == null) return 1;
+      if (b.distanceKm == null) return -1;
+      return a.distanceKm - b.distanceKm;
+    });
 
+  // Surfaced as a hint in the Nearby empty/list state: a booking the user just created
+  // is intentionally invisible here until its venue accepts it (see BookingStatus) —
+  // without this, a freshly-created match reads as "nearby is broken" instead of
+  // "awaiting venue approval".
+  const pendingOwnCount = myMatches.filter(
+    (m) => m.status === 'PENDING_VENDOR' || m.status === 'PENDING'
+  ).length;
+
+  // A non-empty search on the Tournaments tab switches from the tracked
+  // "near you" list to live server search results (tournamentResults).
+  const isSearchingTournaments = activeTab === 'TOURNAMENTS' && searchText.trim().length > 0;
+  const tournamentsToShow = tournamentResults ?? tournaments;
   const filteredTournaments = selectedSportFilters.length === 0
-    ? tournaments
-    : tournaments.filter((t) => selectedSportFilters.includes(t.sport?.toUpperCase() ?? ''));
+    ? tournamentsToShow
+    : tournamentsToShow.filter((t) => selectedSportFilters.includes(t.sport?.toUpperCase() ?? ''));
 
   const tabIndicatorLeft = tabIndicator.interpolate({
-    inputRange: [0, 1, 2, 3],
-    outputRange: ['0%', '25%', '50%', '75%'],
+    inputRange: [0, 1, 2, 3, 4],
+    outputRange: ['0%', '20%', '40%', '60%', '80%'],
   });
+
+  const searchPlaceholder =
+    activeTab === 'VENUES' ? 'Search venues by name or location...'
+    : activeTab === 'TOURNAMENTS' ? 'Search tournaments...'
+    : activeTab === 'TRAINER_SESSIONS' ? 'Search trainers...'
+    : 'Search matches by title, venue...';
 
   const matchViewTitle =
     matchView === 'NEARBY' ? 'Nearby Matches'
@@ -617,10 +948,6 @@ export default function HomeScreen() {
               </View>
             )}
           </HeaderIconButton>
-          <View style={styles.streakBadge}>
-            <Zap color={colors.warning} size={14} strokeWidth={2.5} fill={colors.warning} />
-            <Text style={styles.streakText}>3</Text>
-          </View>
         </View>
       </Animated.View>
 
@@ -631,25 +958,29 @@ export default function HomeScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: navBarHeight + 18 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        onScroll={onMainScroll}
+        scrollEventThrottle={100}
       >
-        {/* Search + Filter */}
-        <View style={styles.searchContainer}>
-          <Search color={colors.textMuted} size={18} strokeWidth={2} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Find games, venues, coaches..."
-            placeholderTextColor={colors.textMuted}
-            value={searchText}
-            onChangeText={setSearchText}
-          />
-          <TouchableOpacity
-            onPress={() => router.push('/explore')}
-            activeOpacity={0.8}
-            style={styles.searchFilterBtn}
-          >
-            <Filter color={colors.primary} size={18} strokeWidth={2.5} />
-          </TouchableOpacity>
-        </View>
+        {/* Search + Filter — hidden on Walk/Run, which has no searchable feed */}
+        {activeTab !== 'WALKING_RUNNING' && (
+          <View style={styles.searchContainer}>
+            <Search color={colors.textMuted} size={18} strokeWidth={2} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder={searchPlaceholder}
+              placeholderTextColor={colors.textMuted}
+              value={searchText}
+              onChangeText={setSearchText}
+            />
+            <TouchableOpacity
+              onPress={() => router.push('/explore')}
+              activeOpacity={0.8}
+              style={styles.searchFilterBtn}
+            >
+              <Filter color={colors.primary} size={18} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Sport filter chips */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sportRow}>
@@ -680,10 +1011,14 @@ export default function HomeScreen() {
         {/* ── Tab Bar ─────────────────────────────────────────────── */}
         <View style={styles.tabBarWrap}>
           <View style={styles.tabBar}>
-            <Animated.View style={[styles.tabIndicator, styles.tabIndicator4, { left: tabIndicatorLeft }]} />
+            <Animated.View style={[styles.tabIndicator, styles.tabIndicator5, { left: tabIndicatorLeft }]} />
             <TouchableOpacity style={styles.tabBtn} onPress={() => switchTab('MATCHES')} activeOpacity={0.8}>
               <Trophy color={activeTab === 'MATCHES' ? colors.primary : colors.neutral400} size={16} strokeWidth={2.5} />
               <Text numberOfLines={1} style={[styles.tabLabel, activeTab === 'MATCHES' && styles.tabLabelActive]}>Matches</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.tabBtn} onPress={() => switchTab('VENUES')} activeOpacity={0.8}>
+              <Landmark color={activeTab === 'VENUES' ? colors.primary : colors.neutral400} size={16} strokeWidth={2.5} />
+              <Text numberOfLines={1} style={[styles.tabLabel, activeTab === 'VENUES' && styles.tabLabelActive]}>Venues</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.tabBtn} onPress={() => switchTab('TOURNAMENTS')} activeOpacity={0.8}>
               <Activity color={activeTab === 'TOURNAMENTS' ? colors.primary : colors.neutral400} size={16} strokeWidth={2.5} />
@@ -781,6 +1116,27 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Pending-approval hint — a freshly-created match is intentionally hidden from
+                Nearby (and from every other player) until its venue accepts the request, so
+                without this callout an organizer reasonably reads that as "nearby is broken"
+                instead of "awaiting venue approval". Only relevant in the Nearby view since
+                My Bookings already shows the ⏳ Pending Venue badge on the card itself. */}
+            {matchView === 'NEARBY' && pendingOwnCount > 0 && (
+              <TouchableOpacity
+                style={styles.pendingHint}
+                activeOpacity={0.85}
+                onPress={() => setMatchView('MY_BOOKINGS')}
+              >
+                <Clock color={colors.warning} size={15} strokeWidth={2.2} />
+                <Text style={styles.pendingHintText}>
+                  {pendingOwnCount === 1
+                    ? 'You have 1 match awaiting venue approval — it\'ll appear here once accepted.'
+                    : `You have ${pendingOwnCount} matches awaiting venue approval — they'll appear here once accepted.`}
+                </Text>
+                <ChevronRight color={colors.warning} size={15} strokeWidth={2.2} />
+              </TouchableOpacity>
+            )}
+
             {/* Match cards */}
             {isLoadingMatchView ? (
               <View style={styles.loadingContainer}>
@@ -794,7 +1150,9 @@ export default function HomeScreen() {
                   <Trophy color={colors.neutral400} size={36} strokeWidth={1.5} />
                 </View>
                 <Text style={styles.emptyStateTitle}>
-                  {matchView === 'JOINED' ? 'No joined matches' : 'No active bookings'}
+                  {matchView === 'JOINED' ? 'No joined matches'
+                    : matchView === 'NEARBY' ? 'No public matches nearby'
+                    : 'No active bookings'}
                 </Text>
                 <Text style={styles.emptyStateText}>
                   {searchText
@@ -803,7 +1161,9 @@ export default function HomeScreen() {
                     ? 'Accept an invitation or join a nearby match to see it here.'
                     : matchView === 'MY_BOOKINGS'
                     ? 'Create a match to get started!'
-                    : 'No matches nearby. Try creating one!'}
+                    : userLat == null
+                    ? 'Enable location access so we can find matches near you.'
+                    : 'No public matches within 20 km of you right now. Be the first to create one!'}
                 </Text>
                 {matchView !== 'JOINED' && (
                   <TouchableOpacity
@@ -821,32 +1181,85 @@ export default function HomeScreen() {
           </>
         )}
 
+        {/* ── VENUES TAB ──────────────────────────────────────────── */}
+        {activeTab === 'VENUES' && (
+          <>
+            <View style={styles.sectionHeader}>
+              <View>
+                <Text style={styles.sectionTitle}>{searchText.trim() ? 'Search Results' : 'Venues Near You'}</Text>
+                <Text style={styles.sectionSubtitle}>
+                  {searchText.trim() ? `Venues matching "${searchText.trim()}"` : 'Book futsal, cricket & more'}
+                </Text>
+              </View>
+            </View>
+
+            {loadingVenues ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={styles.loadingText}>Finding venues...</Text>
+              </View>
+            ) : venues.length > 0 ? (
+              <>
+                {venues.map((v) => renderVenueCard(v))}
+                {loadingMoreVenues && (
+                  <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
+                )}
+              </>
+            ) : (
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIconWrap}>
+                  <MapPin color={colors.neutral400} size={36} strokeWidth={1.5} />
+                </View>
+                <Text style={styles.emptyStateTitle}>No venues found</Text>
+                <Text style={styles.emptyStateText}>
+                  {searchText.trim() ? 'Try a different venue name or location.' : 'No venues available near you right now.'}
+                </Text>
+              </View>
+            )}
+          </>
+        )}
+
         {/* ── TOURNAMENTS TAB ─────────────────────────────────────── */}
         {activeTab === 'TOURNAMENTS' && (
           <>
             <View style={styles.sectionHeader}>
               <View>
-                <Text style={styles.sectionTitle}>Tournaments Near You</Text>
-                <Text style={styles.sectionSubtitle}>Discover and join open tournaments</Text>
+                <Text style={styles.sectionTitle}>{isSearchingTournaments ? 'Search Results' : 'Tournaments Near You'}</Text>
+                <Text style={styles.sectionSubtitle}>
+                  {isSearchingTournaments ? `Tournaments matching "${searchText.trim()}"` : 'Discover and join open tournaments'}
+                </Text>
               </View>
               <TouchableOpacity activeOpacity={0.7} onPress={() => router.push('/tournaments' as any)}>
                 <Text style={styles.seeAllText}>All →</Text>
               </TouchableOpacity>
             </View>
 
-            {loadingTournaments ? (
+            {(isSearchingTournaments ? loadingTournamentSearch : loadingTournaments) ? (
               <View style={styles.loadingContainer}>
                 <ActivityIndicator size="small" color={colors.primary} />
                 <Text style={styles.loadingText}>Finding tournaments...</Text>
               </View>
             ) : filteredTournaments.length > 0 ? (
-              filteredTournaments.map((t) => (
-                <TournamentFeedCard
-                  key={t.id}
-                  tournament={t}
-                  onPress={() => router.push(`/tournament/${t.id}` as any)}
-                />
-              ))
+              <>
+                {filteredTournaments.map((t) => (
+                  <TournamentFeedCard
+                    key={t.id}
+                    tournament={t}
+                    onPress={() => router.push(`/tournament/${t.id}` as any)}
+                  />
+                ))}
+                {isSearchingTournaments && loadingMoreTournaments && (
+                  <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
+                )}
+              </>
+            ) : isSearchingTournaments ? (
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIconWrap}>
+                  <Trophy color={colors.neutral400} size={36} strokeWidth={1.5} />
+                </View>
+                <Text style={styles.emptyStateTitle}>No tournaments found</Text>
+                <Text style={styles.emptyStateText}>Try a different tournament or venue name.</Text>
+              </View>
             ) : (
               <TouchableOpacity
                 style={styles.createTournamentPrompt}
@@ -871,8 +1284,10 @@ export default function HomeScreen() {
           <>
             <View style={styles.sectionHeader}>
               <View>
-                <Text style={styles.sectionTitle}>Trainer Sessions</Text>
-                <Text style={styles.sectionSubtitle}>Book 1-on-1 or group training</Text>
+                <Text style={styles.sectionTitle}>{searchText.trim() ? 'Search Results' : 'Trainer Sessions'}</Text>
+                <Text style={styles.sectionSubtitle}>
+                  {searchText.trim() ? `Trainers matching "${searchText.trim()}"` : 'Book 1-on-1 or group training'}
+                </Text>
               </View>
               <TouchableOpacity activeOpacity={0.7} onPress={() => router.push('/explore' as any)}>
                 <Text style={styles.seeAllText}>See all →</Text>
@@ -881,6 +1296,14 @@ export default function HomeScreen() {
 
             {loadingTrainers ? (
               <ActivityIndicator color={colors.trainer} style={{ marginTop: 24 }} />
+            ) : nearbyTrainers.length === 0 && searchText.trim() ? (
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIconWrap}>
+                  <Dumbbell color={colors.neutral400} size={36} strokeWidth={1.5} />
+                </View>
+                <Text style={styles.emptyStateTitle}>No trainers found</Text>
+                <Text style={styles.emptyStateText}>Try a different trainer name or specialty.</Text>
+              </View>
             ) : nearbyTrainers.length === 0 ? (
               <TouchableOpacity
                 style={styles.createTournamentPrompt}
@@ -897,36 +1320,41 @@ export default function HomeScreen() {
                 </LinearGradient>
               </TouchableOpacity>
             ) : (
-              nearbyTrainers.map((t) => (
-                <TouchableOpacity
-                  key={t.id}
-                  style={styles.trainerCard}
-                  activeOpacity={0.88}
-                  onPress={() => router.push(`/trainer/${t.id}` as any)}
-                >
-                  {t.imageUri ? (
-                    <Image source={{ uri: t.imageUri }} style={styles.trainerCardImage} />
-                  ) : (
-                    <LinearGradient colors={[colors.trainerLight, colors.trainerLight]} style={styles.trainerCardImage}>
-                      <Dumbbell color={colors.trainer} size={22} strokeWidth={2} />
-                    </LinearGradient>
-                  )}
-                  <View style={styles.trainerCardBody}>
-                    <Text style={styles.trainerCardName} numberOfLines={1}>{t.name}</Text>
-                    {!!t.specialty && <Text style={styles.trainerCardSpecialty} numberOfLines={1}>{t.specialty}</Text>}
-                    {!!t.location && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                        <MapPin color={colors.textMuted} size={11} strokeWidth={2} />
-                        <Text style={styles.trainerCardMeta} numberOfLines={1}>{t.location}</Text>
-                      </View>
+              <>
+                {nearbyTrainers.map((t) => (
+                  <TouchableOpacity
+                    key={t.id}
+                    style={styles.trainerCard}
+                    activeOpacity={0.88}
+                    onPress={() => router.push(`/trainer/${t.id}` as any)}
+                  >
+                    {t.imageUri ? (
+                      <Image source={{ uri: t.imageUri }} style={styles.trainerCardImage} />
+                    ) : (
+                      <LinearGradient colors={[colors.trainerLight, colors.trainerLight]} style={styles.trainerCardImage}>
+                        <Dumbbell color={colors.trainer} size={22} strokeWidth={2} />
+                      </LinearGradient>
                     )}
-                  </View>
-                  {t.hourlyRate != null && (
-                    <Text style={styles.trainerCardPrice}>LKR {t.hourlyRate}</Text>
-                  )}
-                  <ChevronRight color={colors.trainer} size={16} strokeWidth={2.5} />
-                </TouchableOpacity>
-              ))
+                    <View style={styles.trainerCardBody}>
+                      <Text style={styles.trainerCardName} numberOfLines={1}>{t.name}</Text>
+                      {!!t.specialty && <Text style={styles.trainerCardSpecialty} numberOfLines={1}>{t.specialty}</Text>}
+                      {!!t.location && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                          <MapPin color={colors.textMuted} size={11} strokeWidth={2} />
+                          <Text style={styles.trainerCardMeta} numberOfLines={1}>{t.location}</Text>
+                        </View>
+                      )}
+                    </View>
+                    {t.hourlyRate != null && (
+                      <Text style={styles.trainerCardPrice}>LKR {t.hourlyRate}</Text>
+                    )}
+                    <ChevronRight color={colors.trainer} size={16} strokeWidth={2.5} />
+                  </TouchableOpacity>
+                ))}
+                {loadingMoreTrainers && (
+                  <ActivityIndicator color={colors.trainer} style={{ marginVertical: 16 }} />
+                )}
+              </>
             )}
           </>
         )}
@@ -1102,13 +1530,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     fontWeight: '800',
     color: colors.white,
   },
-  streakBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 10, paddingVertical: 8,
-    borderRadius: 20,
-  },
-  streakText: { fontSize: 14, fontWeight: '800', color: colors.white },
-
   scroll: { flex: 1 },
   refreshableArea: { flex: 1, position: 'relative' },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 100, paddingTop: 14 },
@@ -1163,7 +1584,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.primaryLight,
     borderRadius: 14,
   },
-  tabIndicator4: { width: '25%' },
+  tabIndicator5: { width: '20%' },
   tabLabelTrainer: { color: colors.trainer },
   tabLabelWalk: { color: colors.walkRun },
   tabBtn: {
@@ -1227,6 +1648,26 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   segmentTextActive: {
     color: colors.white,
+  },
+
+  pendingHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.warning + '1A',
+    borderWidth: 1,
+    borderColor: colors.warning + '40',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 14,
+  },
+  pendingHintText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 16,
+    color: colors.text,
   },
 
   createTournamentPrompt: { borderRadius: 18, overflow: 'hidden', marginBottom: 14 },

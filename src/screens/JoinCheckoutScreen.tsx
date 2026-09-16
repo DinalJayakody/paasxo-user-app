@@ -25,6 +25,7 @@ import { extractApiError } from '../utils/apiError';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { PayHereCheckoutWebView } from '../components/PayHereCheckoutWebView';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 // How long to keep polling GET /payments/status after PayHere's checkout UI reports
 // completion — same rationale as CheckoutScreen.tsx: onCompleted alone is never proof
@@ -186,7 +187,7 @@ export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], 
           />
           <View style={styles.headerGlassStroke} pointerEvents="none" />
 
-          <HeaderIconButton onPress={() => router.back()} style={styles.headerBack}>
+          <HeaderIconButton onPress={() => goBack(router)} style={styles.headerBack}>
             <ArrowLeft color={colors.white} size={20} strokeWidth={2.5} />
           </HeaderIconButton>
           <Text style={styles.headerTitle}>Join Checkout</Text>

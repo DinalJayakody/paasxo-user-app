@@ -41,6 +41,7 @@ import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import HeaderIconButton from '../components/HeaderIconButton';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 interface TournamentDetailsScreenProps {
   tournamentId: string;
@@ -204,7 +205,7 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
         <View style={styles.headerGlassStroke} pointerEvents="none" />
 
         <View style={styles.heroTopRow}>
-          <HeaderIconButton style={styles.circleBtn} onPress={() => router.back()}>
+          <HeaderIconButton style={styles.circleBtn} onPress={() => goBack(router)}>
             <ArrowLeft color={colors.white} size={20} strokeWidth={2.5} />
           </HeaderIconButton>
           <HeaderIconButton style={styles.circleBtn} onPress={handleShare}>

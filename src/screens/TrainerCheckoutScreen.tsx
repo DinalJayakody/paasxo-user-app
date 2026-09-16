@@ -16,6 +16,7 @@ import { resolveMediaUrl } from '../utils/mediaUrl';
 import { extractApiError } from '../utils/apiError';
 import { SessionGuidelines } from '../components/SessionGuidelines';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 type PaymentMethod = 'saved-card' | 'apple-pay' | 'new-card';
 
@@ -100,7 +101,7 @@ export default function TrainerCheckoutScreen(props: TrainerCheckoutProps) {
     <SafeAreaView style={styles.flex1} edges={['top']}>
       <ScreenGlow />
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={10}>
+        <Pressable onPress={() => goBack(router)} hitSlop={10}>
           <ArrowLeft color={colors.text} size={22} strokeWidth={2.5} />
         </Pressable>
         <Text style={styles.headerTitle}>Checkout</Text>

@@ -41,6 +41,7 @@ import { resolveMediaUrl } from '../utils/mediaUrl';
 import { LoadingScreen } from '../components/LoadingScreen';
 import HeaderIconButton from '../components/HeaderIconButton';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -351,9 +352,15 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
                 <Users color={colors.textMuted} size={52} strokeWidth={1.5} />
               </View>
           }
-          <HeaderIconButton style={styles.backBtn} onPress={() => router.back()}>
-            <ArrowLeft color={colors.white} size={22} strokeWidth={2.5} />
-          </HeaderIconButton>
+          {/* SafeAreaView (not a hardcoded top offset) — same pattern as MatchDetailsScreen's
+              hero overlay, so the back button sits correctly below the status bar / notch /
+              Dynamic Island on every device (including tablets) instead of a fixed `top: 14`
+              that only happened to look right on one specific screen size. */}
+          <SafeAreaView style={styles.heroOverlay} edges={['top']}>
+            <HeaderIconButton style={styles.circleBtn} onPress={() => goBack(router)}>
+              <ArrowLeft color={colors.white} size={20} strokeWidth={2.5} />
+            </HeaderIconButton>
+          </SafeAreaView>
           {match.sportType && (
             <View style={styles.sportBadge}>
               <Text style={styles.sportBadgeText}>{match.sportType.replace(/_/g, ' ')}</Text>
@@ -557,11 +564,20 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   heroContainer: { position: 'relative', height: 240 },
   heroImage: { width: '100%', height: 240 },
   heroPlaceholder: { backgroundColor: colors.neutral200, alignItems: 'center', justifyContent: 'center' },
-  backBtn: {
-    position: 'absolute', top: 14, left: 16,
+  // Matches MatchDetailsScreen's heroOverlay/circleBtn exactly — same safe-area
+  // handling, same button size/position, so the two screens read as one design.
+  heroOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  circleBtn: {
     width: 38, height: 38, borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.35)',
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.45)',
   },
   sportBadge: { position: 'absolute', bottom: 14, right: 14, backgroundColor: colors.primary, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
   sportBadgeText: { fontSize: 12, fontWeight: '700', color: colors.white, textTransform: 'uppercase' },

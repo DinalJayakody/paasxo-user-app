@@ -11,6 +11,7 @@ import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import axiosInstance from '../api/axios';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 const WALK_RUN_GREEN = '#059669';
 
@@ -63,7 +64,7 @@ export default function CreateWalkRunScreen() {
         partnerId: selectedPartnerId,
       });
       Alert.alert('Created!', 'Your walk/run has been scheduled.' + (selectedPartnerId ? ' An invite has been sent to your partner.' : ''), [
-        { text: 'OK', onPress: () => router.back() },
+        { text: 'OK', onPress: () => goBack(router) },
       ]);
     } catch (e: any) {
       Alert.alert('Error', e?.response?.data?.message ?? 'Failed to create walk/run. Please try again.');
@@ -77,7 +78,7 @@ export default function CreateWalkRunScreen() {
       <ScreenGlow />
       {/* Header */}
       <LinearGradient colors={[WALK_RUN_GREEN, '#047857']} style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
+        <TouchableOpacity onPress={() => goBack(router)} style={styles.backBtn} hitSlop={8}>
           <ArrowLeft color={colors.white} size={22} strokeWidth={2.5} />
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: 'center' }}>

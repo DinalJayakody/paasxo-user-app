@@ -5,6 +5,7 @@ import { ArrowLeft, Mail, MapPin, Phone, Globe } from 'lucide-react-native';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 // Placeholder contact details — swap for the real business details before
 // shipping. www.paasxo.com is the one value already confirmed real elsewhere
@@ -33,7 +34,7 @@ export default function ContactScreen() {
     <SafeAreaView style={styles.container}>
       <ScreenGlow />
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={() => goBack(router)} style={styles.backBtn}>
           <ArrowLeft color={colors.logoBlue || colors.primary} size={22} />
         </Pressable>
         <Text style={styles.title}>Contact</Text>

@@ -24,6 +24,7 @@ import { supportApi, SupportArea } from '../api/supportApi';
 import { extractApiError } from '../utils/apiError';
 import HeaderIconButton from '../components/HeaderIconButton';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 const FAQS: { q: string; a: string }[] = [
   {
@@ -119,7 +120,7 @@ export default function HelpCenterScreen() {
           />
           <View style={styles.headerGlassStroke} pointerEvents="none" />
 
-          <HeaderIconButton onPress={() => router.back()} style={styles.backBtn}>
+          <HeaderIconButton onPress={() => goBack(router)} style={styles.backBtn}>
             <ArrowLeft color={colors.white} size={20} />
           </HeaderIconButton>
           <Text style={styles.title}>Help Center</Text>

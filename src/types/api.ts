@@ -96,6 +96,37 @@ export interface CommentItem {
   createdAt: string;
 }
 
+// Mirrors the backend's ReportTargetType / ReportReason enums exactly (see
+// com.pasxo.dto.enums on the backend) - required by App Store Review
+// Guideline 1.2 (User Generated Content).
+export type ReportTargetType = 'POST' | 'COMMENT' | 'USER';
+
+export type ReportReason =
+  | 'SPAM'
+  | 'HARASSMENT_OR_BULLYING'
+  | 'HATE_SPEECH'
+  | 'NUDITY_OR_SEXUAL_CONTENT'
+  | 'VIOLENCE_OR_DANGEROUS_ACTS'
+  | 'FALSE_INFORMATION'
+  | 'OTHER';
+
+export const REPORT_REASONS: { value: ReportReason; label: string }[] = [
+  { value: 'SPAM', label: 'Spam' },
+  { value: 'HARASSMENT_OR_BULLYING', label: 'Harassment or bullying' },
+  { value: 'HATE_SPEECH', label: 'Hate speech' },
+  { value: 'NUDITY_OR_SEXUAL_CONTENT', label: 'Nudity or sexual content' },
+  { value: 'VIOLENCE_OR_DANGEROUS_ACTS', label: 'Violence or dangerous acts' },
+  { value: 'FALSE_INFORMATION', label: 'False information' },
+  { value: 'OTHER', label: 'Something else' },
+];
+
+export interface CreateReportPayload {
+  targetType: ReportTargetType;
+  targetId: string;
+  reason: ReportReason;
+  details?: string;
+}
+
 export interface ReelSummary {
   id: string;
   authorId: string;

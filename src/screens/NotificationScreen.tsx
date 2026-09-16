@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
+  ArrowLeft,
   BellOff,
   Bell,
   Calendar,
@@ -42,7 +43,9 @@ import { extractApiError } from '../utils/apiError';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import HeaderIconButton from '../components/HeaderIconButton';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -200,18 +203,25 @@ interface NotificationScreenProps {
   category?: NotificationCategory;
 }
 
-const CATEGORY_COPY: Record<NotificationCategory, { title: string; emptyTitle: string; emptyBody: string }> = {
+// `guide` is a one-line explainer shown under the title — this screen is reused for
+// three separate bells across the app (Feed's Social, Explore/Home's Activity, and
+// the vendor app's own notifications), so without it a user landing here from a
+// different tab than usual can't tell at a glance which inbox they're looking at.
+const CATEGORY_COPY: Record<NotificationCategory, { title: string; guide: string; emptyTitle: string; emptyBody: string }> = {
   SOCIAL: {
     title: 'Social',
+    guide: 'Likes, comments, follows, and other activity from your Paasxo network',
     emptyTitle: 'No activity yet',
     emptyBody: 'Likes, comments, and new followers will show up here.',
   },
   GENERAL: {
     title: 'Activity',
+    guide: 'Match invites, bookings, and venue updates',
     emptyTitle: 'No updates yet',
     emptyBody: 'Match invites and booking updates will show up here.',
   },
 };
+const DEFAULT_GUIDE = 'Everything from Paasxo, all in one place';
 
 // Per the client's request, the GENERAL bell (Home/Explore) is scoped strictly to
 // match and booking activity — tournament/walk-run/trainer/discovery notifications
@@ -381,13 +391,23 @@ export default function NotificationScreen({ category }: NotificationScreenProps
           />
           <View style={styles.headerGlassStroke} pointerEvents="none" />
 
-          <Text style={styles.screenTitle}>{copy ? copy.title : 'Notifications'}</Text>
-          {unreadCount > 0 && (
-            <Pressable style={styles.markAllBtn} onPress={handleMarkAllRead}>
-              <CheckCheck color={colors.white} size={16} strokeWidth={2} />
-              <Text style={styles.markAllTxt}>Mark all read</Text>
-            </Pressable>
-          )}
+          <View style={styles.headerTopRow}>
+            <HeaderIconButton onPress={() => goBack(router)} style={styles.headerBackBtn} hitSlop={8}>
+              <ArrowLeft color={colors.white} size={20} strokeWidth={2.5} />
+            </HeaderIconButton>
+            <Text style={styles.screenTitle} numberOfLines={1}>{copy ? copy.title : 'Notifications'}</Text>
+            {unreadCount > 0 ? (
+              <Pressable style={styles.markAllBtn} onPress={handleMarkAllRead}>
+                <CheckCheck color={colors.white} size={16} strokeWidth={2} />
+                <Text style={styles.markAllTxt}>Mark all read</Text>
+              </Pressable>
+            ) : (
+              <View style={styles.headerSpacer} />
+            )}
+          </View>
+          <Text style={styles.headerGuideText} numberOfLines={2}>
+            {copy ? copy.guide : DEFAULT_GUIDE}
+          </Text>
         </View>
       </View>
 
@@ -450,8 +470,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     elevation: 10,
   },
   topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: 18,
     paddingVertical: 14,
     borderRadius: 26,
@@ -463,11 +481,34 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.22)',
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  headerBackBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  headerSpacer: {
+    width: 34,
+  },
   screenTitle: {
     flex: 1,
-    fontSize: 22,
+    fontSize: 21,
     fontWeight: '800',
     color: colors.white,
+  },
+  headerGuideText: {
+    fontSize: 12.5,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.82)',
+    marginTop: 8,
+    lineHeight: 17,
   },
   markAllBtn: {
     flexDirection: 'row',

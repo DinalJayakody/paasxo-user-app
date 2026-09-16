@@ -30,6 +30,7 @@ import { userApi } from '../api/userApi';
 import { resolveAvatarUri } from '../utils/mediaUrl';
 import { SPORTS } from '../constants/sports';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 const SKILL_LEVELS: { id: string; label: string }[] = [
   { id: 'BEGINNER', label: 'Beginner' },
@@ -152,7 +153,7 @@ export default function EditProfileScreen() {
       });
       await updateUser(updated);
       setPendingAvatarAsset(null);
-      router.back();
+      goBack(router);
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Could not save your profile. Please try again.');
     } finally {
@@ -179,7 +180,7 @@ export default function EditProfileScreen() {
           />
           <View style={styles.headerGlassStroke} pointerEvents="none" />
 
-          <HeaderIconButton onPress={() => router.back()} style={styles.headerIconBtn} hitSlop={8}>
+          <HeaderIconButton onPress={() => goBack(router)} style={styles.headerIconBtn} hitSlop={8}>
             <ArrowLeft color={colors.white} size={20} strokeWidth={2.2} />
           </HeaderIconButton>
           <Text style={styles.title}>Edit Profile</Text>

@@ -13,6 +13,7 @@ import { Button } from '../components/Button';
 import ScreenGlow from '../components/ScreenGlow';
 import axiosInstance from '../api/axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { goBack } from '../utils/navigation';
 
 export const ONE_TIME_CREDIT_KEY = 'paasxo_one_time_credit';
 
@@ -48,7 +49,7 @@ export default function OneTimePaymentScreen() {
       // Store locally so the gate knows we have a credit this session
       await AsyncStorage.setItem(ONE_TIME_CREDIT_KEY, String(Date.now()));
       Alert.alert('Payment Successful!', 'You can now create one event.', [
-        { text: 'Continue', onPress: () => router.back() },
+        { text: 'Continue', onPress: () => goBack(router) },
       ]);
     } catch {
       Alert.alert('Payment Failed', 'Please try again or choose a subscription.');
@@ -61,7 +62,7 @@ export default function OneTimePaymentScreen() {
     <SafeAreaView style={styles.safe}>
       <ScreenGlow />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
+        <TouchableOpacity onPress={() => goBack(router)} style={styles.backBtn} activeOpacity={0.7}>
           <ArrowLeft color={colors.primary} size={22} strokeWidth={2.5} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>One-time Payment</Text>
@@ -74,7 +75,10 @@ export default function OneTimePaymentScreen() {
         keyboardVerticalOffset={0}
       >
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <LinearGradient colors={[colors.neutral800, colors.neutral900]} style={styles.hero}>
+        {/* Fixed dark gradient (not theme-reactive) — colors.neutral800/900 flip
+            to near-white in dark mode (they're text-oriented tokens elsewhere),
+            which would turn this into a white banner with invisible white text. */}
+        <LinearGradient colors={['#1E293B', '#0F172A']} style={styles.hero}>
           <CreditCard color={colors.warning} size={32} strokeWidth={1.8} />
           <Text style={styles.heroTitle}>Single Event Access</Text>
           <Text style={styles.heroDesc}>Pay LKR 2.99 once to create one match or tournament. No subscription required.</Text>
@@ -130,7 +134,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   scroll: { paddingHorizontal: 20, paddingBottom: 40 },
   hero: { borderRadius: 20, padding: 22, alignItems: 'center', gap: 10, marginBottom: 20 },
   heroTitle: { fontSize: 20, fontWeight: '900', color: colors.white },
-  heroDesc: { fontSize: 13, color: colors.neutral300, textAlign: 'center', lineHeight: 20 },
+  heroDesc: { fontSize: 13, color: '#CBD5E1', textAlign: 'center', lineHeight: 20 },
   featureList: { marginBottom: 20 },
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   featureText: { fontSize: 14, color: colors.text },

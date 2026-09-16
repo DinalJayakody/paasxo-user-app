@@ -21,6 +21,7 @@ import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
 import axiosInstance from '../api/axios';
 import { ENDPOINTS } from '../api/endpoints';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 const isValidEmail = (val: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
 
@@ -120,7 +121,7 @@ export default function ForgotPasswordScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
+            <TouchableOpacity onPress={() => goBack(router)} style={styles.backBtn} activeOpacity={0.7}>
               <ArrowLeft color={colors.primary} size={22} strokeWidth={2.5} />
             </TouchableOpacity>
             <Image
@@ -170,7 +171,7 @@ export default function ForgotPasswordScreen() {
 
               <TouchableOpacity
                 style={styles.backToLogin}
-                onPress={() => router.back()}
+                onPress={() => goBack(router)}
                 activeOpacity={0.7}
               >
                 <Text style={styles.backToLoginText}>Back to Login</Text>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -12,7 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Image as ImageIcon, Send, X } from 'lucide-react-native';
+import { Flag, Image as ImageIcon, Send, UserX, X } from 'lucide-react-native';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { socialMediaApi } from '../api/socialMediaApi';
@@ -21,6 +22,8 @@ import { CommentItem } from '../types/api';
 import { parseMediaUrl, formatTimeAgo } from '../utils/postFormat';
 import { postInteractionStore } from '../stores/postInteractionStore';
 import { GifPickerSheet } from './GifPickerSheet';
+import { ActionMenuSheet } from './ActionMenuSheet';
+import { ReportSheet } from './ReportSheet';
 
 interface CommentSheetProps {
   postId: string;
@@ -37,6 +40,31 @@ export function CommentSheet({ postId, visible, onClose }: CommentSheetProps) {
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [gifPickerVisible, setGifPickerVisible] = useState(false);
+  const [menuComment, setMenuComment] = useState<CommentItem | null>(null);
+  const [reportComment, setReportComment] = useState<CommentItem | null>(null);
+
+  const handleBlockCommentAuthor = (comment: CommentItem) => {
+    Alert.alert(
+      `Block ${comment.displayName || 'this user'}?`,
+      "You won't see their posts, comments, or profile anymore, and they won't see yours.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await socialMediaApi.blockUser(comment.firebaseUid);
+              setComments((prev) => prev.filter((c) => c.firebaseUid !== comment.firebaseUid));
+              Alert.alert('Blocked', `You won't see ${comment.displayName || 'this user'} anymore.`);
+            } catch {
+              Alert.alert('Something went wrong', 'Could not block this user. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   useEffect(() => {
     if (!visible) return;
@@ -111,8 +139,13 @@ export function CommentSheet({ postId, visible, onClose }: CommentSheetProps) {
               ListEmptyComponent={<Text style={styles.emptyText}>No comments yet. Be the first!</Text>}
               renderItem={({ item }) => {
                 const avatarUri = parseMediaUrl(item.profileImageUrl);
+                const isOwnComment = !!user?.firebaseUid && user.firebaseUid === item.firebaseUid;
                 return (
-                  <View style={styles.commentRow}>
+                  <Pressable
+                    style={styles.commentRow}
+                    onLongPress={() => !isOwnComment && setMenuComment(item)}
+                    delayLongPress={350}
+                  >
                     {avatarUri ? (
                       <Image source={{ uri: avatarUri }} style={styles.avatar} />
                     ) : (
@@ -129,7 +162,7 @@ export function CommentSheet({ postId, visible, onClose }: CommentSheetProps) {
                       )}
                       <Text style={styles.commentTime}>{formatTimeAgo(item.createdAt)}</Text>
                     </View>
-                  </View>
+                  </Pressable>
                 );
               }}
             />
@@ -167,6 +200,37 @@ export function CommentSheet({ postId, visible, onClose }: CommentSheetProps) {
         visible={gifPickerVisible}
         onClose={() => setGifPickerVisible(false)}
         onSelect={handleSelectGif}
+      />
+
+      <ActionMenuSheet
+        visible={!!menuComment}
+        onClose={() => setMenuComment(null)}
+        actions={
+          menuComment
+            ? [
+                {
+                  key: 'report',
+                  label: 'Report Comment',
+                  icon: <Flag color={colors.error} size={18} strokeWidth={2.2} />,
+                  destructive: true,
+                  onPress: () => setReportComment(menuComment),
+                },
+                {
+                  key: 'block',
+                  label: `Block ${menuComment.displayName || 'user'}`,
+                  icon: <UserX color={colors.error} size={18} strokeWidth={2.2} />,
+                  destructive: true,
+                  onPress: () => handleBlockCommentAuthor(menuComment),
+                },
+              ]
+            : []
+        }
+      />
+      <ReportSheet
+        visible={!!reportComment}
+        onClose={() => setReportComment(null)}
+        targetType="COMMENT"
+        targetId={reportComment ? String(reportComment.id) : ''}
       />
     </Modal>
   );

@@ -1,4 +1,4 @@
-import { CreatePostPayload } from '../types/api';
+import { CreatePostPayload, CreateReportPayload } from '../types/api';
 import axiosInstance from './axios';
 import { ENDPOINTS } from './endpoints';
 
@@ -29,9 +29,11 @@ export const socialMediaApi = {
       ENDPOINTS.SOCIAL.CREATE_POST,
       formData,
       {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        // No explicit Content-Type here — RN's XHR auto-generates
+        // "multipart/form-data; boundary=----XXXX" for a FormData body as
+        // long as nothing sets Content-Type first. Setting the bare
+        // "multipart/form-data" string (no boundary) breaks Spring's
+        // multipart parser server-side.
         // Default 15s API timeout is fine for JSON calls but too short for a
         // real video/image upload over Wi-Fi from a physical device.
         timeout: 180000,
@@ -152,6 +154,29 @@ acceptFollowRequest: async (requesterUid: string) => {
 
 rejectFollowRequest: async (requesterUid: string) => {
   const response = await axiosInstance.post(ENDPOINTS.SOCIAL.REJECT_REQUEST(requesterUid));
+  return response.data;
+},
+
+// Required by App Store Review Guideline 1.2 (User Generated Content) - see
+// SocialService#blockUser/unblockUser/getBlockedUsers on the backend.
+blockUser: async (userId: string) => {
+  const response = await axiosInstance.post(ENDPOINTS.SOCIAL.BLOCK_USER(userId));
+  return response.data;
+},
+
+unblockUser: async (userId: string) => {
+  const response = await axiosInstance.post(ENDPOINTS.SOCIAL.UNBLOCK_USER(userId));
+  return response.data;
+},
+
+getBlockedUsers: async (page: number = 0, size: number = 20) => {
+  const response = await axiosInstance.get(ENDPOINTS.SOCIAL.GET_BLOCKED_USERS(page, size));
+  return normalizePage(response.data);
+},
+
+// Reports a post, comment, or user for review - see ModerationController on the backend.
+reportContent: async (payload: CreateReportPayload) => {
+  const response = await axiosInstance.post(ENDPOINTS.SOCIAL.REPORT, payload);
   return response.data;
 },
 

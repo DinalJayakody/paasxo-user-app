@@ -10,6 +10,8 @@ import axiosInstance, { refreshTokenIfNeeded } from '../api/axios';
 import { CompleteProfileModal } from '../components/CompleteProfileModal';
 import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
 import { clearSubscriptionCache } from '../hooks/useSubscription';
+import { notificationApi } from '../api/notificationApi';
+import { registerForPushNotificationsAsync } from '../lib/push';
 
 type AuthContextShape = {
   user: UserProfile | null;
@@ -25,8 +27,9 @@ type AuthContextShape = {
   signInWithGoogle: (firebaseIdToken: string) => Promise<void>;
   // signInWithApple mirrors signInWithGoogle: the screen runs Apple's native
   // Sign In with Apple flow (see src/utils/appleSignIn.ts), turns it into a
-  // Firebase ID token, and passes it here.
-  signInWithApple: (firebaseIdToken: string) => Promise<void>;
+  // Firebase ID token, and passes it here along with Apple's one-time
+  // authorization code (forwarded to the backend for later token revocation).
+  signInWithApple: (firebaseIdToken: string, authorizationCode?: string | null) => Promise<void>;
   // completeSocialSignIn is the lower-level helper kept for future providers.
   completeSocialSignIn: (provider: 'google' | 'apple', token: string, appleUser?: any) => Promise<void>;
   // Saves the activity + referral code collected by CompleteProfileModal.
@@ -35,6 +38,11 @@ type AuthContextShape = {
   // or an Edit Profile save) to both in-memory state and cached storage,
   // without a full network refetch.
   updateUser: (profile: UserProfile) => Promise<void>;
+  // Permanently deletes the signed-in user's account (App Store Review
+  // Guideline 5.1.1(v) requires this for any app offering account creation).
+  // Clears the local session the same way signOut does once the backend
+  // confirms deletion.
+  deleteAccount: () => Promise<void>;
 };
 
 export const AuthContext = createContext<AuthContextShape>({} as AuthContextShape);
@@ -117,6 +125,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => sub.remove();
   }, []);
 
+  // Register this device for push as soon as a user is signed in (covers
+  // cold-start restore via loadFromStorage as well as every sign-in method
+  // below, since they all funnel through setUser) — the backend's
+  // ApnsPushService needs a token on file before it can deliver anything.
+  useEffect(() => {
+    if (!user) return;
+    registerForPushNotificationsAsync().then((token) => {
+      if (token) notificationApi.registerPushToken(token).catch(() => {});
+    });
+  }, [user]);
+
   // ─── Auth actions ────────────────────────────────────────────────────────────
 
   const signIn = async (payload: LoginPayload): Promise<void> => {
@@ -141,12 +160,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signOut = async (): Promise<void> => {
+    // Best-effort, and must happen before the Authorization header below is
+    // cleared — the unregister call needs it to identify which account's
+    // token list to remove this device from. A failure here (offline, etc.)
+    // must never block sign-out itself.
+    try {
+      const token = await registerForPushNotificationsAsync();
+      if (token) await notificationApi.unregisterPushToken(token);
+    } catch { /* ignore */ }
+
     try {
       await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'user', 'tokenIssuedAt']);
       await clearSubscriptionCache();
     } catch { /* ignore */ }
     delete axiosInstance.defaults.headers.common['Authorization'];
     setUser(null);
+  };
+
+  // Required by App Store Review Guideline 5.1.1(v) — deletes the account on
+  // the backend (Mongo user + Firebase Auth user, plus Apple token revocation
+  // for Apple-linked accounts — see AuthService#deleteAccount), then clears
+  // the local session exactly like signOut.
+  const deleteAccount = async (): Promise<void> => {
+    await authApi.deleteAccount();
+    await signOut();
   };
 
   // ─── Google Sign-In ──────────────────────────────────────────────────────────
@@ -173,10 +210,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // token via src/utils/appleSignIn.ts (Apple native flow → Firebase credential
   // → result.user.getIdToken()) and passes it here, mirroring signInWithGoogle.
 
-  const signInWithApple = async (firebaseIdToken: string): Promise<void> => {
+  const signInWithApple = async (firebaseIdToken: string, authorizationCode?: string | null): Promise<void> => {
     try {
       setLoading(true);
-      const response = await socialApi.loginWithApple(firebaseIdToken);
+      const response = await socialApi.loginWithApple(firebaseIdToken, authorizationCode);
       await persistTokens(response);
       setUser(response.user ?? null);
     } catch (error) {
@@ -264,12 +301,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         completeSocialSignIn,
         completeProfile,
         updateUser,
+        deleteAccount,
       }}
     >
       {children}
       <CompleteProfileModal
         visible={needsProfileCompletion}
         displayName={user?.displayName}
+        authProvider={user?.authProvider}
         onSubmit={completeProfile}
         onSignOut={signOut}
       />

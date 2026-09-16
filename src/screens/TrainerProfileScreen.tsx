@@ -18,6 +18,7 @@ import { LoadingScreen } from '../components/LoadingScreen';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 const CATEGORY_LABELS: Record<string, string> = {
   GYM: 'Gym', CALISTHENICS: 'Calisthenics', DANCING: 'Dancing', YOGA: 'Yoga',
@@ -107,7 +108,7 @@ export default function TrainerProfileScreen({ trainerId }: Props) {
             <LinearGradient colors={[colors.trainer, colors.primaryDark]} style={styles.heroImage} />
           )}
           <View style={styles.heroScrim} />
-          <TouchableOpacity style={styles.backFab} onPress={() => router.back()} hitSlop={10}>
+          <TouchableOpacity style={styles.backFab} onPress={() => goBack(router)} hitSlop={10}>
             <ArrowLeft color={colors.text} size={20} strokeWidth={2.5} />
           </TouchableOpacity>
           <View style={styles.heroMascotWrap}>

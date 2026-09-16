@@ -43,7 +43,8 @@ export const supportApi = {
     });
 
     const { data } = await axiosInstance.post(ENDPOINTS.SUPPORT.CREATE_TICKET, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      // No explicit Content-Type — see socialMediaApi.ts's createPost for why
+      // setting a boundary-less "multipart/form-data" here breaks uploads.
       timeout: 60000,
     });
     return data;

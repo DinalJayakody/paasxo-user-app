@@ -47,6 +47,7 @@ import { socialMediaApi } from '../api/socialMediaApi';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { SearchBar } from '../components/SearchBar';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 export default function CreatePostScreen() {
   const { colors } = useTheme();
@@ -119,33 +120,6 @@ export default function CreatePostScreen() {
       return;
     }
 
-
-    useEffect(() => {
-  const delay = setTimeout(() => {
-    if (searchText.trim().length >= 2) {
-      fetchUsers();
-    } else {
-      setSearchResults([]);
-    }
-  }, 400);
-
-  return () => clearTimeout(delay);
-}, [searchText]);
-
-const fetchUsers = async () => {
-  try {
-    setLoading(true);
-
-    const data = await socialMediaApi.searchUsers(searchText);
-
-    setSearchResults(data?.content || []);
-  } catch (error) {
-    console.log(error);
-  } finally {
-    setLoading(false);
-  }
-};
-
     const result =
       await ImagePicker.launchCameraAsync({
         quality: 0.8,
@@ -156,24 +130,29 @@ const fetchUsers = async () => {
     }
   };
 
- const [results, setResults] = useState<any[]>([]);
+  // Debounced "Tag Players" search — waits 400ms after the user stops typing
+  // before querying, instead of firing a request on every keystroke.
+  useEffect(() => {
+    const delay = setTimeout(() => {
+      if (searchText.trim().length >= 2) {
+        fetchTaggableUsers();
+      } else {
+        setSearchResults([]);
+      }
+    }, 400);
 
-  const searchUsers = async (
-    text: string
-  ) => {
-    setSearchText(text);
+    return () => clearTimeout(delay);
+  }, [searchText]);
 
-    if (text.length < 2) return;
-
+  const fetchTaggableUsers = async () => {
     try {
-      const data =
-        await socialMediaApi.searchUsers(
-          text
-        );
-
+      setLoading(true);
+      const data = await socialMediaApi.searchUsers(searchText);
       setSearchResults(data?.content || []);
     } catch (error) {
       console.log(error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -209,14 +188,26 @@ const fetchUsers = async () => {
         'Post created successfully'
       );
 
-      router.back();
+      goBack(router);
     } catch (error: any) {
-      console.log(error?.response?.data);
+      if (__DEV__) {
+        console.warn('[CreatePostScreen] createPost failed', {
+          status: error?.response?.status,
+          data: error?.response?.data,
+          message: error?.message,
+          code: error?.code,
+        });
+      }
 
-      Alert.alert(
-        'Error',
-        'Failed to create post'
-      );
+      const message =
+        error?.response?.data?.message ??
+        (error?.code === 'ECONNABORTED'
+          ? 'Upload timed out. Check your connection and try again.'
+          : error?.message === 'Network Error'
+          ? 'Network error. Check your connection and try again.'
+          : 'Failed to create post');
+
+      Alert.alert('Error', message);
     } finally {
       setLoading(false);
     }
@@ -256,7 +247,7 @@ const fetchUsers = async () => {
           <View style={styles.headerGlassStroke} pointerEvents="none" />
 
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={() => goBack(router)}
           >
             <Text style={styles.cancelText}>
               Cancel

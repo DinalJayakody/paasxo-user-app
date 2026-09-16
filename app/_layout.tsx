@@ -1,12 +1,38 @@
-import { Stack } from 'expo-router';
+import { useEffect } from 'react';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as Notifications from 'expo-notifications';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { AuthProvider } from '@/src/context/AuthContext';
 import { ThemeProvider, useTheme } from '@/src/context/ThemeContext';
+import { configurePushNotificationHandler } from '@/src/lib/push';
+// Registers the background GPS task (TaskManager.defineTask) at module
+// scope — this import's only purpose is that side effect. Must happen this
+// early so Expo can re-attach the task after the JS engine is torn down and
+// recreated while the app is backgrounded during an active tracking session.
+import '@/src/lib/activityLocationTask';
+
+// Without this, a push received while the app is in the foreground is
+// silently swallowed instead of showing a banner/sound. Must run before any
+// screen mounts, so it's called at module scope, not inside a component.
+configurePushNotificationHandler();
 
 function RootLayoutNav() {
   const { colors, resolvedTheme } = useTheme();
+  const router = useRouter();
+
+  // Tapping a push (app backgrounded/killed) opens the in-app notification
+  // feed, which already knows how to deep-link every notification type from
+  // its full matchSnapshot — the push payload itself only carries
+  // type/bookingId/invitationId, not enough to replicate every one of those
+  // routes directly.
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(() => {
+      router.push('/notifications' as any);
+    });
+    return () => sub.remove();
+  }, [router]);
 
   return (
     <SafeAreaProvider>

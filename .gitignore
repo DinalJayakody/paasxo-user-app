@@ -14,6 +14,13 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
+# Production Android signing (see android/app/paasxo-release.keystore +
+# android/keystore.properties) - must never reach git; back these up
+# separately (password manager / secure cloud storage), losing them means
+# the app can never be updated under this signing identity again.
+*.keystore
+!android/app/debug.keystore
+keystore.properties
 
 # metro
 .metro-health-check*

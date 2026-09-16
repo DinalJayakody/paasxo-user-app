@@ -30,9 +30,9 @@ export default function CreateReelScreen() {
     <CaptureFlow
       maxVideoSeconds={MAX_REEL_SECONDS}
       allowPhoto={false}
-      requireCaption
+      allowCaption
       allowMusic
-      captionPlaceholder="Write a caption for your reel..."
+      captionPlaceholder="Write a caption for your reel... (optional)"
       submitLabel="Post Reel"
       submittingLabel="Posting…"
       doneLabel="Posted!"

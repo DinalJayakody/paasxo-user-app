@@ -9,6 +9,7 @@ import { PostSummary } from '../types/api';
 import { PostGrid } from '../components/PostGrid';
 import { PaasxoLogoLoader } from '../components/PaasxoLogoLoader';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 /**
  * Moved out of the Profile tabs into Settings, per the client's request —
@@ -42,7 +43,7 @@ export default function SavedPostsScreen() {
     <SafeAreaView style={styles.container}>
       <ScreenGlow />
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={() => goBack(router)} style={styles.backBtn}>
           <ArrowLeft color={colors.logoBlue || colors.primary} size={22} />
         </Pressable>
         <Text style={styles.title}>Saved Posts</Text>

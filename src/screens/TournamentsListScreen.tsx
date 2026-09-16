@@ -13,6 +13,7 @@ import { TournamentLifecycle } from '../types/api';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 interface ListItem extends TrackedTournament {
   date?: string;
@@ -71,7 +72,7 @@ export default function TournamentsListScreen() {
     <SafeAreaView style={styles.flex1} edges={['top']}>
       <ScreenGlow />
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()}>
+        <Pressable onPress={() => goBack(router)}>
           <ArrowLeft color={colors.text} size={22} strokeWidth={2.5} />
         </Pressable>
         <Text style={styles.headerTitle}>My Tournaments</Text>

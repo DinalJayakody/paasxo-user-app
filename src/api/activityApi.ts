@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axiosInstance from './axios';
+import { LiveSplit } from '../utils/activityMath';
 
 export type ActivityType = 'WALK' | 'RUN' | 'CYCLING';
 
@@ -11,6 +12,9 @@ export interface RoutePoint {
   altitudeMeters?: number;
 }
 
+// No calorie field — there's no legitimate per-user calculation in place
+// (would need real body weight + pace-varying MET, neither of which exist),
+// so the feature was removed rather than shipped with a fabricated number.
 export interface StoredActivity {
   localId: string;
   serverId?: string;
@@ -22,8 +26,13 @@ export interface StoredActivity {
   distanceMeters: number;
   avgSpeedKmh: number;
   maxSpeedKmh: number;
-  estimatedCalories: number;
+  // Null for CYCLING — pace isn't a meaningful metric there (speed is shown instead).
+  avgPaceSecPerKm: number | null;
   elevationGainMeters: number;
+  elevationLossMeters: number;
+  // Null when the device's pedometer was unavailable/denied for this session.
+  stepCount: number | null;
+  splits: LiveSplit[];
   routeCoordinates: RoutePoint[];
   startLatitude: number;
   startLongitude: number;
@@ -70,7 +79,7 @@ export const activityApi = {
   async syncToServer(activity: StoredActivity): Promise<string | null> {
     try {
       const { data } = await axiosInstance.post('/activities', {
-        type: activity.type,
+        type: activity.type === 'CYCLING' ? 'CYCLE' : activity.type,
         title: activity.title,
         startTime: activity.startTime,
         endTime: activity.endTime,
@@ -78,13 +87,27 @@ export const activityApi = {
         distanceMeters: activity.distanceMeters,
         avgSpeedKmh: activity.avgSpeedKmh,
         maxSpeedKmh: activity.maxSpeedKmh,
-        estimatedCalories: activity.estimatedCalories,
+        avgPaceSecPerKm: activity.avgPaceSecPerKm,
         elevationGainMeters: activity.elevationGainMeters,
+        elevationLossMeters: activity.elevationLossMeters,
+        stepCount: activity.stepCount,
         startLatitude: activity.startLatitude,
         startLongitude: activity.startLongitude,
         endLatitude: activity.endLatitude,
         endLongitude: activity.endLongitude,
-        routeCoordinates: activity.routeCoordinates,
+        route: activity.routeCoordinates.map((p) => ({
+          latitude: p.latitude,
+          longitude: p.longitude,
+          altitudeMeters: p.altitudeMeters ?? null,
+          timestampMillis: p.timestamp,
+          speedKmh: p.speedKmh ?? null,
+        })),
+        splits: activity.splits.map((s) => ({
+          index: s.index,
+          durationSeconds: s.durationSeconds,
+          paceSecPerKm: s.paceSecPerKm,
+          avgSpeedKmh: s.avgSpeedKmh,
+        })),
       });
       return data?.id ?? null;
     } catch {
@@ -99,7 +122,7 @@ export const activityApi = {
       return items.map((d: any) => ({
         localId: d.id ?? d.localId,
         serverId: d.id,
-        type: d.type,
+        type: d.type === 'CYCLE' ? 'CYCLING' : d.type,
         title: d.title,
         startTime: d.startTime,
         endTime: d.endTime,
@@ -107,9 +130,23 @@ export const activityApi = {
         distanceMeters: d.distanceMeters,
         avgSpeedKmh: d.avgSpeedKmh,
         maxSpeedKmh: d.maxSpeedKmh,
-        estimatedCalories: d.estimatedCalories,
+        avgPaceSecPerKm: d.avgPaceSecPerKm ?? null,
         elevationGainMeters: d.elevationGainMeters,
-        routeCoordinates: d.routeCoordinates ?? [],
+        elevationLossMeters: d.elevationLossMeters ?? 0,
+        stepCount: d.stepCount ?? null,
+        splits: (d.splits ?? []).map((s: any) => ({
+          index: s.index,
+          durationSeconds: s.durationSeconds,
+          paceSecPerKm: s.paceSecPerKm ?? null,
+          avgSpeedKmh: s.avgSpeedKmh,
+        })),
+        routeCoordinates: (d.route ?? d.routeCoordinates ?? []).map((p: any) => ({
+          latitude: p.latitude,
+          longitude: p.longitude,
+          timestamp: p.timestampMillis ?? p.timestamp,
+          speedKmh: p.speedKmh ?? undefined,
+          altitudeMeters: p.altitudeMeters ?? undefined,
+        })),
         startLatitude: d.startLatitude,
         startLongitude: d.startLongitude,
         endLatitude: d.endLatitude,
@@ -118,5 +155,11 @@ export const activityApi = {
     } catch {
       return [];
     }
+  },
+
+  async deleteFromServer(serverId: string): Promise<void> {
+    try {
+      await axiosInstance.delete(`/activities/${serverId}`);
+    } catch {}
   },
 };

@@ -47,6 +47,7 @@ import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import ScreenGlow from '../components/ScreenGlow';
 import { FollowListModal } from '../components/FollowListModal';
+import { goBack } from '../utils/navigation';
 
 // Module-scope, always light-palette accent colors regardless of theme (see
 // SPORT_MASCOTS in HomeScreen.tsx for the same deliberate choice).
@@ -293,8 +294,8 @@ export default function ProfileScreen() {
         type: asset.mimeType || 'image/jpeg',
       });
       await updateUser(updated);
-    } catch {
-      Alert.alert('Upload failed', 'Could not update your profile picture. Please try again.');
+    } catch (e: any) {
+      Alert.alert('Upload failed', e?.response?.data?.message ?? 'Could not update your profile picture. Please try again.');
     } finally {
       setAvatarUploading(false);
     }
@@ -474,7 +475,7 @@ export default function ProfileScreen() {
             to its own top edge, right next to the avatar. */}
         <Animated.View style={[styles.heroBanner, { opacity: headerFade, transform: [{ translateY: headerSlide }] }]}>
           <View style={styles.heroTopRow}>
-            <AnimatedPressable onPress={() => router.back()} style={styles.topIconButton}>
+            <AnimatedPressable onPress={() => goBack(router)} style={styles.topIconButton}>
               <ArrowLeft color={colors.neutral900} size={18} strokeWidth={2} />
             </AnimatedPressable>
             <AnimatedPressable onPress={() => router.push('/settings')} style={styles.topIconButton}>

@@ -5,6 +5,7 @@ import { ArrowLeft, Mail, LifeBuoy, ChevronRight } from 'lucide-react-native';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 /**
  * Settings > Support hub — "Contact" and "Help Center" as subcategories,
@@ -19,7 +20,7 @@ export default function SupportScreen() {
     <SafeAreaView style={styles.container}>
       <ScreenGlow />
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={() => goBack(router)} style={styles.backBtn}>
           <ArrowLeft color={colors.logoBlue || colors.primary} size={22} />
         </Pressable>
         <Text style={styles.title}>Support</Text>

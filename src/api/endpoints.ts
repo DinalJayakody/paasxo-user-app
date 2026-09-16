@@ -26,9 +26,18 @@ const TUNNEL_URL = 'https://centres-station-chicago-dot.trycloudflare.com/api';
 // Set to undefined to disable the probe entirely (e.g. while testing a feature,
 // like Trainer, that only exists on the local backend and hasn't been deployed
 // to Hostinger yet) — axios.ts skips the probe and goes straight to local.
-export const HOSTINGER_URL: string | undefined = undefined;
+export const HOSTINGER_URL: string | undefined = 'https://www.paasxo.com/api';
 
-export const HOSTINGER_PROBE_TIMEOUT_MS = 3000;
+// 3s was too aggressive: a real Spring Boot cold start (fresh container, JPA/
+// Hibernate/Mongo/Firebase all initializing) can easily take longer than that to
+// start answering requests, and nginx returns a 502 in the meantime — which reads
+// as "Hostinger is down" here and permanently (for the rest of that app session,
+// since resolvePreferredBaseUrl memoizes the result) falls back to the LOCAL
+// backend instead. That's exactly how a checkout got created against a local
+// database while its checkoutPageUrl still pointed at the public VPS domain
+// (PAYHERE_NOTIFY_URL_BASE), landing on a transaction the VPS had never heard of.
+// See axios.ts's retry below for the other half of this fix.
+export const HOSTINGER_PROBE_TIMEOUT_MS = 8000;
 
 function resolveBaseUrl(): string {
   if (Platform.OS === 'web') return TUNNEL_URL;
@@ -70,6 +79,9 @@ export const ENDPOINTS = {
     // Popup shown right after a first-time Google sign-in to collect the
     // activity + referral code the normal registration form would have.
     COMPLETE_PROFILE: '/auth/complete-profile',
+    // Permanently deletes the signed-in user's account — see SettingsScreen's
+    // "Delete Account" row and AuthController#deleteAccount.
+    DELETE_ACCOUNT: '/auth/account',
   },
   // com.pasxo.controller.AuthController exposes profile under /auth, not /user.
   // PUT /auth/profile is multipart (UpdateProfileRequest bound via
@@ -180,6 +192,7 @@ export const ENDPOINTS = {
     UNREAD_COUNT: '/notifications/unread-count',
     MARK_READ: (id: string) => `/notifications/${id}/read`,
     MARK_ALL_READ: '/notifications/read-all',
+    PUSH_TOKEN: '/notifications/push-token',
   },
 
   SUPPORT: {
@@ -262,6 +275,14 @@ export const ENDPOINTS = {
     REJECT_REQUEST: (uid: string) => `/social/requests/${uid}/reject`,
     UPDATE_PRIVACY: '/social/users/me/privacy',
     UPDATE_LOCATION: '/social/users/me/location',
+
+    // Required by App Store Review Guideline 1.2 (User Generated Content) -
+    // see ModerationController / SocialController#blockUser on the backend.
+    BLOCK_USER: (id: string) => `/social/users/${id}/block`,
+    UNBLOCK_USER: (id: string) => `/social/users/${id}/unblock`,
+    GET_BLOCKED_USERS: (page: number, size: number) =>
+      `/social/users/blocked?page=${page}&size=${size}`,
+    REPORT: '/moderation/reports',
   },
 };
 

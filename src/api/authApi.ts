@@ -62,6 +62,12 @@ formData.append("profileImage", {
     const { data } = await axiosInstance.put(ENDPOINTS.AUTH.COMPLETE_PROFILE, payload);
     return data;
   },
+
+  // Permanently deletes the signed-in user's account — see SettingsScreen's
+  // "Delete Account" row and AuthContext.deleteAccount.
+  deleteAccount: async (): Promise<void> => {
+    await axiosInstance.delete(ENDPOINTS.AUTH.DELETE_ACCOUNT);
+  },
 };
 
 /*

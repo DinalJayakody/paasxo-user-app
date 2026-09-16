@@ -79,7 +79,8 @@ export const storyApi = {
     // Boomerang processing (server-side ffmpeg) adds real time on top of the
     // upload itself, on top of the same real-network timeout issue reels had.
     const { data } = await axiosInstance.post(ENDPOINTS.STORIES.CREATE, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      // No explicit Content-Type — see socialMediaApi.ts's createPost for why
+      // setting a boundary-less "multipart/form-data" here breaks uploads.
       timeout: 180000,
     });
     return data;

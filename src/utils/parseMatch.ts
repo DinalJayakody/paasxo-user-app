@@ -40,8 +40,10 @@ export const parseMatchDetails = (raw: any): MatchDetails => {
     level: data.level,
     images: Array.isArray(data.images) && data.images.length > 0
       ? data.images
+      : data.imageUrl
+      ? [data.imageUrl]
       : data.imageBase64
-      ? [`data:image/jpeg;base64,${data.imageBase64}`]
+      ? [`data:image/jpeg;base64,${data.imageBase64}`] // legacy fallback
       : [],
     startDate: data.startDate || combineDateTime(data.slotDate, data.startTime),
     endDate: data.endDate || combineDateTime(data.slotDate, data.endTime),

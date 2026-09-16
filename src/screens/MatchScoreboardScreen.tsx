@@ -28,6 +28,7 @@ import { CricketScoringControls } from '../components/scoring/CricketScoringCont
 import { RacketScoringControls } from '../components/scoring/RacketScoringControls';
 import { LoadingScreen } from '../components/LoadingScreen';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 const SPORT_ACCENT: Record<string, string> = {
   FUTSAL: Colors.futsal,
@@ -90,7 +91,7 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
     return (
       <SafeAreaView style={styles.centerScreen}>
         <Text style={styles.centerText}>{loadError || 'Match not found'}</Text>
-        <Button title="Go Back" onPress={() => router.back()} style={{ marginTop: 16 }} />
+        <Button title="Go Back" onPress={() => goBack(router)} style={{ marginTop: 16 }} />
       </SafeAreaView>
     );
   }
@@ -101,7 +102,7 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
         <Lock color={colors.neutral400} size={40} strokeWidth={1.6} />
         <Text style={styles.centerTitle}>Organizer Only</Text>
         <Text style={styles.centerText}>Only the player who created this match can score it.</Text>
-        <Button title="Go Back" onPress={() => router.back()} style={{ marginTop: 16 }} />
+        <Button title="Go Back" onPress={() => goBack(router)} style={{ marginTop: 16 }} />
       </SafeAreaView>
     );
   }
@@ -116,7 +117,7 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
         <Text style={styles.centerText}>
           Scoring unlocks once the venue accepts this match. You'll be able to start scoring as soon as it's confirmed.
         </Text>
-        <Button title="Go Back" onPress={() => router.back()} style={{ marginTop: 16 }} />
+        <Button title="Go Back" onPress={() => goBack(router)} style={{ marginTop: 16 }} />
       </SafeAreaView>
     );
   }
@@ -130,7 +131,7 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
         <Text style={styles.centerTitle}>Pro Feature</Text>
         <Text style={styles.centerText}>Scoring live matches is a Paasxo Pro feature. Upgrade to start scoring this match for everyone watching.</Text>
         <Button title="Upgrade to Pro" onPress={() => router.push('/subscription' as any)} style={{ marginTop: 16 }} />
-        <Pressable onPress={() => router.back()} style={{ marginTop: 14 }}>
+        <Pressable onPress={() => goBack(router)} style={{ marginTop: 14 }}>
           <Text style={styles.linkText}>Go back</Text>
         </Pressable>
       </SafeAreaView>
@@ -166,7 +167,7 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScreenGlow />
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.headerIconBtn} hitSlop={8}>
+        <Pressable onPress={() => goBack(router)} style={styles.headerIconBtn} hitSlop={8}>
           <ArrowLeft color={colors.neutral900} size={20} strokeWidth={2.2} />
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>{match.title || 'Match Scoring'}</Text>

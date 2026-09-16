@@ -64,7 +64,8 @@ export const reelApi = {
     // loopback network, timed out on real Wi-Fi). 3 minutes covers a full
     // 180s/200MB reel with room to spare.
     const { data } = await axiosInstance.post(ENDPOINTS.REELS.CREATE, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      // No explicit Content-Type — see socialMediaApi.ts's createPost for why
+      // setting a boundary-less "multipart/form-data" here breaks uploads.
       timeout: 180000,
     });
     return data;

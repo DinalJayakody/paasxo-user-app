@@ -26,12 +26,15 @@ export const socialApi = {
    * Exchange a Firebase ID token (minted from Apple's native Sign In with
    * Apple credential - see src/utils/appleSignIn.ts) for app JWT tokens
    * @param idToken - Firebase ID token, same shape as loginWithGoogle
+   * @param authorizationCode - Apple's one-time authorization code, forwarded
+   * so the backend can exchange it for a refresh token (used only later, to
+   * revoke Apple's grant if the user deletes their account)
    * @returns AuthResponse with accessToken, refreshToken, and user profile
    */
-  loginWithApple: async (idToken: string): Promise<AuthResponse> => {
+  loginWithApple: async (idToken: string, authorizationCode?: string | null): Promise<AuthResponse> => {
     const { data } = await axiosInstance.post(
       ENDPOINTS.AUTH.APPLE_LOGIN,
-      { idToken }
+      { idToken, authorizationCode: authorizationCode ?? undefined }
     );
     return data;
   },

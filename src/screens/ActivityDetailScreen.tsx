@@ -8,40 +8,21 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import MapView, { Polyline, Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import {
-  ArrowLeft, Clock, Flame, TrendingUp, Wind, Zap,
-  MapPin, Calendar, Trash2, Share2, Trophy,
+  ArrowLeft, Clock, Footprints, TrendingUp, TrendingDown, Wind, Zap,
+  MapPin, Calendar, Trash2, Share2, Trophy, ListOrdered,
 } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
-import { activityStorage, StoredActivity } from '../api/activityApi';
+import { activityStorage, activityApi, StoredActivity } from '../api/activityApi';
+import { formatTime, formatDist, formatPace } from '../utils/activityMath';
+import { goBack } from '../utils/navigation';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 const ACT_CFG = {
-  WALK: { label: 'Walk', emoji: '🚶', colors: ['#059669', '#047857'] as [string, string], accent: '#059669' },
-  RUN:  { label: 'Run',  emoji: '🏃', colors: ['#DC2626', '#991B1B'] as [string, string], accent: '#DC2626' },
-  CYCLING: { label: 'Cycle', emoji: '🚴', colors: ['#2563EB', '#1D4ED8'] as [string, string], accent: '#2563EB' },
+  WALK: { label: 'Walk', emoji: '🚶', isPaceBased: true, colors: ['#059669', '#047857'] as [string, string], accent: '#059669' },
+  RUN:  { label: 'Run',  emoji: '🏃', isPaceBased: true, colors: ['#DC2626', '#991B1B'] as [string, string], accent: '#DC2626' },
+  CYCLING: { label: 'Cycle', emoji: '🚴', isPaceBased: false, colors: ['#2563EB', '#1D4ED8'] as [string, string], accent: '#2563EB' },
 };
-
-function formatTime(s: number): string {
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-}
-
-function formatDist(m: number): string {
-  if (m < 1000) return `${Math.round(m)} m`;
-  return `${(m / 1000).toFixed(2)} km`;
-}
-
-function calcPace(distM: number, secs: number): string {
-  if (distM < 50 || secs < 5) return '--:--';
-  const minPerKm = secs / 60 / (distM / 1000);
-  const pMin = Math.floor(minPerKm);
-  const pSec = Math.round((minPerKm - pMin) * 60);
-  return `${pMin}:${String(pSec).padStart(2, '0')}`;
-}
 
 export default function ActivityDetailScreen() {
   const router = useRouter();
@@ -83,14 +64,17 @@ export default function ActivityDetailScreen() {
 
   const handleShare = async () => {
     if (!activity) return;
-    const pace = calcPace(activity.distanceMeters, activity.durationSeconds);
+    const cfg = ACT_CFG[activity.type];
+    const speedOrPace = cfg.isPaceBased
+      ? `🏃 Pace: ${formatPace(activity.avgPaceSecPerKm)} /km\n`
+      : `⚡ Speed: ${activity.avgSpeedKmh.toFixed(1)} km/h (max ${activity.maxSpeedKmh.toFixed(1)})\n`;
     const message =
-      `${ACT_CFG[activity.type].emoji} ${ACT_CFG[activity.type].label} — ${activity.title}\n\n` +
+      `${cfg.emoji} ${cfg.label} — ${activity.title}\n\n` +
       `📍 Distance: ${formatDist(activity.distanceMeters)}\n` +
       `⏱️ Duration: ${formatTime(activity.durationSeconds)}\n` +
-      `🏃 Pace: ${pace} min/km\n` +
-      `⚡ Max Speed: ${activity.maxSpeedKmh.toFixed(1)} km/h\n` +
-      `⛰️ Elevation: ${activity.elevationGainMeters}m gain`;
+      speedOrPace +
+      `⛰️ Elevation: ${activity.elevationGainMeters}m gain, ${activity.elevationLossMeters}m loss` +
+      (activity.stepCount ? `\n👣 Steps: ${activity.stepCount}` : '');
     try {
       await Share.share({ message });
     } catch {
@@ -105,7 +89,8 @@ export default function ActivityDetailScreen() {
         text: 'Delete', style: 'destructive', onPress: async () => {
           if (!activity) return;
           await activityStorage.delete(activity.localId);
-          router.back();
+          if (activity.serverId) activityApi.deleteFromServer(activity.serverId).catch(() => {});
+          goBack(router);
         }
       },
     ]);
@@ -122,14 +107,13 @@ export default function ActivityDetailScreen() {
   }
 
   const cfg = ACT_CFG[activity.type];
-  const pace = calcPace(activity.distanceMeters, activity.durationSeconds);
   const startDate = new Date(activity.startTime);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <LinearGradient colors={['#0F172A', '#1E293B']} style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => goBack(router)} style={styles.backBtn}>
           <ArrowLeft color={Colors.white} size={20} strokeWidth={2.5} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
@@ -221,14 +205,39 @@ export default function ActivityDetailScreen() {
         <Animated.View style={[styles.section, { opacity: statsAnim, transform: [{ translateY: statsAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }]}>
           <Text style={styles.sectionTitle}>Stats Breakdown</Text>
           <View style={styles.statsGrid}>
-            <DetailTile icon={<Zap color={cfg.accent} size={18} />} label="Avg Speed" value={`${activity.avgSpeedKmh.toFixed(1)}`} unit="km/h" />
-            <DetailTile icon={<Wind color="#8B5CF6" size={18} />} label="Max Speed" value={`${activity.maxSpeedKmh.toFixed(1)}`} unit="km/h" />
-            <DetailTile icon={<Clock color="#F59E0B" size={18} />} label="Pace" value={pace} unit="min/km" />
-            <DetailTile icon={<Flame color="#EF4444" size={18} />} label="Calories" value={`${activity.estimatedCalories}`} unit="kcal" />
-            <DetailTile icon={<TrendingUp color="#10B981" size={18} />} label="Elevation" value={`${activity.elevationGainMeters}`} unit="m gain" />
+            {cfg.isPaceBased ? (
+              <DetailTile icon={<Clock color={cfg.accent} size={18} />} label="Avg Pace" value={formatPace(activity.avgPaceSecPerKm)} unit="min/km" />
+            ) : (
+              <>
+                <DetailTile icon={<Zap color={cfg.accent} size={18} />} label="Avg Speed" value={`${activity.avgSpeedKmh.toFixed(1)}`} unit="km/h" />
+                <DetailTile icon={<Wind color="#8B5CF6" size={18} />} label="Max Speed" value={`${activity.maxSpeedKmh.toFixed(1)}`} unit="km/h" />
+              </>
+            )}
+            <DetailTile icon={<TrendingUp color="#10B981" size={18} />} label="Elev Gain" value={`${activity.elevationGainMeters}`} unit="m" />
+            <DetailTile icon={<TrendingDown color="#F59E0B" size={18} />} label="Elev Loss" value={`${activity.elevationLossMeters}`} unit="m" />
+            <DetailTile icon={<Footprints color="#F97316" size={18} />} label="Steps" value={activity.stepCount != null ? `${activity.stepCount}` : '—'} unit="steps" />
             <DetailTile icon={<Trophy color="#F59E0B" size={18} />} label="Route Points" value={`${activity.routeCoordinates.length}`} unit="tracked" />
           </View>
         </Animated.View>
+
+        {/* Per-km splits */}
+        {activity.splits.length > 0 && (
+          <Animated.View style={[styles.section, { opacity: statsAnim }]}>
+            <Text style={styles.sectionTitle}>{cfg.isPaceBased ? 'Pace per Kilometer' : 'Speed per Kilometer'}</Text>
+            <View style={styles.locationCard}>
+              {activity.splits.map((s) => (
+                <View key={s.index} style={styles.locationRow}>
+                  <ListOrdered color={cfg.accent} size={14} />
+                  <Text style={styles.locationLabel}>Km {s.index}</Text>
+                  <Text style={styles.locationCoord}>
+                    {cfg.isPaceBased ? `${formatPace(s.paceSecPerKm)} /km` : `${s.avgSpeedKmh.toFixed(1)} km/h`}
+                    {'  ·  '}{formatTime(s.durationSeconds)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </Animated.View>
+        )}
 
         {/* Route info */}
         {(activity.startLatitude !== 0 || activity.startLongitude !== 0) && (

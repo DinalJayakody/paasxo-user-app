@@ -11,6 +11,7 @@ import {
   Animated,
   ActivityIndicator,
   TouchableOpacity,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -47,7 +48,9 @@ import { bookingApi } from '../src/api/bookingApi';
 import { invitationApi } from '../src/api/invitationApi';
 import { PlayerSearchSheet, SearchedPlayer } from '../src/components/PlayerSearchSheet';
 import { extractApiError } from '../src/utils/apiError';
+import { getTermsOfServiceUrl } from '../src/constants/legal';
 import ScreenGlow from '../src/components/ScreenGlow';
+import { goBack } from '../src/utils/navigation';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -731,7 +734,7 @@ export default function CreateMatch() {
         colors={[currentSport.color, currentSport.color + 'CC']}
         style={[styles.headerGrad, { paddingTop: insets.top + 12 }]}
       >
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
+        <Pressable onPress={() => goBack(router)} style={styles.backBtn} hitSlop={8}>
           <ArrowLeft color={colors.white} size={22} strokeWidth={2.5} />
         </Pressable>
         <View style={{ flex: 1, alignItems: 'center' }}>
@@ -1073,7 +1076,14 @@ export default function CreateMatch() {
                 {rulesAccepted && <Check color={colors.white} size={13} strokeWidth={3} />}
               </View>
               <Text style={styles.rulesText}>
-                I accept Paasxo's Terms of Service and Community Guidelines
+                I accept Paasxo's{' '}
+                <Text
+                  style={styles.rulesTextLink}
+                  onPress={(e) => { e.stopPropagation(); Linking.openURL(getTermsOfServiceUrl()); }}
+                >
+                  Terms of Service
+                </Text>{' '}
+                and Community Guidelines
               </Text>
             </Pressable>
 
@@ -1493,6 +1503,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   rulesText: { flex: 1, fontSize: 12, fontWeight: '500', color: colors.text },
+  rulesTextLink: { color: colors.primary, fontWeight: '700', textDecorationLine: 'underline' },
 
   createButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',

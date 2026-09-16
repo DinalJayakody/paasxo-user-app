@@ -24,6 +24,7 @@ import {
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleAuthProvider, signInWithCredential, signInWithRedirect } from 'firebase/auth';
+import { AppleButton } from '@invertase/react-native-apple-authentication';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
@@ -34,6 +35,7 @@ import { GOOGLE_CLIENT_IDS, GOOGLE_CONFIGURED } from '../config/googleAuth';
 import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
 import { APPLE_SIGN_IN_AVAILABLE, performAppleSignIn } from '../utils/appleSignIn';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 // Required by expo-auth-session on web to close the auth popup and
 // return the result to the app. Must be called at module level.
@@ -43,7 +45,7 @@ const isValidEmail = (val: string) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val) || val.length === 0;
 
 export default function SignInScreen() {
-  const { colors } = useTheme();
+  const { colors, resolvedTheme } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const auth = useContext(AuthContext);
   const { signInWithGoogle, signInWithApple } = useAuth();
@@ -147,11 +149,14 @@ export default function SignInScreen() {
 
   // ─── Apple button handler (iOS only) ──────────────────────────────────────
   const handleAppleLogin = async () => {
+    // AppleButton (Apple's native ASAuthorizationAppleIDButton) has no built-in
+    // disabled prop, so guard re-entrancy here instead.
+    if (appleLoading) return;
     setErrors({});
     setAppleLoading(true);
     try {
-      const firebaseIdToken = await performAppleSignIn();
-      await signInWithApple(firebaseIdToken);
+      const { idToken, authorizationCode } = await performAppleSignIn();
+      await signInWithApple(idToken, authorizationCode);
       router.replace('/home');
     } catch (err: any) {
       // User cancelling the native sheet is not an error worth surfacing.
@@ -233,7 +238,7 @@ export default function SignInScreen() {
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity
-              onPress={() => router.back()}
+              onPress={() => goBack(router)}
               style={styles.backBtn}
               activeOpacity={0.7}
             >
@@ -270,7 +275,8 @@ export default function SignInScreen() {
             <Button
               title={googleLoading ? 'Signing in…' : 'Continue with Google'}
               variant="secondary"
-              style={{ marginBottom: 10 }}
+              style={styles.googleSocialButton}
+              textStyle={styles.socialButtonText}
               icon={
                 googleLoading ? (
                   <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: 8 }} />
@@ -286,22 +292,22 @@ export default function SignInScreen() {
             />
 
             {APPLE_SIGN_IN_AVAILABLE && (
-              <Button
-                title={appleLoading ? 'Signing in…' : 'Continue with Apple'}
-                variant="secondary"
-                icon={
-                  appleLoading ? (
-                    <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: 8 }} />
-                  ) : (
-                    <Image
-                      source={{ uri: 'https://img.icons8.com/ios-filled/50/000000/mac-os.png' }}
-                      style={styles.socialIcon}
-                    />
-                  )
-                }
-                onPress={handleAppleLogin}
-                disabled={appleLoading}
-              />
+              appleLoading ? (
+                <View style={styles.appleButtonLoading}>
+                  <ActivityIndicator size="small" color={colors.text} />
+                </View>
+              ) : (
+                // Apple's native Sign In with Apple button (ASAuthorizationAppleIDButton) —
+                // App Store review guideline 4.8 requires this exact control, not a
+                // custom-styled lookalike, when other third-party sign-in options are offered.
+                <AppleButton
+                  buttonStyle={resolvedTheme === 'dark' ? AppleButton.Style.WHITE : AppleButton.Style.BLACK}
+                  buttonType={AppleButton.Type.CONTINUE}
+                  style={styles.appleButton}
+                  cornerRadius={23}
+                  onPress={handleAppleLogin}
+                />
+              )
             )}
           </View>
 
@@ -434,6 +440,23 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     marginBottom: 28,
   },
   socialIcon: { width: 20, height: 20, marginRight: 8 },
+  // Apple's native Sign In with Apple button doesn't expose a font-size
+  // control on iOS (Apple locks this down by design) - its text scales with
+  // the button's own height, so both buttons are sized down together here
+  // and Google's text is matched to Apple's resulting native size.
+  googleSocialButton: { marginBottom: 10, height: 46 },
+  socialButtonText: { fontSize: 16 },
+  appleButton: { width: '100%', height: 46 },
+  appleButtonLoading: {
+    width: '100%',
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: colors.neutral100,
+    borderWidth: 1,
+    borderColor: colors.neutral200,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   card: {
     backgroundColor: colors.cardBg,
     borderRadius: 24,

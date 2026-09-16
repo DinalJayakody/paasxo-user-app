@@ -15,6 +15,7 @@ import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import HeaderIconButton from '../components/HeaderIconButton';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 interface Message {
   id: string;
@@ -130,7 +131,7 @@ export default function ChatScreen() {
           />
           <View style={styles.headerGlassStroke} pointerEvents="none" />
 
-          <HeaderIconButton onPress={() => router.back()} style={styles.headerBack}>
+          <HeaderIconButton onPress={() => goBack(router)} style={styles.headerBack}>
             <ArrowLeft color={colors.white} size={22} strokeWidth={2.5} />
           </HeaderIconButton>
 

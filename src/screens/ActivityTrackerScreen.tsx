@@ -18,12 +18,15 @@ import * as Haptics from 'expo-haptics';
 import MapView, { Polyline, Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import {
   ArrowLeft, Play, Pause, Square, CheckCircle,
-  Navigation, Zap, Clock, Flame, TrendingUp, Wind,
+  Navigation, Zap, TrendingUp, Wind,
   ChevronRight, Trophy, Share2, Trash2, MapPin,
-  PersonStanding,
+  Footprints, ListOrdered,
 } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
-import { activityStorage, activityApi, StoredActivity, RoutePoint, ActivityType } from '../api/activityApi';
+import { activityStorage, activityApi, StoredActivity, ActivityType } from '../api/activityApi';
+import { goBack } from '../utils/navigation';
+import { useActivityTracking } from '../hooks/useActivityTracking';
+import { LiveSplit, formatTime, formatDist, distUnit, formatPace, genLocalId } from '../utils/activityMath';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -32,89 +35,45 @@ type Phase = 'SELECT' | 'COUNTDOWN' | 'ACTIVE' | 'PAUSED' | 'SUMMARY';
 type GpsStatus = 'CHECKING' | 'READY' | 'ERROR';
 
 // ── Activity configs ───────────────────────────────────────────────────────────
+// Pace (min/km) is the only speed-like metric shown for WALK/RUN — no km/h
+// anywhere for those two. CYCLING keeps km/h speed, since pace isn't a
+// meaningful metric for cycling (same convention Strava/most fitness apps use).
 const ACT = {
   WALK: {
     label: 'Walk',
     emoji: '🚶',
-    unit: 'min/km',
-    metValue: 3.5,
+    isPaceBased: true,
     colors: ['#059669', '#047857'] as [string, string],
     accentColor: '#059669',
     guideText: 'Perfect for a relaxed outdoor stroll. Every step counts!',
-    speedLabel: 'Pace',
   },
   RUN: {
     label: 'Run',
     emoji: '🏃',
-    unit: 'min/km',
-    metValue: 8.0,
+    isPaceBased: true,
     colors: ['#DC2626', '#991B1B'] as [string, string],
     accentColor: '#DC2626',
     guideText: 'Push your limits. Stay hydrated and breathe steady!',
-    speedLabel: 'Pace',
   },
   CYCLING: {
     label: 'Cycle',
     emoji: '🚴',
-    unit: 'km/h',
-    metValue: 6.0,
+    isPaceBased: false,
     colors: ['#2563EB', '#1D4ED8'] as [string, string],
     accentColor: '#2563EB',
     guideText: 'Cover more ground on two wheels. Enjoy the ride!',
-    speedLabel: 'Speed',
   },
 } as const;
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function formatTime(s: number): string {
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-}
-
-function formatDist(m: number): string {
-  if (m < 1000) return `${Math.round(m)}`;
-  return (m / 1000).toFixed(2);
-}
-
-function distUnit(m: number): string {
-  return m < 1000 ? 'm' : 'km';
-}
-
-function calcPace(distM: number, secs: number): string {
-  if (distM < 50 || secs < 5) return '--:--';
-  const minPerKm = secs / 60 / (distM / 1000);
-  const pMin = Math.floor(minPerKm);
-  const pSec = Math.round((minPerKm - pMin) * 60);
-  return `${pMin}:${String(pSec).padStart(2, '0')}`;
-}
-
-function calcCalories(type: ActivityType, distM: number, secs: number): number {
-  return Math.round(ACT[type].metValue * 70 * (secs / 3600));
-}
-
-function genLocalId(): string {
-  return `act_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-}
 
 function autoTitle(type: ActivityType): string {
   const hour = new Date().getHours();
   const part = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening';
   return `${part} ${ACT[type].label}`;
+}
+
+function bestSplitPaceSecPerKm(splits: LiveSplit[]): number | null {
+  const paces = splits.map((s) => s.paceSecPerKm).filter((p): p is number => p != null);
+  return paces.length ? Math.min(...paces) : null;
 }
 
 // ── Animated background orbs ──────────────────────────────────────────────────
@@ -228,38 +187,22 @@ export default function ActivityTrackerScreen() {
   const [actType, setActType] = useState<ActivityType>('RUN');
   const [gpsStatus, setGpsStatus] = useState<GpsStatus>('CHECKING');
   const [countdown, setCountdown] = useState(3);
-
-  // Live tracking state
-  const [elapsed, setElapsed] = useState(0);
-  const [distM, setDistM] = useState(0);
-  const [speedKmh, setSpeedKmh] = useState(0);
-  const [maxSpeedKmh, setMaxSpeedKmh] = useState(0);
-  const [elevGain, setElevGain] = useState(0);
-  const [mapCoords, setMapCoords] = useState<{ latitude: number; longitude: number }[]>([]);
   const [currentLoc, setCurrentLoc] = useState<{ latitude: number; longitude: number } | null>(null);
   const [placeName, setPlaceName] = useState<string | null>(null);
-  const [milestones, setMilestones] = useState<number[]>([]);
   const [milestoneBanner, setMilestoneBanner] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [completedActivity, setCompletedActivity] = useState<StoredActivity | null>(null);
 
-  // Milestone banner animation
-  const bannerY = useRef(new Animated.Value(-80)).current;
+  const tracking = useActivityTracking(actType);
+  const { stats } = tracking;
 
-  // Refs to avoid stale closures
-  const routeRef = useRef<RoutePoint[]>([]);
-  const distRef = useRef(0);
-  const maxSpeedRef = useRef(0);
-  const elevRef = useRef(0);
-  const prevAltRef = useRef<number | null>(null);
-  const startTimeRef = useRef<Date>(new Date());
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const locSubRef = useRef<Location.LocationSubscription | null>(null);
-  const elapsedRef = useRef(0);
+  const bannerY = useRef(new Animated.Value(-80)).current;
+  const prevSplitCountRef = useRef(0);
 
   const cfg = ACT[actType];
 
-  // ── GPS bootstrap ──────────────────────────────────────────────────────────
+  // ── GPS bootstrap (one-shot, for the "ready to start" screen only —
+  // the actual tracking session's GPS comes from useActivityTracking) ──────
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -272,10 +215,6 @@ export default function ActivityTrackerScreen() {
         setCurrentLoc({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
         setGpsStatus('READY');
 
-        // Best-effort — show a human-readable place name instead of raw
-        // coordinates on the ready-to-start screen. Silently keep showing
-        // nothing rather than coordinates if reverse geocoding fails/is
-        // unsupported on this platform.
         try {
           const [place] = await Location.reverseGeocodeAsync({
             latitude: loc.coords.latitude,
@@ -292,13 +231,11 @@ export default function ActivityTrackerScreen() {
         setGpsStatus('ERROR');
       }
     })();
-    return () => {
-      locSubRef.current?.remove();
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
   }, []);
 
-  // ── Milestone banner helper ────────────────────────────────────────────────
+  // ── Milestone banner — fires off the real split tracker, not a separate
+  // ad-hoc distance check, so it's tied to the same authoritative source as
+  // the splits shown on the summary screen. ────────────────────────────────
   const showMilestone = useCallback((text: string) => {
     setMilestoneBanner(text);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -310,68 +247,26 @@ export default function ActivityTrackerScreen() {
     ]).start(() => setMilestoneBanner(null));
   }, []);
 
-  // ── Start location watch ──────────────────────────────────────────────────
-  const startLocationWatch = useCallback(async () => {
-    const sub = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.BestForNavigation,
-        timeInterval: 2000,
-        distanceInterval: 3,
-      },
-      (loc) => {
-        const { latitude, longitude, speed, altitude } = loc.coords;
-        const ts = loc.timestamp;
+  useEffect(() => {
+    if (stats.splits.length > prevSplitCountRef.current) {
+      const km = stats.splits.length;
+      prevSplitCountRef.current = km;
+      const msgs = [`${km} km done! Keep it up! 💪`, `Amazing! You hit ${km} km! 🔥`, `${km} km! You're unstoppable! ⚡`];
+      showMilestone(msgs[km % msgs.length]);
+    }
+  }, [stats.splits.length, showMilestone]);
 
-        // Elevation gain
-        if (prevAltRef.current !== null && altitude !== null && altitude > prevAltRef.current) {
-          elevRef.current += altitude - prevAltRef.current;
-          setElevGain(Math.round(elevRef.current));
-        }
-        if (altitude !== null) prevAltRef.current = altitude;
-
-        // Distance
-        const prev = routeRef.current[routeRef.current.length - 1];
-        if (prev) {
-          const d = haversineMeters(prev.latitude, prev.longitude, latitude, longitude);
-          if (d > 1 && d < 200) {
-            distRef.current += d;
-            setDistM(Math.round(distRef.current));
-          }
-        }
-
-        // Speed
-        const kmh = speed !== null && speed >= 0 ? speed * 3.6 : 0;
-        setSpeedKmh(parseFloat(kmh.toFixed(1)));
-        if (kmh > maxSpeedRef.current) {
-          maxSpeedRef.current = kmh;
-          setMaxSpeedKmh(parseFloat(kmh.toFixed(1)));
-        }
-
-        // Route
-        const point: RoutePoint = { latitude, longitude, timestamp: ts, speedKmh: kmh, altitudeMeters: altitude ?? undefined };
-        routeRef.current = [...routeRef.current, point];
-        setCurrentLoc({ latitude, longitude });
-        setMapCoords((prev) => [...prev, { latitude, longitude }]);
-
-        // Map follow
-        mapRef.current?.animateToRegion({
-          latitude,
-          longitude,
-          latitudeDelta: 0.003,
-          longitudeDelta: 0.003,
-        }, 800);
-
-        // Km milestones
-        const km = Math.floor(distRef.current / 1000);
-        if (km > 0 && !milestones.includes(km)) {
-          setMilestones((m) => [...m, km]);
-          const msgs = [`${km} km done! Keep it up! 💪`, `Amazing! You hit ${km} km! 🔥`, `${km} km! You're unstoppable! ⚡`];
-          showMilestone(msgs[km % msgs.length]);
-        }
-      }
-    );
-    locSubRef.current = sub;
-  }, [milestones, showMilestone]);
+  // ── Keep the live map camera following the user as new samples arrive
+  // (the hook only updates `stats`, it has no map ref of its own). ─────────
+  useEffect(() => {
+    if ((phase !== 'ACTIVE' && phase !== 'PAUSED') || !stats.currentLocation) return;
+    mapRef.current?.animateToRegion({
+      latitude: stats.currentLocation.latitude,
+      longitude: stats.currentLocation.longitude,
+      latitudeDelta: 0.003,
+      longitudeDelta: 0.003,
+    }, 800);
+  }, [stats.currentLocation, phase]);
 
   // ── Countdown & start ─────────────────────────────────────────────────────
   const beginCountdown = useCallback(() => {
@@ -388,52 +283,36 @@ export default function ActivityTrackerScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
     }, 1000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actType]);
 
   const beginTracking = useCallback(async () => {
-    routeRef.current = [];
-    distRef.current = 0;
-    maxSpeedRef.current = 0;
-    elevRef.current = 0;
-    prevAltRef.current = null;
-    elapsedRef.current = 0;
-    startTimeRef.current = new Date();
-
-    setElapsed(0);
-    setDistM(0);
-    setSpeedKmh(0);
-    setMaxSpeedKmh(0);
-    setElevGain(0);
-    setMapCoords([]);
-    setMilestones([]);
+    prevSplitCountRef.current = 0;
+    const started = await tracking.start();
+    if (!started) {
+      Alert.alert('Location permission needed', 'Please enable location access to track this activity.');
+      setPhase('SELECT');
+      return;
+    }
     setPhase('ACTIVE');
-
-    timerRef.current = setInterval(() => {
-      elapsedRef.current += 1;
-      setElapsed((e) => e + 1);
-    }, 1000);
-
-    await startLocationWatch();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [startLocationWatch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Pause / Resume ────────────────────────────────────────────────────────
-  const handlePause = useCallback(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    locSubRef.current?.remove();
+  const handlePause = useCallback(async () => {
+    await tracking.pause();
     setPhase('PAUSED');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleResume = useCallback(async () => {
+    await tracking.resume();
     setPhase('ACTIVE');
-    timerRef.current = setInterval(() => {
-      elapsedRef.current += 1;
-      setElapsed((e) => e + 1);
-    }, 1000);
-    await startLocationWatch();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  }, [startLocationWatch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Stop & finish ─────────────────────────────────────────────────────────
   const handleStop = useCallback(() => {
@@ -441,41 +320,41 @@ export default function ActivityTrackerScreen() {
       { text: 'Keep Going', style: 'cancel' },
       { text: 'Finish', style: 'destructive', onPress: finishActivity },
     ]);
-  }, [elapsed, distM, actType]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const finishActivity = useCallback(async () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    locSubRef.current?.remove();
-
-    const endTime = new Date();
-    const coords = routeRef.current;
-    const last = coords[coords.length - 1];
+    const result = await tracking.stop();
+    const last = result.route[result.route.length - 1];
 
     const activity: StoredActivity = {
       localId: genLocalId(),
       type: actType,
       title: autoTitle(actType),
-      startTime: startTimeRef.current.toISOString(),
-      endTime: endTime.toISOString(),
-      durationSeconds: elapsedRef.current,
-      distanceMeters: distRef.current,
-      avgSpeedKmh: elapsedRef.current > 0 ? parseFloat(((distRef.current / 1000) / (elapsedRef.current / 3600)).toFixed(2)) : 0,
-      maxSpeedKmh: parseFloat(maxSpeedRef.current.toFixed(2)),
-      estimatedCalories: calcCalories(actType, distRef.current, elapsedRef.current),
-      elevationGainMeters: Math.round(elevRef.current),
-      routeCoordinates: coords,
-      startLatitude: coords[0]?.latitude ?? currentLoc?.latitude ?? 0,
-      startLongitude: coords[0]?.longitude ?? currentLoc?.longitude ?? 0,
-      endLatitude: last?.latitude,
-      endLongitude: last?.longitude,
+      startTime: result.startTime.toISOString(),
+      endTime: result.endTime.toISOString(),
+      durationSeconds: result.durationSeconds,
+      distanceMeters: result.distanceMeters,
+      avgSpeedKmh: result.avgSpeedKmh,
+      maxSpeedKmh: result.maxSpeedKmh,
+      avgPaceSecPerKm: result.avgPaceSecPerKm,
+      elevationGainMeters: result.elevationGainMeters,
+      elevationLossMeters: result.elevationLossMeters,
+      stepCount: result.stepCount,
+      splits: result.splits,
+      routeCoordinates: result.route,
+      startLatitude: result.startLatitude,
+      startLongitude: result.startLongitude,
+      endLatitude: result.endLatitude,
+      endLongitude: result.endLongitude,
     };
 
     setCompletedActivity(activity);
     setPhase('SUMMARY');
 
-    if (coords.length > 1) {
+    if (result.route.length > 1) {
       setTimeout(() => {
-        mapRef.current?.fitToCoordinates(coords, {
+        mapRef.current?.fitToCoordinates(result.route, {
           edgePadding: { top: 60, right: 40, bottom: 60, left: 40 },
           animated: true,
         });
@@ -483,7 +362,8 @@ export default function ActivityTrackerScreen() {
     }
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [actType, currentLoc]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actType]);
 
   // ── Save activity ──────────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
@@ -495,21 +375,23 @@ export default function ActivityTrackerScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Alert.alert('Saved!', 'Your activity has been saved to your history.', [
       { text: 'View History', onPress: () => router.replace('/activity-history' as any) },
-      { text: 'Done', onPress: () => router.back() },
+      { text: 'Done', onPress: () => goBack(router) },
     ]);
   }, [completedActivity, router]);
 
   const handleShare = useCallback(async () => {
     if (!completedActivity) return;
-    const { durationSeconds, distanceMeters, maxSpeedKmh: maxSp } = completedActivity;
-    const pace = calcPace(distanceMeters, durationSeconds);
+    const { durationSeconds, distanceMeters, maxSpeedKmh: maxSp, avgSpeedKmh, avgPaceSecPerKm, elevationGainMeters, elevationLossMeters, stepCount } = completedActivity;
+    const speedOrPace = actType !== 'CYCLING'
+      ? `🏃 Pace: ${formatPace(avgPaceSecPerKm)} /km\n`
+      : `⚡ Speed: ${avgSpeedKmh.toFixed(1)} km/h (max ${maxSp.toFixed(1)})\n`;
     const message =
       `${ACT[actType].emoji} ${ACT[actType].label} complete on Paasxo!\n\n` +
       `📍 Distance: ${formatDist(distanceMeters)} ${distUnit(distanceMeters)}\n` +
       `⏱️ Duration: ${formatTime(durationSeconds)}\n` +
-      `🏃 Pace: ${pace} min/km\n` +
-      `⚡ Max Speed: ${maxSp.toFixed(1)} km/h\n` +
-      `⛰️ Elevation: ${completedActivity.elevationGainMeters}m gain`;
+      speedOrPace +
+      `⛰️ Elevation: ${elevationGainMeters}m gain, ${elevationLossMeters}m loss` +
+      (stepCount ? `\n👣 Steps: ${stepCount}` : '');
     try {
       await Share.share({ message });
     } catch {
@@ -520,7 +402,7 @@ export default function ActivityTrackerScreen() {
   const handleDiscard = useCallback(() => {
     Alert.alert('Discard Activity?', 'This activity will not be saved.', [
       { text: 'Keep', style: 'cancel' },
-      { text: 'Discard', style: 'destructive', onPress: () => router.back() },
+      { text: 'Discard', style: 'destructive', onPress: () => goBack(router) },
     ]);
   }, [router]);
 
@@ -539,7 +421,7 @@ export default function ActivityTrackerScreen() {
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         {/* Header */}
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => goBack(router)} style={styles.backBtn}>
             <ArrowLeft color={Colors.white} size={20} strokeWidth={2.5} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Start Activity</Text>
@@ -616,6 +498,7 @@ export default function ActivityTrackerScreen() {
             <Text style={styles.guideTitle}>Start tracking</Text>
             <Text style={styles.guideBody}>
               Once GPS is locked, press the button below. A 3-second countdown will begin so you can get moving!
+              Tracking keeps running in the background even if you lock your phone.
             </Text>
           </View>
 
@@ -653,22 +536,25 @@ export default function ActivityTrackerScreen() {
   );
 
   const renderActivePhase = (paused: boolean) => {
-    const calories = calcCalories(actType, distM, elapsed);
-    const pace = calcPace(distM, elapsed);
-    const avgSpeed = elapsed > 0 ? ((distM / 1000) / (elapsed / 3600)) : 0;
+    const avgLabel = cfg.isPaceBased ? 'Avg Pace' : 'Avg Speed';
+    const avgValue = cfg.isPaceBased ? formatPace(stats.currentPaceSecPerKm) : stats.avgSpeedKmh.toFixed(1);
+    const avgUnit = cfg.isPaceBased ? 'min/km' : 'km/h';
+    const currentLabel = cfg.isPaceBased ? 'Pace' : 'Speed';
+    const currentValue = cfg.isPaceBased ? formatPace(stats.currentPaceSecPerKm) : stats.currentSpeedKmh.toFixed(1);
+    const currentUnit = cfg.isPaceBased ? 'min/km' : 'km/h';
 
     return (
       <View style={{ flex: 1, backgroundColor: '#0F172A' }}>
         {/* Map */}
         <View style={styles.mapContainer}>
-          {currentLoc ? (
+          {stats.currentLocation || currentLoc ? (
             <MapView
               ref={mapRef}
               provider={PROVIDER_DEFAULT}
               style={StyleSheet.absoluteFill}
               initialRegion={{
-                latitude: currentLoc.latitude,
-                longitude: currentLoc.longitude,
+                latitude: (stats.currentLocation ?? currentLoc)!.latitude,
+                longitude: (stats.currentLocation ?? currentLoc)!.longitude,
                 latitudeDelta: 0.005,
                 longitudeDelta: 0.005,
               }}
@@ -677,17 +563,17 @@ export default function ActivityTrackerScreen() {
               showsCompass={false}
               mapType="standard"
             >
-              {mapCoords.length > 1 && (
+              {stats.mapCoords.length > 1 && (
                 <Polyline
-                  coordinates={mapCoords}
+                  coordinates={stats.mapCoords}
                   strokeColor={cfg.accentColor}
                   strokeWidth={5}
                   lineCap="round"
                   lineJoin="round"
                 />
               )}
-              {mapCoords.length > 0 && (
-                <Marker coordinate={mapCoords[0]} anchor={{ x: 0.5, y: 0.5 }}>
+              {stats.mapCoords.length > 0 && (
+                <Marker coordinate={stats.mapCoords[0]} anchor={{ x: 0.5, y: 0.5 }}>
                   <View style={[styles.startMarker, { backgroundColor: cfg.accentColor }]}>
                     <Text style={{ fontSize: 10, fontWeight: '900', color: Colors.white }}>S</Text>
                   </View>
@@ -723,7 +609,7 @@ export default function ActivityTrackerScreen() {
             <Avatar type={actType} active={!paused} />
             <View style={{ flex: 1, marginLeft: 16 }}>
               <Text style={styles.timerLabel}>TIME</Text>
-              <Text style={[styles.timerValue, { color: cfg.accentColor }]}>{formatTime(elapsed)}</Text>
+              <Text style={[styles.timerValue, { color: cfg.accentColor }]}>{formatTime(stats.elapsedSeconds)}</Text>
             </View>
             <View style={styles.pauseBtn}>
               <TouchableOpacity
@@ -740,21 +626,16 @@ export default function ActivityTrackerScreen() {
 
           {/* Distance (large) */}
           <View style={styles.distRow}>
-            <Text style={styles.distValue}>{formatDist(distM)}</Text>
-            <Text style={styles.distUnit}>{distUnit(distM)}</Text>
+            <Text style={styles.distValue}>{formatDist(stats.distanceMeters)}</Text>
+            <Text style={styles.distUnit}>{distUnit(stats.distanceMeters)}</Text>
           </View>
 
           {/* Stats grid */}
           <View style={styles.statsGrid}>
-            <StatTile
-              label={actType === 'CYCLING' ? 'Speed' : 'Pace'}
-              value={actType === 'CYCLING' ? `${speedKmh.toFixed(1)}` : pace}
-              unit={actType === 'CYCLING' ? 'km/h' : 'min/km'}
-              Icon={<Zap color={cfg.accentColor} size={14} />}
-            />
-            <StatTile label="Avg Speed" value={avgSpeed.toFixed(1)} unit="km/h" Icon={<Wind color={cfg.accentColor} size={14} />} />
-            <StatTile label="Calories" value={`${calories}`} unit="kcal" Icon={<Flame color="#F97316" size={14} />} />
-            <StatTile label="Elevation" value={`${elevGain}`} unit="m" Icon={<TrendingUp color="#8B5CF6" size={14} />} />
+            <StatTile label={currentLabel} value={currentValue} unit={currentUnit} Icon={<Zap color={cfg.accentColor} size={14} />} />
+            <StatTile label={avgLabel} value={avgValue} unit={avgUnit} Icon={<Wind color={cfg.accentColor} size={14} />} />
+            <StatTile label="Elevation" value={`+${stats.elevationGainMeters}`} unit="m" Icon={<TrendingUp color="#8B5CF6" size={14} />} />
+            <StatTile label="Steps" value={stats.stepCount != null ? `${stats.stepCount}` : '—'} unit="steps" Icon={<Footprints color="#F97316" size={14} />} />
           </View>
 
           {/* Milestone banner */}
@@ -771,14 +652,17 @@ export default function ActivityTrackerScreen() {
 
   const renderSummaryPhase = () => {
     if (!completedActivity) return null;
-    const { durationSeconds, distanceMeters, avgSpeedKmh, maxSpeedKmh: maxSp, estimatedCalories, elevationGainMeters, routeCoordinates } = completedActivity;
-    const pace = calcPace(distanceMeters, durationSeconds);
+    const {
+      durationSeconds, distanceMeters, avgSpeedKmh, maxSpeedKmh: maxSp, avgPaceSecPerKm,
+      elevationGainMeters, elevationLossMeters, stepCount, splits, routeCoordinates,
+    } = completedActivity;
+    const bestPace = bestSplitPaceSecPerKm(splits);
 
     return (
       <View style={{ flex: 1, backgroundColor: '#0F172A' }}>
         {/* Route map (top 38%) */}
         <View style={{ height: SCREEN_H * 0.38 }}>
-          {routeCoordinates.length > 1 && currentLoc ? (
+          {routeCoordinates.length > 1 ? (
             <MapView
               ref={mapRef}
               provider={PROVIDER_DEFAULT}
@@ -859,13 +743,42 @@ export default function ActivityTrackerScreen() {
 
           {/* Secondary stats grid */}
           <View style={styles.secondaryGrid}>
-            <SummaryTile label="Avg Speed" value={`${avgSpeedKmh.toFixed(1)}`} unit="km/h" color="#3B82F6" />
-            <SummaryTile label="Max Speed" value={`${maxSp.toFixed(1)}`} unit="km/h" color="#8B5CF6" />
-            <SummaryTile label={actType === 'CYCLING' ? 'Avg Pace' : 'Pace'} value={pace} unit="min/km" color="#F59E0B" />
-            <SummaryTile label="Calories" value={`${estimatedCalories}`} unit="kcal" color="#EF4444" />
-            <SummaryTile label="Elevation" value={`${elevationGainMeters}`} unit="m gain" color="#10B981" />
-            <SummaryTile label="KM Splits" value={`${Math.floor(distanceMeters / 1000)}`} unit="complete" color="#6366F1" />
+            {cfg.isPaceBased ? (
+              <>
+                <SummaryTile label="Avg Pace" value={formatPace(avgPaceSecPerKm)} unit="min/km" color="#F59E0B" />
+                <SummaryTile label="Best Split" value={formatPace(bestPace)} unit="min/km" color="#3B82F6" />
+              </>
+            ) : (
+              <>
+                <SummaryTile label="Avg Speed" value={`${avgSpeedKmh.toFixed(1)}`} unit="km/h" color="#3B82F6" />
+                <SummaryTile label="Max Speed" value={`${maxSp.toFixed(1)}`} unit="km/h" color="#8B5CF6" />
+              </>
+            )}
+            <SummaryTile label="Elevation" value={`+${elevationGainMeters}`} unit={`m · -${elevationLossMeters}m`} color="#10B981" />
+            <SummaryTile label="Steps" value={stepCount != null ? `${stepCount}` : '—'} unit="steps" color="#F97316" />
+            <SummaryTile label="Splits" value={`${splits.length}`} unit="recorded" color="#6366F1" />
           </View>
+
+          {/* Per-km splits */}
+          {splits.length > 0 && (
+            <View style={styles.splitsSection}>
+              <View style={styles.splitsHeader}>
+                <ListOrdered color={cfg.accentColor} size={16} />
+                <Text style={styles.splitsTitle}>
+                  {cfg.isPaceBased ? 'Pace per Kilometer' : 'Speed per Kilometer'}
+                </Text>
+              </View>
+              {splits.map((s) => (
+                <View key={s.index} style={styles.splitRow}>
+                  <Text style={styles.splitIndex}>Km {s.index}</Text>
+                  <Text style={styles.splitValue}>
+                    {cfg.isPaceBased ? `${formatPace(s.paceSecPerKm)} /km` : `${s.avgSpeedKmh.toFixed(1)} km/h`}
+                  </Text>
+                  <Text style={styles.splitDuration}>{formatTime(s.durationSeconds)}</Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           {/* Actions */}
           <TouchableOpacity onPress={handleSave} disabled={saving} activeOpacity={0.85} style={{ marginTop: 12 }}>
@@ -1071,6 +984,19 @@ const styles = StyleSheet.create({
   summaryTileValue: { fontSize: 20, fontWeight: '900', letterSpacing: -0.5 },
   summaryTileUnit: { fontSize: 10, color: Colors.neutral500, marginTop: 1 },
   summaryTileLabel: { fontSize: 11, color: Colors.neutral400, fontWeight: '700', marginTop: 4, textAlign: 'center' },
+
+  splitsSection: {
+    backgroundColor: '#1E293B', borderRadius: 18, padding: 16, marginBottom: 16,
+  },
+  splitsHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  splitsTitle: { fontSize: 14, fontWeight: '800', color: Colors.white },
+  splitRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#334155',
+  },
+  splitIndex: { fontSize: 13, fontWeight: '700', color: Colors.neutral400, width: 56 },
+  splitValue: { fontSize: 14, fontWeight: '800', color: Colors.white, flex: 1, textAlign: 'center' },
+  splitDuration: { fontSize: 12, fontWeight: '600', color: Colors.neutral500, width: 56, textAlign: 'right' },
 
   saveBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',

@@ -1,11 +1,13 @@
 import React from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Lock, Zap, CreditCard } from 'lucide-react-native';
+import { Lock, Zap, CreditCard, ArrowLeft } from 'lucide-react-native';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { useSubscription } from '../hooks/useSubscription';
+import { goBack } from '../utils/navigation';
 
 interface Props {
   children: React.ReactNode;
@@ -28,8 +30,19 @@ export function SubscriptionGate({ children, feature = 'this feature' }: Props) 
 
   if (!active) {
     return (
-      <View style={styles.container}>
-        <LinearGradient colors={[colors.neutral800, colors.neutral900]} style={styles.card}>
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <TouchableOpacity
+          style={styles.closeBtn}
+          activeOpacity={0.8}
+          onPress={() => goBack(router)}
+          hitSlop={8}
+        >
+          <ArrowLeft color={colors.text} size={20} strokeWidth={2.5} />
+        </TouchableOpacity>
+        {/* Fixed dark gradient (not theme-reactive) — colors.neutral800/900 flip
+            to near-white in dark mode (they're text-oriented tokens elsewhere),
+            which would turn this into a white card with invisible white text. */}
+        <LinearGradient colors={['#1E293B', '#0F172A']} style={styles.card}>
           <Lock color={colors.warning} size={36} strokeWidth={1.8} />
           <Text style={styles.title}>Pro Feature</Text>
           <Text style={styles.subtitle}>
@@ -67,7 +80,7 @@ export function SubscriptionGate({ children, feature = 'this feature' }: Props) 
             </View>
           </TouchableOpacity>
         </LinearGradient>
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -76,13 +89,21 @@ export function SubscriptionGate({ children, feature = 'this feature' }: Props) 
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
+  container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: colors.background },
+  closeBtn: {
+    position: 'absolute', top: 16, left: 16, zIndex: 1,
+    width: 38, height: 38, borderRadius: 19,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.cardBg,
+    shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 }, elevation: 3,
+  },
   card: {
     borderRadius: 24, padding: 26, alignItems: 'center', gap: 12, width: '100%',
   },
   title: { fontSize: 22, fontWeight: '800', color: colors.white },
   subtitle: {
-    fontSize: 13, color: colors.neutral300, textAlign: 'center', lineHeight: 20,
+    fontSize: 13, color: '#CBD5E1', textAlign: 'center', lineHeight: 20,
   },
   optionBtn: { width: '100%', borderRadius: 16, overflow: 'hidden' },
   optionGrad: {
@@ -92,9 +113,9 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   optionOutline: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingHorizontal: 16, paddingVertical: 14,
-    borderWidth: 1.5, borderColor: colors.neutral600, borderRadius: 16,
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)', borderRadius: 16,
   },
   optionText: { flex: 1 },
   optionTitle: { fontSize: 14, fontWeight: '800', color: colors.white },
-  optionDesc: { fontSize: 11, color: colors.neutral300, marginTop: 2 },
+  optionDesc: { fontSize: 11, color: '#CBD5E1', marginTop: 2 },
 });

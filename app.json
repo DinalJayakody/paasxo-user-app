@@ -12,9 +12,15 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
+      "buildNumber": "4",
       "infoPlist": {
         "NSCameraUsageDescription": "Allow access to camera",
-        "NSPhotoLibraryUsageDescription": "Allow access to photos"
+        "NSPhotoLibraryUsageDescription": "Allow access to photos",
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": ["remote-notification", "location"]
+      },
+      "entitlements": {
+        "aps-environment": "production"
       },
       "supportsTablet": true,
       "bundleIdentifier": "com.paasxo.app",
@@ -41,20 +47,30 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "The app accesses your location to let you share your location with your friends."
+          "locationWhenInUsePermission": "The app accesses your location to let you share your location with your friends and find nearby matches.",
+          "locationAlwaysAndWhenInUsePermission": "PaasXO tracks your walk, run, or cycling route in the background so it keeps recording distance and time even while your phone is locked.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true
         }
       ],
       "expo-router",
       "expo-font",
       "expo-web-browser",
       "expo-video",
-      "expo-secure-store"
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true
     },
     "android": {
-      "package": "com.paasxo.app"
+      "package": "com.paasxo.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
+      ]
     }
   }
 }

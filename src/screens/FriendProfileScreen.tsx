@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   Image,
   Pressable,
@@ -9,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, MoreVertical, Share2, MessageCircle, Lock } from 'lucide-react-native';
+import { ArrowLeft, MoreVertical, Share2, MessageCircle, Lock, Flag, UserX, UserCheck, ShieldOff } from 'lucide-react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
@@ -27,7 +28,10 @@ import { PaasxoLogoLoader } from '../components/PaasxoLogoLoader';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import { FollowListModal } from '../components/FollowListModal';
+import { ActionMenuSheet } from '../components/ActionMenuSheet';
+import { ReportSheet } from '../components/ReportSheet';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 const FRIEND_TABS = ['Moments', 'Stats', 'Reels', 'Tagged'] as const;
 type FriendTab = (typeof FRIEND_TABS)[number];
@@ -90,6 +94,9 @@ export default function FriendProfileScreen() {
 
   const [avatarViewerVisible, setAvatarViewerVisible] = useState(false);
   const [followModalTab, setFollowModalTab] = useState<'Followers' | 'Following' | null>(null);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
+  const [blockBusy, setBlockBusy] = useState(false);
 
   const headerSlide = useRef(new Animated.Value(-20)).current;
   const headerFade = useRef(new Animated.Value(0)).current;
@@ -206,13 +213,66 @@ export default function FriendProfileScreen() {
   const sportsText = Array.isArray(profile?.sports) ? profile.sports.join(' • ').toUpperCase() : sport;
   const skillLevel = profile?.skillLevel ? ` • ${String(profile.skillLevel).toUpperCase()}` : '';
   const bioText = profile?.bio || `Passionate ${sport.toLowerCase()} player striving for excellence in every match.`;
-  const isPrivateAndLocked = !!profileData?.isRestricted;
+  // Jackson strips the "is" prefix from boolean getters (isRestricted() -> "restricted"
+  // on the wire), same as `following`/`hasPendingRequestFromMe` above - reading
+  // `isRestricted`/`isBlocked` directly here would always be undefined.
+  const isBlockedRelationship = !!profileData?.blocked;
+  const isPrivateAndLocked = !!profileData?.restricted;
+
+  const handleToggleBlock = () => {
+    if (isBlockedRelationship) {
+      (async () => {
+        setBlockBusy(true);
+        try {
+          await socialMediaApi.unblockUser(userId as string);
+          await fetchProfile();
+        } catch {
+          Alert.alert('Something went wrong', 'Could not unblock this user. Please try again.');
+        } finally {
+          setBlockBusy(false);
+        }
+      })();
+      return;
+    }
+
+    Alert.alert(
+      `Block ${displayName}?`,
+      "You won't see their posts, comments, or profile anymore, and they won't see yours.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            setBlockBusy(true);
+            try {
+              await socialMediaApi.blockUser(userId as string);
+              await fetchProfile();
+              setRelationshipStatus('NONE');
+            } catch {
+              Alert.alert('Something went wrong', 'Could not block this user. Please try again.');
+            } finally {
+              setBlockBusy(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   if (loading || !profileData) {
     return <LoadingScreen message="Loading profile…" />;
   }
 
   const renderMomentsTab = () => {
+    if (isBlockedRelationship) {
+      return (
+        <View style={styles.emptyTabContent}>
+          <ShieldOff color={colors.neutral400} size={36} strokeWidth={1.8} />
+          <Text style={styles.emptyTabTitle}>This account is unavailable</Text>
+        </View>
+      );
+    }
     if (isPrivateAndLocked) {
       return (
         <View style={styles.emptyTabContent}>
@@ -293,10 +353,10 @@ export default function FriendProfileScreen() {
       >
         {/* Header */}
         <Animated.View style={[styles.profileCardHeader, { opacity: headerFade, transform: [{ translateY: headerSlide }] }]}>
-          <AnimatedPressable onPress={() => router.back()} style={styles.topIconButton}>
+          <AnimatedPressable onPress={() => goBack(router)} style={styles.topIconButton}>
             <ArrowLeft color={colors.neutral900} size={18} strokeWidth={2} />
           </AnimatedPressable>
-          <AnimatedPressable onPress={() => {}} style={styles.topIconButton}>
+          <AnimatedPressable onPress={() => setMenuVisible(true)} style={styles.topIconButton}>
             <MoreVertical color={colors.neutral900} size={18} strokeWidth={2} />
           </AnimatedPressable>
         </Animated.View>
@@ -329,31 +389,45 @@ export default function FriendProfileScreen() {
             ))}
           </View>
 
-          <View style={styles.buttonsRow}>
-            <AnimatedPressable
-              onPress={handleFollowToggle}
-              disabled={actionLoading}
-              style={[
-                styles.followButton,
-                styles.buttonShadow,
-                relationshipStatus !== 'NONE' && styles.followButtonActive,
-              ]}
-            >
-              <Text style={[styles.followButtonText, relationshipStatus !== 'NONE' && styles.followButtonTextActive]}>
-                {actionLoading
-                  ? 'Loading...'
-                  : relationshipStatus === 'ACCEPTED'
-                    ? 'Following'
-                    : relationshipStatus === 'PENDING'
-                      ? 'Requested'
-                      : 'Follow'}
-              </Text>
-            </AnimatedPressable>
-            <AnimatedPressable onPress={() => {}} style={[styles.messageButton, styles.buttonShadow]}>
-              <MessageCircle color={colors.white} size={16} strokeWidth={2} />
-              <Text style={styles.messageButtonText}>Message</Text>
-            </AnimatedPressable>
-          </View>
+          {isBlockedRelationship ? (
+            <View style={styles.buttonsRow}>
+              <AnimatedPressable
+                onPress={handleToggleBlock}
+                disabled={blockBusy}
+                style={[styles.followButton, styles.buttonShadow, styles.followButtonActive]}
+              >
+                <Text style={[styles.followButtonText, styles.followButtonTextActive]}>
+                  {blockBusy ? 'Loading...' : 'Unblock'}
+                </Text>
+              </AnimatedPressable>
+            </View>
+          ) : (
+            <View style={styles.buttonsRow}>
+              <AnimatedPressable
+                onPress={handleFollowToggle}
+                disabled={actionLoading}
+                style={[
+                  styles.followButton,
+                  styles.buttonShadow,
+                  relationshipStatus !== 'NONE' && styles.followButtonActive,
+                ]}
+              >
+                <Text style={[styles.followButtonText, relationshipStatus !== 'NONE' && styles.followButtonTextActive]}>
+                  {actionLoading
+                    ? 'Loading...'
+                    : relationshipStatus === 'ACCEPTED'
+                      ? 'Following'
+                      : relationshipStatus === 'PENDING'
+                        ? 'Requested'
+                        : 'Follow'}
+                </Text>
+              </AnimatedPressable>
+              <AnimatedPressable onPress={() => {}} style={[styles.messageButton, styles.buttonShadow]}>
+                <MessageCircle color={colors.white} size={16} strokeWidth={2} />
+                <Text style={styles.messageButtonText}>Message</Text>
+              </AnimatedPressable>
+            </View>
+          )}
         </LinearGradient>
 
         {/* Tabs */}
@@ -390,6 +464,35 @@ export default function FriendProfileScreen() {
           initialTab={followModalTab ?? 'Followers'}
         />
       )}
+
+      <ActionMenuSheet
+        visible={menuVisible}
+        onClose={() => setMenuVisible(false)}
+        actions={[
+          {
+            key: 'report',
+            label: 'Report User',
+            icon: <Flag color={colors.error} size={18} strokeWidth={2.2} />,
+            destructive: true,
+            onPress: () => setReportVisible(true),
+          },
+          {
+            key: 'block',
+            label: isBlockedRelationship ? `Unblock ${displayName}` : `Block ${displayName}`,
+            icon: isBlockedRelationship
+              ? <UserCheck color={colors.error} size={18} strokeWidth={2.2} />
+              : <UserX color={colors.error} size={18} strokeWidth={2.2} />,
+            destructive: true,
+            onPress: handleToggleBlock,
+          },
+        ]}
+      />
+      <ReportSheet
+        visible={reportVisible}
+        onClose={() => setReportVisible(false)}
+        targetType="USER"
+        targetId={(userId as string) || ''}
+      />
     </SafeAreaView>
   );
 }

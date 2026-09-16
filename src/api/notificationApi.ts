@@ -67,4 +67,14 @@ export const notificationApi = {
   markAllRead: async (): Promise<void> => {
     await axiosInstance.post(ENDPOINTS.NOTIFICATIONS.MARK_ALL_READ);
   },
+
+  /** Registers this device's raw APNs token — see ApnsPushService on the backend. */
+  registerPushToken: async (token: string): Promise<void> => {
+    await axiosInstance.post(ENDPOINTS.NOTIFICATIONS.PUSH_TOKEN, { token });
+  },
+
+  /** Called on sign-out so a signed-out device stops receiving this account's pushes. */
+  unregisterPushToken: async (token: string): Promise<void> => {
+    await axiosInstance.delete(ENDPOINTS.NOTIFICATIONS.PUSH_TOKEN, { data: { token } });
+  },
 };

@@ -73,7 +73,7 @@ export const Button: React.FC<ButtonProps> = ({
   ];
 
   return (
-    <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+    <Animated.View style={{ transform: [{ scale: scaleAnim }], alignSelf: 'stretch' }}>
       <TouchableOpacity
         style={containerStyle}
         onPress={onPress}

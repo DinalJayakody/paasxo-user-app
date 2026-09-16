@@ -42,6 +42,7 @@ import { buildTeamUI, buildMatchUI } from '../utils/parseTournament';
 import { TournamentMatchUI, TournamentTeamUI } from '../types/api';
 import { LoadingScreen } from '../components/LoadingScreen';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -724,7 +725,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
       <ScreenGlow />
       {/* Header */}
       <LinearGradient colors={[sportColor, sportColor + 'CC']} style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={() => goBack(router)} style={styles.backBtn}>
           <ArrowLeft color={colors.white} size={22} strokeWidth={2.5} />
         </Pressable>
         <View style={styles.headerCenter}>

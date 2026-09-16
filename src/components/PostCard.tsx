@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
-import { View, Text, Image, Pressable, StyleSheet } from 'react-native';
+import { Alert, View, Text, Image, Pressable, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Heart, MessageCircle, Share2, Bookmark, Camera, Sparkles } from 'lucide-react-native';
+import { Heart, MessageCircle, Share2, Bookmark, Camera, Sparkles, MoreHorizontal, Flag, UserX } from 'lucide-react-native';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import { PostSummary } from '../types/api';
 import { parseMediaUrl, formatTimeAgo } from '../utils/postFormat';
 import { resolveAvatarUri } from '../utils/mediaUrl';
 import { socialMediaApi } from '../api/socialMediaApi';
 import { usePostInteraction, postInteractionStore } from '../stores/postInteractionStore';
 import { CommentSheet } from './CommentSheet';
+import { ActionMenuSheet } from './ActionMenuSheet';
+import { ReportSheet } from './ReportSheet';
 
 interface PostCardProps {
   post: PostSummary;
@@ -19,14 +22,40 @@ interface PostCardProps {
 export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
+  const { user } = useAuth();
   const interaction = usePostInteraction(post);
   const [likeBusy, setLikeBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [commentsVisible, setCommentsVisible] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
 
   const avatarUri = resolveAvatarUri(post.authorProfileImageUrl, post.authorDisplayName);
   const imageUri = parseMediaUrl(post.mediaUrl);
   const isProfileUpdate = post.postType === 'PROFILE_PICTURE_UPDATE';
+  const isOwnPost = !!user?.firebaseUid && user.firebaseUid === post.authorId;
+
+  const handleBlockAuthor = () => {
+    Alert.alert(
+      `Block ${post.authorDisplayName || 'this user'}?`,
+      "You won't see their posts, comments, or profile anymore, and they won't see yours.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await socialMediaApi.blockUser(post.authorId);
+              Alert.alert('Blocked', `You won't see ${post.authorDisplayName || 'this user'}'s posts anymore.`);
+            } catch {
+              Alert.alert('Something went wrong', 'Could not block this user. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const handleToggleLike = async () => {
     if (likeBusy) return;
@@ -81,9 +110,14 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
           </View>
         </View>
 
-        <Pressable style={styles.iconButtonSmall} onPress={onShare}>
-          <Share2 color={colors.neutral600} size={18} strokeWidth={2.5} />
-        </Pressable>
+        <View style={styles.headerIcons}>
+          <Pressable style={styles.iconButtonSmall} onPress={onShare}>
+            <Share2 color={colors.neutral600} size={18} strokeWidth={2.5} />
+          </Pressable>
+          <Pressable style={styles.iconButtonSmall} onPress={() => setMenuVisible(true)} hitSlop={6}>
+            <MoreHorizontal color={colors.neutral600} size={18} strokeWidth={2.5} />
+          </Pressable>
+        </View>
       </View>
 
       {/* CAPTION */}
@@ -142,6 +176,37 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
       </View>
 
       <CommentSheet postId={post.id} visible={commentsVisible} onClose={() => setCommentsVisible(false)} />
+
+      {!isOwnPost && (
+        <>
+          <ActionMenuSheet
+            visible={menuVisible}
+            onClose={() => setMenuVisible(false)}
+            actions={[
+              {
+                key: 'report',
+                label: 'Report Post',
+                icon: <Flag color={colors.error} size={18} strokeWidth={2.2} />,
+                destructive: true,
+                onPress: () => setReportVisible(true),
+              },
+              {
+                key: 'block',
+                label: `Block ${post.authorDisplayName || 'user'}`,
+                icon: <UserX color={colors.error} size={18} strokeWidth={2.2} />,
+                destructive: true,
+                onPress: handleBlockAuthor,
+              },
+            ]}
+          />
+          <ReportSheet
+            visible={reportVisible}
+            onClose={() => setReportVisible(false)}
+            targetType="POST"
+            targetId={post.id}
+          />
+        </>
+      )}
     </View>
   );
 };
@@ -183,6 +248,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   postSubtitle: {
     fontSize: 12,
     color: colors.textSecondary,
+  },
+
+  headerIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
 
   iconButtonSmall: {

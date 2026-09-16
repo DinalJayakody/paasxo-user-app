@@ -28,15 +28,29 @@ async function resolvePreferredBaseUrl(): Promise<string> {
     const hostingerUrl = HOSTINGER_URL;
     baseUrlResolution = (async () => {
       if (!hostingerUrl) return LOCAL_FALLBACK_URL; // probe disabled — see endpoints.ts
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), HOSTINGER_PROBE_TIMEOUT_MS);
-        const response = await fetch(`${hostingerUrl}/auth/health`, { signal: controller.signal });
-        clearTimeout(timer);
-        if (response.ok) return hostingerUrl;
-      } catch {
-        // Not deployed yet / unreachable / timed out — fall back to local below.
-      }
+
+      const probeOnce = async (): Promise<boolean> => {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), HOSTINGER_PROBE_TIMEOUT_MS);
+          const response = await fetch(`${hostingerUrl}/auth/health`, { signal: controller.signal });
+          clearTimeout(timer);
+          return response.ok;
+        } catch {
+          return false;
+        }
+      };
+
+      // One retry, half a second apart, before accepting "Hostinger is down" — a
+      // single 502/timeout during a backend cold start or restart otherwise
+      // permanently routes this whole app session to the local fallback instead
+      // (this is memoized below), even once Hostinger is actually back up seconds
+      // later. See endpoints.ts's HOSTINGER_PROBE_TIMEOUT_MS doc for the incident
+      // this is fixing.
+      if (await probeOnce()) return hostingerUrl;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (await probeOnce()) return hostingerUrl;
+
       return LOCAL_FALLBACK_URL;
     })();
 
@@ -56,11 +70,15 @@ axiosInstance.interceptors.request.use(
       const token = await AsyncStorage.getItem('accessToken');
       if (token && config.headers) {
         config.headers.Authorization = `Bearer ${token}`;
-        if (config.data) {
-          config.headers['Content-Type'] =
-            config.data instanceof FormData
-              ? 'multipart/form-data'
-              : 'application/json';
+        // FormData bodies are deliberately left alone here: RN's XHR only
+        // auto-generates "multipart/form-data; boundary=----XXXX" when no
+        // Content-Type has been set before send(FormData). Force-setting the
+        // bare "multipart/form-data" value (no boundary) breaks Spring's
+        // multipart parser server-side, which previously made every
+        // authenticated multipart request (create post, create reel) fail
+        // with a generic "failed to create post" error.
+        if (config.data && !(config.data instanceof FormData)) {
+          config.headers['Content-Type'] = 'application/json';
         }
       }
     } catch {

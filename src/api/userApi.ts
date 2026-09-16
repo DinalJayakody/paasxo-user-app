@@ -44,7 +44,8 @@ export const userApi = {
     }
 
     const { data } = await axiosInstance.put(ENDPOINTS.USER.UPDATE_PROFILE, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      // No explicit Content-Type — see socialMediaApi.ts's createPost for why
+      // setting a boundary-less "multipart/form-data" here breaks uploads.
     });
     return data;
   },

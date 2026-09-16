@@ -78,9 +78,18 @@ export function useSubscription() {
     }
   };
 
-  const activate = async (paymentReference: string): Promise<void> => {
+  // Grants Pro access only after the backend independently verifies the
+  // purchase with Apple/Google's servers - see SubscriptionVerificationService
+  // on the backend. Replaces the old activate(paymentReference) call, which
+  // accepted any client-supplied string as "proof of payment."
+  const verifyPurchase = async (payload: {
+    platform: 'APPLE' | 'GOOGLE';
+    productId: string;
+    transactionId?: string;
+    purchaseToken?: string;
+  }): Promise<void> => {
     try {
-      await axiosInstance.post('/subscriptions/activate', { paymentReference });
+      await axiosInstance.post('/subscriptions/verify-purchase', payload);
     } finally {
       await fetchStatus(true);
     }
@@ -93,5 +102,5 @@ export function useSubscription() {
   // would re-trigger that effect every render, causing an infinite render loop.
   const refresh = useCallback(() => fetchStatus(true), [fetchStatus]);
 
-  return { ...state, refresh, startTrial, activate };
+  return { ...state, refresh, startTrial, verifyPurchase };
 }

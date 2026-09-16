@@ -52,6 +52,7 @@ import { teamFlair } from '../utils/parseTournament';
 import { TournamentTeamUI } from '../types/api';
 import { AuthContext } from '../context/AuthContext';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 const STEPS = ['Sport', 'Basics', 'Rules', 'Teams', 'Players', 'Matches', 'Review'];
 
@@ -939,7 +940,7 @@ export default function CreateTournamentScreen() {
           />
           <View style={styles.headerGlassStroke} pointerEvents="none" />
 
-          <HeaderIconButton onPress={() => (step === 0 ? router.back() : animateStep(step - 1))} style={styles.backBtn}>
+          <HeaderIconButton onPress={() => (step === 0 ? goBack(router) : animateStep(step - 1))} style={styles.backBtn}>
             <ArrowLeft color={colors.white} size={20} strokeWidth={2.5} />
           </HeaderIconButton>
           <View style={styles.headerCenter}>

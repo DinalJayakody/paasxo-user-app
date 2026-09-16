@@ -5,6 +5,8 @@ import {
   Animated,
   Dimensions,
   Image,
+  Keyboard,
+  LayoutAnimation,
   PanResponder,
   Platform,
   Pressable,
@@ -14,8 +16,13 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View,
 } from 'react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -39,6 +46,7 @@ import {
 import { ThemeColors } from '../../styles/colors';
 import { useTheme } from '../../context/ThemeContext';
 import { audioApi, AudioTrack } from '../../api/audioApi';
+import { goBack } from '../../utils/navigation';
 
 // Platform-safe camera / native-module imports
 let CameraView: any = null;
@@ -141,6 +149,9 @@ export interface CaptureFlowPayload {
 interface CaptureFlowProps {
   maxVideoSeconds: number;
   allowPhoto: boolean;
+  /** Shows the caption text box at all. Independent of requireCaption below. */
+  allowCaption?: boolean;
+  /** Only meaningful when allowCaption is true — blocks submit until non-empty. */
   requireCaption?: boolean;
   captionPlaceholder?: string;
   submitLabel?: string;
@@ -157,33 +168,77 @@ interface CaptureFlowProps {
 type FlowMode = 'CAMERA' | 'PREVIEW';
 type StickerKind = 'CAPTION' | 'EMOJI' | null;
 
+const STICKER_LONG_PRESS_MS = 500;
+// Below this many px of finger movement, a gesture still counts as a
+// long-press-to-remove rather than a drag.
+const STICKER_DRAG_THRESHOLD = 4;
+
 function DraggableSticker({
   initialX,
   initialY,
   onPositionChange,
+  onRemove,
   children,
   styles,
 }: {
   initialX: number;
   initialY: number;
   onPositionChange: (x: number, y: number) => void;
+  onRemove: () => void;
   children: React.ReactNode;
   styles: ReturnType<typeof createStyles>;
 }) {
   const pan = useRef(new Animated.ValueXY({ x: initialX * W, y: initialY * H })).current;
+  // Previously this sticker's touch target was a child <Pressable> nested
+  // inside this Animated.View's PanResponder — React Native's responder
+  // negotiation gives a child's own responder (Pressable/Touchable) first
+  // claim on a touch-start over an ancestor PanResponder that only defines
+  // the bubble-phase onStartShouldSetPanResponder, so the child silently ate
+  // every touch and the sticker could never actually be dragged. Long-press-
+  // to-remove is folded into this same responder instead (tracked via a
+  // timer + movement threshold below) so there's exactly one responder and
+  // both gestures — drag and long-press — work reliably.
+  const movedRef = useRef(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
       onPanResponderGrant: () => {
+        movedRef.current = false;
         pan.setOffset({ x: (pan.x as any)._value, y: (pan.y as any)._value });
         pan.setValue({ x: 0, y: 0 });
+        clearLongPressTimer();
+        longPressTimer.current = setTimeout(() => {
+          if (!movedRef.current) onRemove();
+        }, STICKER_LONG_PRESS_MS);
       },
-      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], { useNativeDriver: false }),
+      onPanResponderMove: (evt, gesture) => {
+        if (!movedRef.current && (Math.abs(gesture.dx) > STICKER_DRAG_THRESHOLD || Math.abs(gesture.dy) > STICKER_DRAG_THRESHOLD)) {
+          movedRef.current = true;
+          clearLongPressTimer();
+        }
+        Animated.event([null, { dx: pan.x, dy: pan.y }], { useNativeDriver: false })(evt, gesture);
+      },
       onPanResponderRelease: () => {
+        clearLongPressTimer();
         pan.flattenOffset();
         const x = Math.min(Math.max((pan.x as any)._value / W, 0), 1);
         const y = Math.min(Math.max((pan.y as any)._value / H, 0), 1);
         onPositionChange(x, y);
+      },
+      onPanResponderTerminate: () => {
+        clearLongPressTimer();
       },
     })
   ).current;
@@ -224,6 +279,7 @@ function PreviewMedia({ uri, mediaType, muted }: { uri: string; mediaType: 'IMAG
 export function CaptureFlow({
   maxVideoSeconds,
   allowPhoto,
+  allowCaption = false,
   requireCaption = false,
   captionPlaceholder = 'Write a caption...',
   submitLabel = 'Share',
@@ -256,6 +312,28 @@ export function CaptureFlow({
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadDone, setUploadDone] = useState(false);
+
+  // The caption input + share button sit in an absolutely-positioned bottom
+  // bar (not a scroll view), so without this the keyboard just covers them
+  // once the caption field is focused, with no way to reach "Post" — this
+  // lifts that bar by the keyboard's own height whenever it's open.
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setKeyboardOffset(e.endCoordinates?.height ?? 0);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setKeyboardOffset(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Sticker editing
   const [activeSticker, setActiveSticker] = useState<StickerKind>(null);
@@ -582,7 +660,7 @@ export function CaptureFlow({
   // ── Upload ────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (!capturedUri || uploading) return;
-    if (requireCaption && !caption.trim()) {
+    if (allowCaption && requireCaption && !caption.trim()) {
       Alert.alert('Add a caption', 'Please describe your reel before posting.');
       return;
     }
@@ -610,9 +688,9 @@ export function CaptureFlow({
         audioVolume: selectedTrack ? 0.85 : undefined,
       });
       setUploadDone(true);
-      setTimeout(() => router.back(), 1200);
+      setTimeout(() => goBack(router), 1200);
     } catch (e: any) {
-      Alert.alert('Upload failed', e?.message ?? 'Please try again');
+      Alert.alert('Upload failed', e?.response?.data?.message ?? e?.message ?? 'Please try again');
     } finally {
       setUploading(false);
     }
@@ -626,7 +704,7 @@ export function CaptureFlow({
           <Camera color={colors.neutral500} size={48} strokeWidth={1.2} />
           <Text style={styles.webFallbackTitle}>Camera unavailable on web</Text>
           <Text style={styles.webFallbackSub}>Use the iOS or Android app to create this</Text>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => goBack(router)} activeOpacity={0.8}>
             <Text style={styles.backBtnText}>Go Back</Text>
           </TouchableOpacity>
         </View>
@@ -661,7 +739,7 @@ export function CaptureFlow({
               <Text style={styles.permBtnText}>Allow Camera</Text>
             </LinearGradient>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 14 }}>
+          <TouchableOpacity onPress={() => goBack(router)} style={{ marginTop: 14 }}>
             <Text style={[styles.permSub, { textDecorationLine: 'underline' }]}>Not now</Text>
           </TouchableOpacity>
         </View>
@@ -684,17 +762,16 @@ export function CaptureFlow({
         <LinearGradient colors={['rgba(0,0,0,0.55)', 'transparent']} style={styles.previewTopGrad} pointerEvents="none" />
         <LinearGradient colors={['transparent', 'rgba(0,0,0,0.65)']} style={styles.previewBottomGrad} pointerEvents="none" />
 
-        {/* Draggable stickers */}
+        {/* Draggable stickers — drag to reposition, hold still to remove. */}
         {!!captionText && (
           <DraggableSticker
             initialX={captionPos.x}
             initialY={captionPos.y}
             onPositionChange={(x, y) => setCaptionPos({ x, y })}
+            onRemove={removeCaptionText}
             styles={styles}
           >
-            <Pressable onLongPress={removeCaptionText}>
-              <Text style={[styles.stickerCaptionText, { color: captionColor }]}>{captionText}</Text>
-            </Pressable>
+            <Text style={[styles.stickerCaptionText, { color: captionColor }]}>{captionText}</Text>
           </DraggableSticker>
         )}
         {!!emoji && (
@@ -702,11 +779,10 @@ export function CaptureFlow({
             initialX={emojiPos.x}
             initialY={emojiPos.y}
             onPositionChange={(x, y) => setEmojiPos({ x, y })}
+            onRemove={removeEmoji}
             styles={styles}
           >
-            <Pressable onLongPress={removeEmoji}>
-              <Text style={styles.stickerEmoji}>{emoji}</Text>
-            </Pressable>
+            <Text style={styles.stickerEmoji}>{emoji}</Text>
           </DraggableSticker>
         )}
 
@@ -781,9 +857,11 @@ export function CaptureFlow({
           </ScrollView>
         </View>
 
-        {/* Bottom: optional caption input + share */}
-        <SafeAreaView style={styles.previewBottom} edges={['bottom']}>
-          {requireCaption && (
+        {/* Bottom: optional caption input + share — lifted above the keyboard
+            (see keyboardOffset below) so the share button never ends up
+            hidden behind it once the caption field is focused. */}
+        <SafeAreaView style={[styles.previewBottom, { bottom: keyboardOffset }]} edges={['bottom']}>
+          {allowCaption && (
             <TextInput
               style={styles.captionInput}
               placeholder={captionPlaceholder}
@@ -792,6 +870,9 @@ export function CaptureFlow({
               onChangeText={setCaption}
               maxLength={280}
               multiline
+              returnKeyType="done"
+              blurOnSubmit
+              onSubmitEditing={() => Keyboard.dismiss()}
             />
           )}
           <TouchableOpacity style={styles.shareBtn} onPress={handleSubmit} disabled={uploading || uploadDone} activeOpacity={0.88}>
@@ -950,7 +1031,7 @@ export function CaptureFlow({
       />
 
       <SafeAreaView style={styles.camTopBar} edges={['top']}>
-        <TouchableOpacity style={styles.camIconBtn} onPress={() => router.back()} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.camIconBtn} onPress={() => goBack(router)} activeOpacity={0.8}>
           <X color="#fff" size={24} strokeWidth={2.5} />
         </TouchableOpacity>
         {isRecording && (

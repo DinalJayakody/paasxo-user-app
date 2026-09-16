@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
+import { WebViewErrorEvent, WebViewHttpErrorEvent } from 'react-native-webview/lib/WebViewTypes';
 import { ArrowLeft } from 'lucide-react-native';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
@@ -56,6 +57,28 @@ export function PayHereCheckoutWebView({
     else if (msg.type === 'error') onError(msg.error);
   };
 
+  // Our own checkout-page endpoint (see PayHereCheckoutPageController) renders a
+  // plain HTML error page — not PayHere's SDK — when the checkout session is no
+  // longer valid (e.g. it expired, or was created against a different backend
+  // that's since been switched away from). That page never calls
+  // payhere.onError, so handleMessage above is never triggered for it — without
+  // this, the user was left stuck on a blank page showing raw error text with no
+  // way back into the app's own retry flow. onHttpError only ever fires for the
+  // main frame's top-level load (not sub-resources PayHere's own hosted page
+  // pulls in), so this can't misfire mid-checkout.
+  const handleHttpError = (event: WebViewHttpErrorEvent) => {
+    const { statusCode } = event.nativeEvent;
+    onError(
+      statusCode === 403
+        ? 'This checkout session has expired. Please go back and tap Pay again to start a new one.'
+        : `Could not load the secure payment page (error ${statusCode}). Please try again.`
+    );
+  };
+
+  const handleLoadError = (event: WebViewErrorEvent) => {
+    onError(event.nativeEvent.description || 'Could not reach the payment page. Check your connection and try again.');
+  };
+
   // WebView treats a new `source` object identity as a fresh navigation command, not
   // just a re-render — and `{{ uri: ... }}` inline below would otherwise create a brand
   // new object on every render of this component. Once PayHere's own startPayment()
@@ -93,6 +116,8 @@ export function PayHereCheckoutWebView({
           <WebView
             source={source}
             onMessage={handleMessage}
+            onHttpError={handleHttpError}
+            onError={handleLoadError}
             javaScriptEnabled
             domStorageEnabled
             startInLoadingState

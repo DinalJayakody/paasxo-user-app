@@ -19,19 +19,30 @@ import { SPORTS } from '../constants/sports';
 interface CompleteProfileModalProps {
   visible: boolean;
   displayName?: string;
+  // 'google' | 'apple' | 'email' | undefined — drives the "You signed in
+  // with ___" copy below. See UserProfile.authProvider.
+  authProvider?: string;
   onSubmit: (sports: string[], referralCode?: string) => Promise<void>;
   onSignOut: () => void;
 }
 
-// Shown once, right after a first-time Google sign-in. The OAuth flow only
-// gives us name/email/photo from Google, so this collects the same activity
-// + referral code fields the normal registration form collects up front.
+const PROVIDER_LABELS: Record<string, string> = {
+  google: 'Google',
+  apple: 'Apple',
+};
+
+// Shown once, right after a first-time social sign-in (Google or Apple). The
+// OAuth flow only gives us name/email/photo from the provider, so this
+// collects the same activity + referral code fields the normal registration
+// form collects up front.
 export const CompleteProfileModal: React.FC<CompleteProfileModalProps> = ({
   visible,
   displayName,
+  authProvider,
   onSubmit,
   onSignOut,
 }) => {
+  const providerLabel = authProvider ? PROVIDER_LABELS[authProvider] : undefined;
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const [selectedSports, setSelectedSports] = useState<string[]>([]);
@@ -84,7 +95,7 @@ export const CompleteProfileModal: React.FC<CompleteProfileModalProps> = ({
           >
             <Text style={styles.title}>Almost there{displayName ? `, ${displayName.split(' ')[0]}` : ''}!</Text>
             <Text style={styles.subtitle}>
-              You signed in with Google — just pick what you play so we can{'\n'}personalize your Paasxo experience.
+              {providerLabel ? `You signed in with ${providerLabel} — just` : 'Just'} pick what you play so we can{'\n'}personalize your Paasxo experience.
             </Text>
 
             <View style={styles.card}>

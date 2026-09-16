@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Alert, Linking } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,7 +14,9 @@ import { LoadingScreen } from '../components/LoadingScreen';
 import { PayHereCheckoutWebView } from '../components/PayHereCheckoutWebView';
 import HeaderIconButton from '../components/HeaderIconButton';
 import { extractApiError } from '../utils/apiError';
+import { getPrivacyPolicyUrl, getTermsOfServiceUrl } from '../constants/legal';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 // How long to keep polling GET /payments/status after PayHere's checkout UI
 // reports completion, waiting for the signed webhook to land server-side and
@@ -87,8 +89,13 @@ export default function CheckoutScreen({ matchId }: CheckoutScreenProps) {
       for (let attempt = 0; attempt < STATUS_POLL_ATTEMPTS; attempt++) {
         const status = await paymentApi.getStatus('BOOKING', matchId);
         if (status.status === 'CHARGED' || status.status === 'CONFIRMED') {
+          // Replace (not push) — checkout is a one-time step for this booking and should
+          // never be revisitable via back once payment is confirmed. create-match already
+          // replaced itself with checkout on the way in, so this leaves Home as the only
+          // thing behind booking-status, and therefore behind wherever the user goes next
+          // (e.g. Track My Request -> match control center) too.
           // Always pass pending=true — newly created matches require vendor approval before going active
-          router.push(`/booking-status/${matchId}?pending=true` as any);
+          router.replace(`/booking-status/${matchId}?pending=true` as any);
           return;
         }
         if (status.status === 'FAILED' || status.status === 'EXPIRED') {
@@ -159,7 +166,7 @@ export default function CheckoutScreen({ matchId }: CheckoutScreenProps) {
           />
           <View style={styles.headerGlassStroke} pointerEvents="none" />
 
-          <HeaderIconButton onPress={() => router.back()} style={styles.headerBack}>
+          <HeaderIconButton onPress={() => goBack(router)} style={styles.headerBack}>
             <ArrowLeft color={colors.white} size={20} strokeWidth={2.5} />
           </HeaderIconButton>
           <Text style={styles.headerTitle}>Checkout</Text>
@@ -295,7 +302,14 @@ export default function CheckoutScreen({ matchId }: CheckoutScreenProps) {
           )}
         </Pressable>
         <Text style={styles.legalText}>
-          By confirming, you agree to the Paasxo Terms of Service and Privacy Policy.
+          By confirming, you agree to Paasxo's{' '}
+          <Text style={styles.legalLink} onPress={() => Linking.openURL(getTermsOfServiceUrl())}>
+            Terms of Service
+          </Text>{' '}
+          and{' '}
+          <Text style={styles.legalLink} onPress={() => Linking.openURL(getPrivacyPolicyUrl())}>
+            Privacy Policy
+          </Text>.
         </Text>
       </View>
 
@@ -429,5 +443,10 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   legalText: {
     fontSize: 11, color: colors.textMuted,
     textAlign: 'center', marginTop: 10, lineHeight: 16,
+  },
+  legalLink: {
+    color: colors.primary,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
 });

@@ -8,11 +8,20 @@ import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
 // AuthenticationServices framework) - no Android/web support here.
 export const APPLE_SIGN_IN_AVAILABLE = Platform.OS === 'ios';
 
+export interface AppleSignInResult {
+  idToken: string;
+  // Apple's one-time authorization code, forwarded to the backend so it can
+  // exchange it server-side for a refresh token (see AppleAuthRestClient) -
+  // stored only so a later account deletion can revoke Apple's grant, per
+  // Apple's App Store requirement for apps using Sign in with Apple.
+  authorizationCode: string | null;
+}
+
 // Runs Apple's native Sign In With Apple flow and exchanges the result for a
 // Firebase ID token, mirroring the Google flow (expo-auth-session -> Firebase
 // credential -> ID token) so the backend only ever has to verify one kind of
 // token regardless of provider.
-export async function performAppleSignIn(): Promise<string> {
+export async function performAppleSignIn(): Promise<AppleSignInResult> {
   if (!FIREBASE_CONFIGURED) {
     throw new Error('Firebase is not configured yet.');
   }
@@ -30,7 +39,7 @@ export async function performAppleSignIn(): Promise<string> {
     nonce: rawNonce,
   });
 
-  const { identityToken, fullName } = appleResponse;
+  const { identityToken, fullName, authorizationCode } = appleResponse;
   if (!identityToken) {
     throw new Error('Apple sign-in did not return an identity token.');
   }
@@ -52,5 +61,8 @@ export async function performAppleSignIn(): Promise<string> {
     await updateProfile(result.user, { displayName });
   }
 
-  return result.user.getIdToken();
+  return {
+    idToken: await result.user.getIdToken(),
+    authorizationCode: authorizationCode ?? null,
+  };
 }

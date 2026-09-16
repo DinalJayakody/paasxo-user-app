@@ -7,13 +7,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-  ArrowLeft, Flame, Clock, TrendingUp, Wind,
+  ArrowLeft, Footprints, Clock, TrendingUp, Wind,
   PersonStanding, Trophy, ChevronRight, Zap,
 } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
 import { activityStorage, activityApi, StoredActivity, ActivityType } from '../api/activityApi';
+import { formatPace } from '../utils/activityMath';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import { goBack } from '../utils/navigation';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -68,7 +70,7 @@ function weeklyStats(activities: StoredActivity[]) {
     count: week.length,
     totalDistM: week.reduce((s, a) => s + a.distanceMeters, 0),
     totalSecs: week.reduce((s, a) => s + a.durationSeconds, 0),
-    totalCal: week.reduce((s, a) => s + a.estimatedCalories, 0),
+    totalSteps: week.reduce((s, a) => s + (a.stepCount ?? 0), 0),
   };
 }
 
@@ -128,7 +130,7 @@ export default function ActivityHistoryScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <LinearGradient colors={['#0F172A', '#1E293B']} style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => goBack(router)} style={styles.backBtn}>
           <ArrowLeft color={Colors.white} size={20} strokeWidth={2.5} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
@@ -160,7 +162,7 @@ export default function ActivityHistoryScreen() {
             <AnimatedStatCard label="Activities" value={`${ws.count}`} delay={0} />
             <AnimatedStatCard label="Distance" value={formatDist(ws.totalDistM)} delay={100} />
             <AnimatedStatCard label="Time" value={formatTime(ws.totalSecs)} delay={200} />
-            <AnimatedStatCard label="Calories" value={`${ws.totalCal} kcal`} delay={300} />
+            <AnimatedStatCard label="Steps" value={`${ws.totalSteps}`} delay={300} />
           </View>
         </View>
 
@@ -256,8 +258,13 @@ function ActivityCard({ activity, onPress }: { activity: StoredActivity; onPress
           <View style={styles.actCardStats}>
             <MiniStat icon={<Wind color={Colors.neutral400} size={12} />} value={formatDist(activity.distanceMeters)} />
             <MiniStat icon={<Clock color={Colors.neutral400} size={12} />} value={formatTime(activity.durationSeconds)} />
-            <MiniStat icon={<Zap color={Colors.neutral400} size={12} />} value={`${activity.avgSpeedKmh.toFixed(1)} km/h`} />
-            <MiniStat icon={<Flame color={Colors.neutral400} size={12} />} value={`${activity.estimatedCalories} kcal`} />
+            <MiniStat
+              icon={<Zap color={Colors.neutral400} size={12} />}
+              value={activity.type !== 'CYCLING' ? `${formatPace(activity.avgPaceSecPerKm)} /km` : `${activity.avgSpeedKmh.toFixed(1)} km/h`}
+            />
+            {activity.stepCount != null && (
+              <MiniStat icon={<Footprints color={Colors.neutral400} size={12} />} value={`${activity.stepCount} steps`} />
+            )}
           </View>
         </View>
         <ChevronRight color={Colors.neutral400} size={18} />

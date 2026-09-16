@@ -42,6 +42,7 @@ import {
   AlertCircle,
   Navigation,
   Check,
+  RefreshCw,
 } from 'lucide-react-native';
 import { PlayerSearchSheet } from '../components/PlayerSearchSheet';
 import { invitationApi, InvitationResponse } from '../api/invitationApi';
@@ -63,6 +64,7 @@ import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import HeaderIconButton from '../components/HeaderIconButton';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 const SCOREABLE_SPORTS = new Set(['FUTSAL', 'CRICKET', 'PICKLEBALL', 'PADDLEBALL']);
 
@@ -417,7 +419,7 @@ export default function MatchDetailsScreen({ matchId }: MatchDetailsScreenProps)
       <SafeAreaView style={styles.loadingScreen}>
         <ScreenGlow />
         <Text style={styles.errorText}>{error || 'Match not found.'}</Text>
-        <Button title="Go back" onPress={() => router.back()} style={{ marginTop: 16 }} />
+        <Button title="Go back" onPress={() => goBack(router)} style={{ marginTop: 16 }} />
       </SafeAreaView>
     );
   }
@@ -532,7 +534,7 @@ function JoinerView({
             <View style={[styles.heroImage, styles.heroPlaceholder]} />
           )}
           <SafeAreaView style={styles.heroOverlay} edges={['top']}>
-            <HeaderIconButton style={styles.circleBtn} onPress={() => router.back()}>
+            <HeaderIconButton style={styles.circleBtn} onPress={() => goBack(router)}>
               <ArrowLeft color={colors.white} size={20} strokeWidth={2.5} />
             </HeaderIconButton>
             <HeaderIconButton style={styles.circleBtn} onPress={() => shareMatch(match)}>
@@ -861,17 +863,21 @@ function OwnerView({
   // for bookings the backend hasn't stamped yet) is treated as paid, matching the
   // backend's own conservative default.
   const isPaidBooking = match.paymentStatus !== 'NOT_APPLICABLE';
-  // Mirrors BookingService.enforceCancellationWindow: past 48h-before-kickoff (for
-  // bookings over 1h), the backend rejects the cancel outright. Default to
-  // cancellable when the backend hasn't sent this field yet, so older app builds
-  // hitting an unupdated backend still show the button (server-side stays the
-  // real gate either way).
-  const canCancelForRefund = match.isWithinCancellationWindow !== false;
+  // Mirrors BookingService.isWithinCancellationWindow: cancelling is ALWAYS allowed —
+  // this only decides whether the organizer's own payment comes back. More than 48h
+  // before kickoff (or any time for bookings 1h or under), a full refund; inside that
+  // window, the organizer forfeits their payment (policy: they had fair notice to back
+  // out earlier and the venue can no longer resell the slot in time). Players who paid
+  // to join are refunded either way, no exceptions. Default to "refund eligible" when
+  // the backend hasn't sent this field yet, matching its own conservative default.
+  const organizerGetsRefundIfCancelled = match.isWithinCancellationWindow !== false;
 
   const handleCancel = () => {
-    const refundLine = isPaidBooking
+    const refundLine = !isPaidBooking
+      ? 'This booking was free, so there is nothing to refund.'
+      : organizerGetsRefundIfCancelled
       ? "Your payment will be refunded in full to your original payment method — typically within 5–10 business days. Any players who already paid to join will also be refunded automatically; you don't need to do anything for them."
-      : 'This booking was free, so there is nothing to refund.';
+      : "This match starts within 48 hours, so per policy your own payment will NOT be refunded. Any players who already paid to join will still be refunded automatically in full — you don't need to do anything for them.";
     Alert.alert('Cancel booking?', `This will free up the slot for other players. ${refundLine}`, [
       { text: 'No', style: 'cancel' },
       {
@@ -906,7 +912,7 @@ function OwnerView({
           />
           <View style={styles.plainHeaderGlassStroke} pointerEvents="none" />
 
-          <HeaderIconButton onPress={() => router.back()} style={styles.plainHeaderBack}>
+          <HeaderIconButton onPress={() => goBack(router)} style={styles.plainHeaderBack}>
             <ArrowLeft color={colors.white} size={20} strokeWidth={2.5} />
           </HeaderIconButton>
           <Text style={styles.plainHeaderTitle}>Match Control Center</Text>
@@ -948,6 +954,38 @@ function OwnerView({
               <Text style={styles.vendorBannerText}>{match.rejectionReason}</Text>
             </View>
           </View>
+        )}
+
+        {/* Payment/refund status — shown for any cancelled, previously-paid booking
+            (vendor rejection, vendor cancellation, or the organizer's own cancel),
+            not just the rejection case above, so "where's my money" is never a
+            silent guess. Mirrors backend BookingPaymentStatus exactly. */}
+        {isCancelled && isPaidBooking && (
+          match.paymentStatus === 'REFUNDED' ? (
+            <View style={[styles.vendorBanner, { backgroundColor: colors.success + '12', borderColor: colors.success + '30' }]}>
+              <View style={[styles.vendorBannerIcon, { backgroundColor: colors.success + '20' }]}>
+                <ShieldCheck color={colors.success} size={20} strokeWidth={2} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.vendorBannerTitle, { color: colors.success }]}>Payment Refunded</Text>
+                <Text style={styles.vendorBannerText}>
+                  Your full payment has been refunded to your original payment method.
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={[styles.vendorBanner, { backgroundColor: colors.primaryLight, borderColor: colors.primary + '30' }]}>
+              <View style={[styles.vendorBannerIcon, { backgroundColor: colors.primary + '20' }]}>
+                <RefreshCw color={colors.primary} size={20} strokeWidth={2} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.vendorBannerTitle, { color: colors.primary }]}>Refund In Progress</Text>
+                <Text style={styles.vendorBannerText}>
+                  Your full payment is being refunded to your original payment method — typically within 5–10 business days.
+                </Text>
+              </View>
+            </View>
+          )
         )}
 
         <Text style={styles.ownerSportLabel}>{match.sportType.toUpperCase()}</Text>
@@ -1213,22 +1251,23 @@ function OwnerView({
           </Pressable>
         )}
 
-        {!isCancelled && canCancelForRefund && (
-          <Pressable style={styles.manageButton} onPress={handleCancel} disabled={cancelling}>
-            <CircleX color={colors.error} size={18} strokeWidth={2} />
-            <Text style={[styles.manageButtonText, { color: colors.error }]}>
-              {cancelling ? 'Cancelling...' : 'Cancel Booking'}
-            </Text>
-          </Pressable>
-        )}
-
-        {!isCancelled && !canCancelForRefund && (
-          <View style={styles.cancelBlockedNotice}>
-            <Lock color={colors.textMuted} size={14} strokeWidth={2} />
-            <Text style={styles.cancelBlockedText}>
-              This match starts within 48 hours, so it can no longer be cancelled for a refund.
-            </Text>
-          </View>
+        {!isCancelled && (
+          <>
+            <Pressable style={styles.manageButton} onPress={handleCancel} disabled={cancelling}>
+              <CircleX color={colors.error} size={18} strokeWidth={2} />
+              <Text style={[styles.manageButtonText, { color: colors.error }]}>
+                {cancelling ? 'Cancelling...' : 'Cancel Booking'}
+              </Text>
+            </Pressable>
+            {isPaidBooking && !organizerGetsRefundIfCancelled && (
+              <View style={styles.cancelBlockedNotice}>
+                <Lock color={colors.textMuted} size={14} strokeWidth={2} />
+                <Text style={styles.cancelBlockedText}>
+                  Starts within 48 hours — cancelling now will not refund your own payment (players who joined are still refunded in full).
+                </Text>
+              </View>
+            )}
+          </>
         )}
 
         <View style={styles.footer}>

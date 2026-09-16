@@ -12,6 +12,7 @@ import {
   Easing,
   useWindowDimensions,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -20,10 +21,12 @@ import {
   ArrowLeft,
   UserPlus,
   Trophy,
+  Check,
 } from 'lucide-react-native';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleAuthProvider, signInWithCredential, signInWithRedirect } from 'firebase/auth';
+import { AppleButton } from '@invertase/react-native-apple-authentication';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
@@ -36,7 +39,9 @@ import { SPORTS } from '../constants/sports';
 import { GOOGLE_CLIENT_IDS, GOOGLE_CONFIGURED } from '../config/googleAuth';
 import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
 import { APPLE_SIGN_IN_AVAILABLE, performAppleSignIn } from '../utils/appleSignIn';
+import { getPrivacyPolicyUrl, getTermsOfServiceUrl } from '../constants/legal';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 // Required by expo-auth-session on web to close the auth popup and return
 // the result to the app. Harmless to call from multiple screens/modules.
@@ -47,7 +52,7 @@ const isValidEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const isValidPhone = (v: string) => /^\+?[\d\s\-()]{7,}$/.test(v);
 
 export default function SignUpScreen() {
-  const { colors } = useTheme();
+  const { colors, resolvedTheme } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
 
@@ -85,6 +90,7 @@ export default function SignUpScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [selectedSports, setSelectedSports] = useState<string[]>(['FUTSAL']);
   const [referralCode, setReferralCode] = useState('');
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [socialError, setSocialError] = useState<string | undefined>();
@@ -159,6 +165,7 @@ export default function SignUpScreen() {
     if (!confirmPassword) errs.confirmPassword = 'Please confirm your password';
     else if (password !== confirmPassword) errs.confirmPassword = 'Passwords do not match';
     if (selectedSports.length === 0) errs.sports = 'Select at least one sport';
+    if (!termsAccepted) errs.terms = 'Please accept the Terms of Service and Privacy Policy to continue';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -248,11 +255,14 @@ await auth.signUp(payload);
   // Same account-creation semantics as Google: the backend creates a new
   // profileCompleted=false account for a first-time Apple sign-in.
   const handleAppleLogin = async () => {
+    // AppleButton (Apple's native ASAuthorizationAppleIDButton) has no built-in
+    // disabled prop, so guard re-entrancy here instead.
+    if (appleLoading) return;
     setSocialError(undefined);
     setAppleLoading(true);
     try {
-      const firebaseIdToken = await performAppleSignIn();
-      await signInWithApple(firebaseIdToken);
+      const { idToken, authorizationCode } = await performAppleSignIn();
+      await signInWithApple(idToken, authorizationCode);
       // Same as the Google branch above: new Apple accounts are marked
       // profileCompleted=false, so AuthProvider shows CompleteProfileModal
       // automatically - safe to head straight to /home either way.
@@ -306,7 +316,7 @@ await auth.signUp(payload);
         >
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
+            <TouchableOpacity onPress={() => goBack(router)} style={styles.backBtn} activeOpacity={0.7}>
               <ArrowLeft color={colors.primary} size={22} strokeWidth={2.5} />
             </TouchableOpacity>
             <Image source={require('../../assets/logo.jpeg')} style={{width:40, height:40}} resizeMode="contain" />
@@ -336,6 +346,7 @@ await auth.signUp(payload);
                 onPress={handleGoogleLogin}
                 variant="secondary"
                 style={styles.socialButton}
+                textStyle={styles.socialButtonText}
                 disabled={googleLoading}
                 icon={
                   googleLoading ? (
@@ -350,23 +361,35 @@ await auth.signUp(payload);
               ) : null}
 
               {APPLE_SIGN_IN_AVAILABLE && (
-                <Button
-                  title={appleLoading ? 'Signing in…' : 'Continue with Apple'}
-                  onPress={handleAppleLogin}
-                  variant="secondary"
-                  style={styles.socialButtonSecond}
-                  disabled={appleLoading}
-                  icon={
-                    appleLoading ? (
-                      <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: 8 }} />
-                    ) : (
-                      <Image source={{ uri: 'https://img.icons8.com/ios-filled/50/000000/mac-os.png' }} style={styles.socialIcon} />
-                    )
-                  }
-                />
+                appleLoading ? (
+                  <View style={[styles.appleButtonLoading, styles.socialButtonSecond]}>
+                    <ActivityIndicator size="small" color={colors.text} />
+                  </View>
+                ) : (
+                  // Apple's native Sign In with Apple button (ASAuthorizationAppleIDButton) —
+                  // App Store review guideline 4.8 requires this exact control, not a
+                  // custom-styled lookalike, when other third-party sign-in options are offered.
+                  <AppleButton
+                    buttonStyle={resolvedTheme === 'dark' ? AppleButton.Style.WHITE : AppleButton.Style.BLACK}
+                    buttonType={AppleButton.Type.SIGN_UP}
+                    style={[styles.appleButton, styles.socialButtonSecond]}
+                    cornerRadius={23}
+                    onPress={handleAppleLogin}
+                  />
+                )
               )}
             </View>
 
+            <Text style={styles.socialConsentText}>
+              By continuing with Google or Apple, you agree to Paasxo's{' '}
+              <Text style={styles.termsLink} onPress={() => Linking.openURL(getTermsOfServiceUrl())}>
+                Terms of Service
+              </Text>{' '}
+              and{' '}
+              <Text style={styles.termsLink} onPress={() => Linking.openURL(getPrivacyPolicyUrl())}>
+                Privacy Policy
+              </Text>.
+            </Text>
           </View>
 
           {/* Credentials card */}
@@ -492,6 +515,34 @@ await auth.signUp(payload);
             <Text style={styles.motivationSubtext}>Every champion started with a single sign-up.</Text>
           </LinearGradient>
 
+          {/* Terms acceptance - required before an account can be created */}
+          <TouchableOpacity
+            style={styles.termsRow}
+            onPress={() => { setTermsAccepted((v) => !v); setErrors((e) => ({ ...e, terms: '' })); }}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.checkbox, termsAccepted && styles.checkboxActive]}>
+              {termsAccepted && <Check color={colors.white} size={13} strokeWidth={3} />}
+            </View>
+            <Text style={styles.termsText}>
+              I agree to Paasxo's{' '}
+              <Text
+                style={styles.termsLink}
+                onPress={(e) => { e.stopPropagation(); Linking.openURL(getTermsOfServiceUrl()); }}
+              >
+                Terms of Service
+              </Text>{' '}
+              and{' '}
+              <Text
+                style={styles.termsLink}
+                onPress={(e) => { e.stopPropagation(); Linking.openURL(getPrivacyPolicyUrl()); }}
+              >
+                Privacy Policy
+              </Text>
+            </Text>
+          </TouchableOpacity>
+          {errors.terms ? <Text style={styles.fieldError}>{errors.terms}</Text> : null}
+
           {/* General error */}
           {errors.general ? (
             <Text style={styles.generalError}>{errors.general}</Text>
@@ -596,6 +647,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   socialButton: {
     width: '100%',
+    height: 46,
   },
   socialButtonSecond: {
     width: '100%',
@@ -605,6 +657,22 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     width: 20,
     height: 20,
     marginRight: 8,
+  },
+  appleButton: { width: '100%', height: 46 },
+  // Apple's native Sign In with Apple button doesn't expose a font-size
+  // control on iOS (Apple locks this down by design) - its text scales with
+  // the button's own height, so both buttons are sized down together here
+  // and Google's text is matched to Apple's resulting native size.
+  socialButtonText: { fontSize: 16 },
+  appleButtonLoading: {
+    width: '100%',
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: colors.neutral100,
+    borderWidth: 1,
+    borderColor: colors.neutral200,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   avatarOuter: {
     width: 104,
@@ -776,6 +844,47 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     marginBottom: 8,
+  },
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 4,
+    paddingHorizontal: 4,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: colors.neutral300,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  checkboxActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  termsText: {
+    flex: 1,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  termsLink: {
+    color: colors.primary,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
+  socialConsentText: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: 10,
+    paddingHorizontal: 8,
   },
   socialError: {
     color: colors.error,

@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { SafeAreaView, StyleSheet, Text, View, Pressable, Alert, Switch, ActivityIndicator } from 'react-native';
+import { SafeAreaView, StyleSheet, Text, View, Pressable, Alert, Switch, ActivityIndicator, Linking, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, Check } from 'lucide-react-native';
 import { ThemeColors } from '../styles/colors';
 import { useAuth } from '../context/AuthContext';
 import { useTheme, ThemeMode } from '../context/ThemeContext';
 import { userApi } from '../api/userApi';
+import { getPrivacyPolicyUrl, getTermsOfServiceUrl } from '../constants/legal';
 import ScreenGlow from '../components/ScreenGlow';
+import { goBack } from '../utils/navigation';
 
 const THEME_OPTIONS: { value: ThemeMode; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -16,12 +18,13 @@ const THEME_OPTIONS: { value: ThemeMode; label: string }[] = [
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, signOut, deleteAccount } = useAuth();
   const { colors, mode, setMode } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [isPrivate, setIsPrivate] = useState(!!user?.isPrivate);
   const [savingPrivacy, setSavingPrivacy] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   useEffect(() => {
     userApi.getProfile()
@@ -56,18 +59,66 @@ export default function SettingsScreen() {
     ]);
   };
 
+  // Required by App Store Review Guideline 5.1.1(v) — any app offering
+  // account creation must offer a way to delete the account from within
+  // the app. Two-step confirmation since this is irreversible.
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'This permanently deletes your account and you will not be able to recover it. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Are you absolutely sure?',
+              'All your profile data will be permanently removed. This cannot be undone.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete My Account',
+                  style: 'destructive',
+                  onPress: async () => {
+                    setDeletingAccount(true);
+                    try {
+                      await deleteAccount();
+                      router.replace('/sign-in');
+                    } catch (err: any) {
+                      Alert.alert(
+                        'Something went wrong',
+                        err?.response?.data?.message || err?.message || 'Could not delete your account. Please try again.'
+                      );
+                    } finally {
+                      setDeletingAccount(false);
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScreenGlow />
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={() => goBack(router)} style={styles.backBtn}>
           <ArrowLeft color={colors.logoBlue || colors.primary} size={22} />
         </Pressable>
         <Text style={styles.title}>Settings</Text>
         <View style={{ width: 40 }} />
       </View>
 
-      <View style={styles.content}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentInner}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Account</Text>
           <Pressable onPress={() => router.push('/profile')} style={styles.row}>
@@ -119,6 +170,9 @@ export default function SettingsScreen() {
               />
             )}
           </View>
+          <Pressable onPress={() => router.push('/blocked-accounts')} style={[styles.row, styles.privacyRowDivider]}>
+            <Text style={styles.rowText}>Blocked Accounts</Text>
+          </Pressable>
         </View>
 
         <View style={styles.card}>
@@ -135,10 +189,31 @@ export default function SettingsScreen() {
           </Pressable>
         </View>
 
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Legal</Text>
+          <Pressable onPress={() => Linking.openURL(getPrivacyPolicyUrl())} style={styles.row}>
+            <Text style={styles.rowText}>Privacy Policy</Text>
+          </Pressable>
+          <Pressable onPress={() => Linking.openURL(getTermsOfServiceUrl())} style={styles.row}>
+            <Text style={styles.rowText}>Terms of Service</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Danger Zone</Text>
+          <Pressable onPress={handleDeleteAccount} style={styles.row} disabled={deletingAccount}>
+            {deletingAccount ? (
+              <ActivityIndicator color={colors.error} />
+            ) : (
+              <Text style={[styles.rowText, styles.dangerText]}>Delete Account</Text>
+            )}
+          </Pressable>
+        </View>
+
         <Pressable onPress={handleLogout} style={styles.logoutButton}>
           <Text style={styles.logoutText}>Logout</Text>
         </Pressable>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -154,11 +229,13 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   backBtn: { width: 40, alignItems: 'flex-start' },
   title: { fontSize: 18, fontWeight: '900', color: colors.neutral900 },
-  content: { padding: 16 },
+  content: { flex: 1 },
+  contentInner: { padding: 16, paddingBottom: 40 },
   card: { backgroundColor: colors.cardBg, borderRadius: 14, padding: 12, marginBottom: 12 },
   cardTitle: { fontSize: 13, fontWeight: '800', color: colors.neutral700, marginBottom: 8 },
   row: { paddingVertical: 10 },
   rowText: { color: colors.neutral900, fontWeight: '700' },
+  dangerText: { color: colors.error },
   themeRow: { flexDirection: 'row', gap: 8 },
   themeOption: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -173,6 +250,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 10,
     gap: 12,
+  },
+  privacyRowDivider: {
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral100,
+    marginTop: 4,
   },
   privacyTextWrap: { flex: 1 },
   privacySubtext: { color: colors.neutral500, fontSize: 12, fontWeight: '500', marginTop: 3 },
