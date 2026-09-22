@@ -44,6 +44,12 @@ export interface UserProfile {
   // Account-level visibility. Undefined/false = public. When true, new
   // followers must be accepted via a follow request (see FriendsScreen).
   isPrivate?: boolean;
+  // Optional, user-entered on EditProfileScreen. Enables a real per-user
+  // calorie estimate on Activity sessions (see activityMath.ts's
+  // calcCalories) — undefined means "not provided", which leaves calories
+  // off entirely rather than showing a number that isn't tied to the
+  // user's actual body weight.
+  weightKg?: number;
   // extend with domain-specific fields
 }
 

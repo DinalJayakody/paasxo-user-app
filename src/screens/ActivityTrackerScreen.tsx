@@ -9,24 +9,34 @@ import {
   Alert,
   ScrollView,
   Share,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
+import * as Sharing from 'expo-sharing';
 import MapView, { Polyline, Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import {
   ArrowLeft, Play, Pause, Square, CheckCircle,
   Navigation, Zap, TrendingUp, Wind,
   ChevronRight, Trophy, Share2, Trash2, MapPin,
-  Footprints, ListOrdered,
+  Footprints, ListOrdered, BookImage, Send,
 } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
-import { activityStorage, activityApi, StoredActivity, ActivityType } from '../api/activityApi';
+import { activityStorage, activityApi, StoredActivity, ActivityType, activityShareUrl } from '../api/activityApi';
 import { goBack } from '../utils/navigation';
 import { useActivityTracking } from '../hooks/useActivityTracking';
-import { LiveSplit, formatTime, formatDist, distUnit, formatPace, genLocalId } from '../utils/activityMath';
+import { useActivityShareCard } from '../hooks/useActivityShareCard';
+import { storyApi } from '../api/storyApi';
+import { socialMediaApi } from '../api/socialMediaApi';
+import { extractApiError } from '../utils/apiError';
+import {
+  LiveSplit, formatTime, formatDist, distUnit, formatPace, genLocalId,
+  bestSplitPaceSecPerKm, bestSplitSpeedKmh, fastest400mSeconds, calcCalories, MetActivityType,
+} from '../utils/activityMath';
+import { useAuth } from '../context/AuthContext';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -69,11 +79,6 @@ function autoTitle(type: ActivityType): string {
   const hour = new Date().getHours();
   const part = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening';
   return `${part} ${ACT[type].label}`;
-}
-
-function bestSplitPaceSecPerKm(splits: LiveSplit[]): number | null {
-  const paces = splits.map((s) => s.paceSecPerKm).filter((p): p is number => p != null);
-  return paces.length ? Math.min(...paces) : null;
 }
 
 // ── Animated background orbs ──────────────────────────────────────────────────
@@ -159,19 +164,27 @@ const GpsDot = ({ color }: { color: string }) => {
 };
 
 // ── Countdown display ─────────────────────────────────────────────────────────
-const Countdown = ({ value, color }: { value: number; color: string }) => {
+// `starting` covers the gap after "1" while tracking.start() is still
+// in-flight (permission checks, registering the background location task) —
+// without a distinct visual here, the screen just freezes on "1" with no
+// indication anything is still happening, which reads as the app hanging.
+const Countdown = ({ value, color, starting }: { value: number; color: string; starting: boolean }) => {
   const scale = useRef(new Animated.Value(0.5)).current;
   useEffect(() => {
     scale.setValue(0.5);
     Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 180, friction: 7 }).start();
-  }, [value]);
+  }, [value, starting]);
   return (
     <View style={{ alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-      <Animated.Text style={{ fontSize: 100, fontWeight: '900', color, transform: [{ scale }] }}>
-        {value}
-      </Animated.Text>
-      <Text style={{ fontSize: 20, color: Colors.neutral500, fontWeight: '600', marginTop: -8 }}>
-        Get ready!
+      {starting ? (
+        <ActivityIndicator size="large" color={color} style={{ transform: [{ scale: 1.4 }] }} />
+      ) : (
+        <Animated.Text style={{ fontSize: 100, fontWeight: '900', color, transform: [{ scale }] }}>
+          {value}
+        </Animated.Text>
+      )}
+      <Text style={{ fontSize: 20, color: Colors.neutral500, fontWeight: '600', marginTop: starting ? 16 : -8 }}>
+        {starting ? 'Starting…' : 'Get ready!'}
       </Text>
     </View>
   );
@@ -181,17 +194,34 @@ const Countdown = ({ value, color }: { value: number; color: string }) => {
 export default function ActivityTrackerScreen() {
   const router = useRouter();
   const mapRef = useRef<MapView>(null);
+  const { user } = useAuth();
 
   // Phase state
   const [phase, setPhase] = useState<Phase>('SELECT');
   const [actType, setActType] = useState<ActivityType>('RUN');
   const [gpsStatus, setGpsStatus] = useState<GpsStatus>('CHECKING');
   const [countdown, setCountdown] = useState(3);
+  // True for the gap between the "1" tick finishing and tracking.start()
+  // actually resolving (permission handshake, registering the location
+  // task, etc.) — without this the countdown screen just freezes on "1"
+  // for however long that takes, which reads as the app hanging even when
+  // it's still working. See renderCountdownPhase/Countdown below.
+  const [starting, setStarting] = useState(false);
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [currentLoc, setCurrentLoc] = useState<{ latitude: number; longitude: number } | null>(null);
   const [placeName, setPlaceName] = useState<string | null>(null);
   const [milestoneBanner, setMilestoneBanner] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [completedActivity, setCompletedActivity] = useState<StoredActivity | null>(null);
+  // Personal-best messages set by finishActivity when the just-finished
+  // activity beat every prior one of the same type — shown on the summary
+  // screen, see renderSummaryPhase.
+  const [newRecords, setNewRecords] = useState<string[]>([]);
+  // Set once the completed activity has been synced to the backend (by
+  // "Save Activity" or implicitly by any share action) — a real serverId is
+  // what a share link actually points at. See ensureSavedAndSynced.
+  const [savedServerId, setSavedServerId] = useState<string | null>(null);
+  const [shareBusy, setShareBusy] = useState<null | 'story' | 'post' | 'external'>(null);
 
   const tracking = useActivityTracking(actType);
   const { stats } = tracking;
@@ -271,12 +301,19 @@ export default function ActivityTrackerScreen() {
   // ── Countdown & start ─────────────────────────────────────────────────────
   const beginCountdown = useCallback(() => {
     setPhase('COUNTDOWN');
+    setStarting(false);
     setCountdown(3);
     let count = 3;
-    const cd = setInterval(() => {
+    countdownIntervalRef.current = setInterval(() => {
       count -= 1;
       if (count <= 0) {
-        clearInterval(cd);
+        if (countdownIntervalRef.current) { clearInterval(countdownIntervalRef.current); countdownIntervalRef.current = null; }
+        // The "1" tick is the last thing the countdown UI renders — starting
+        // tracking itself (permission checks, registering the background
+        // location task) is async and can take a few seconds, so flip to a
+        // distinct "starting" state rather than leaving "1" on screen with
+        // no visible indication anything is still happening.
+        setStarting(true);
         beginTracking();
       } else {
         setCountdown(count);
@@ -286,10 +323,19 @@ export default function ActivityTrackerScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actType]);
 
+  // Countdown interval is only ever meant to outlive the COUNTDOWN phase by
+  // a few seconds at most — if the screen unmounts mid-countdown (user backs
+  // out), this stops it from firing beginTracking() on a gone screen later.
+  useEffect(() => {
+    return () => {
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    };
+  }, []);
+
   const beginTracking = useCallback(async () => {
     prevSplitCountRef.current = 0;
     try {
-      const started = await tracking.start();
+      const { started, backgroundGranted } = await tracking.start();
       if (!started) {
         Alert.alert('Location permission needed', 'Please enable location access to track this activity.');
         setPhase('SELECT');
@@ -297,16 +343,39 @@ export default function ActivityTrackerScreen() {
       }
       setPhase('ACTIVE');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (e) {
+      if (!backgroundGranted) {
+        // Without "Always" location access, iOS pauses GPS updates soon
+        // after the app is backgrounded/the phone locks — tracking here
+        // would silently stop recording distance/time rather than actually
+        // running in the background as the feature promises. Foreground-only
+        // tracking still starts (better than blocking the user outright),
+        // but they need to know why their run might come up short if they
+        // lock the phone. Fires after the countdown, not before, so it
+        // doesn't compete with the background-permission system dialog
+        // itself for the user's attention.
+        setTimeout(() => {
+          Alert.alert(
+            'Background access not enabled',
+            "Paasxo only has \"While Using\" location access, so tracking may pause if you lock your phone or switch apps. For uninterrupted background tracking, enable \"Always\" location access in Settings > Privacy > Location Services > Paasxo.",
+          );
+        }, 500);
+      }
+    } catch (e: any) {
       // A permission/config failure here (e.g. background location not yet
       // granted) must never leave the countdown screen frozen — surface it
-      // and let the user retry instead of failing silently.
+      // and let the user retry instead of failing silently. The real
+      // underlying message is appended (not just a generic line) so a
+      // failure here is actually diagnosable from the alert alone — see
+      // useActivityTracking.ts's start(), which now rethrows with the
+      // native error's own message attached instead of swallowing it.
       console.warn('[ActivityTracker] failed to start tracking:', e);
       Alert.alert(
         "Couldn't start tracking",
-        'Something went wrong starting GPS tracking. Please check that location access is enabled for Paasxo and try again.'
+        `Something went wrong starting GPS tracking. Please check that location access is enabled for Paasxo and try again.${e?.message ? `\n\n(${e.message})` : ''}`
       );
       setPhase('SELECT');
+    } finally {
+      setStarting(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -339,6 +408,11 @@ export default function ActivityTrackerScreen() {
     const result = await tracking.stop();
     const last = result.route[result.route.length - 1];
 
+    const bestPace = bestSplitPaceSecPerKm(result.splits);
+    const bestSpeed = bestSplitSpeedKmh(result.splits);
+    const best400m = fastest400mSeconds(result.route);
+    const calories = calcCalories(actType as MetActivityType, result.avgSpeedKmh, result.durationSeconds, user?.weightKg);
+
     const activity: StoredActivity = {
       localId: genLocalId(),
       type: actType,
@@ -353,6 +427,10 @@ export default function ActivityTrackerScreen() {
       elevationGainMeters: result.elevationGainMeters,
       elevationLossMeters: result.elevationLossMeters,
       stepCount: result.stepCount,
+      calories,
+      bestSplitPaceSecPerKm: bestPace,
+      bestSplitSpeedKmh: bestSpeed,
+      best400mSeconds: best400m,
       splits: result.splits,
       routeCoordinates: result.route,
       startLatitude: result.startLatitude,
@@ -360,6 +438,36 @@ export default function ActivityTrackerScreen() {
       endLatitude: result.endLatitude,
       endLongitude: result.endLongitude,
     };
+
+    // Compare against every PRIOR activity of the same type (local history —
+    // the same source ActivityHistoryScreen already reads) to see whether
+    // this one just set a new personal record. Intentionally excludes the
+    // activity just finished (it isn't saved yet at this point).
+    const priorSameType = (await activityStorage.getAll()).filter((a) => a.type === actType);
+    const records: string[] = [];
+    const isPaceBased = actType !== 'CYCLING';
+    if (isPaceBased && bestPace != null) {
+      const prevBest = priorSameType.reduce<number | null>((min, a) =>
+        a.bestSplitPaceSecPerKm != null && (min == null || a.bestSplitPaceSecPerKm < min) ? a.bestSplitPaceSecPerKm : min, null);
+      if (prevBest == null || bestPace < prevBest) records.push(`⚡ New fastest km: ${formatPace(bestPace)} /km`);
+    }
+    if (!isPaceBased && bestSpeed != null) {
+      const prevBest = priorSameType.reduce<number | null>((max, a) =>
+        a.bestSplitSpeedKmh != null && (max == null || a.bestSplitSpeedKmh > max) ? a.bestSplitSpeedKmh : max, null);
+      if (prevBest == null || bestSpeed > prevBest) records.push(`⚡ New fastest km: ${bestSpeed.toFixed(1)} km/h`);
+    }
+    if (best400m != null) {
+      const prevBest = priorSameType.reduce<number | null>((min, a) =>
+        a.best400mSeconds != null && (min == null || a.best400mSeconds < min) ? a.best400mSeconds : min, null);
+      if (prevBest == null || best400m < prevBest) records.push(`🔥 New fastest 400m: ${formatTime(best400m)}`);
+    }
+    const prevLongest = priorSameType.reduce((max, a) => Math.max(max, a.distanceMeters), 0);
+    if (result.distanceMeters > prevLongest && priorSameType.length > 0) {
+      records.push(`🏆 New longest ${ACT[actType].label.toLowerCase()}: ${formatDist(result.distanceMeters)}${distUnit(result.distanceMeters)}`);
+    }
+    setNewRecords(records);
+    setSavedServerId(null);
+    setShareBusy(null);
 
     setCompletedActivity(activity);
     setPhase('SUMMARY');
@@ -375,14 +483,18 @@ export default function ActivityTrackerScreen() {
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actType]);
+  }, [actType, user?.weightKg]);
 
   // ── Save activity ──────────────────────────────────────────────────────────
+  // Saves locally + kicks off the server sync but doesn't block "Saved!" on
+  // the network round-trip finishing — see ensureSavedAndSynced below for
+  // the version the share actions use, which DOES need to wait (a share
+  // link is only real once a serverId exists).
   const handleSave = useCallback(async () => {
     if (!completedActivity) return;
     setSaving(true);
     await activityStorage.save(completedActivity);
-    activityApi.syncToServer(completedActivity).catch(() => {});
+    activityApi.syncToServer(completedActivity).then((id) => { if (id) setSavedServerId(id); }).catch(() => {});
     setSaving(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Alert.alert('Saved!', 'Your activity has been saved to your history.', [
@@ -391,25 +503,103 @@ export default function ActivityTrackerScreen() {
     ]);
   }, [completedActivity, router]);
 
-  const handleShare = useCallback(async () => {
-    if (!completedActivity) return;
-    const { durationSeconds, distanceMeters, maxSpeedKmh: maxSp, avgSpeedKmh, avgPaceSecPerKm, elevationGainMeters, elevationLossMeters, stepCount } = completedActivity;
-    const speedOrPace = actType !== 'CYCLING'
-      ? `🏃 Pace: ${formatPace(avgPaceSecPerKm)} /km\n`
-      : `⚡ Speed: ${avgSpeedKmh.toFixed(1)} km/h (max ${maxSp.toFixed(1)})\n`;
-    const message =
-      `${ACT[actType].emoji} ${ACT[actType].label} complete on Paasxo!\n\n` +
-      `📍 Distance: ${formatDist(distanceMeters)} ${distUnit(distanceMeters)}\n` +
-      `⏱️ Duration: ${formatTime(durationSeconds)}\n` +
-      speedOrPace +
-      `⛰️ Elevation: ${elevationGainMeters}m gain, ${elevationLossMeters}m loss` +
-      (stepCount ? `\n👣 Steps: ${stepCount}` : '');
+  /**
+   * Every share destination (Story/Post/external) needs the activity to
+   * already exist server-side — that's what the shared link actually points
+   * at. Saves it first if the user hasn't tapped "Save Activity" yet
+   * (sharing shouldn't be blocked on a separate save step), and is a no-op
+   * if already saved+synced from a previous share attempt in this session.
+   */
+  const ensureSavedAndSynced = useCallback(async (): Promise<string | null> => {
+    if (!completedActivity) return null;
+    if (savedServerId) return savedServerId;
+    await activityStorage.save(completedActivity);
+    const serverId = await activityApi.syncToServer(completedActivity);
+    if (serverId) setSavedServerId(serverId);
+    return serverId;
+  }, [completedActivity, savedServerId]);
+
+  const { ShareCardPortal, buildShareCard } = useActivityShareCard(completedActivity, user?.displayName || 'A Paasxo user');
+
+  const handleShareToStory = useCallback(async () => {
+    if (!completedActivity || shareBusy) return;
+    setShareBusy('story');
     try {
+      const serverId = await ensureSavedAndSynced();
+      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null);
+      if (!cardUri) throw new Error('Could not generate the share image');
+      await storyApi.createStory({ mediaUri: cardUri, mediaType: 'IMAGE', mimeType: 'image/jpeg', filterName: 'NORMAL' });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Shared to your Story!');
+    } catch (e: any) {
+      Alert.alert('Could not share to Story', extractApiError(e, 'Please try again.'));
+    } finally {
+      setShareBusy(null);
+    }
+  }, [completedActivity, shareBusy, ensureSavedAndSynced, buildShareCard]);
+
+  const handleShareToPost = useCallback(async () => {
+    if (!completedActivity || shareBusy) return;
+    setShareBusy('post');
+    try {
+      const serverId = await ensureSavedAndSynced();
+      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null);
+      if (!cardUri) throw new Error('Could not generate the share image');
+      const caption = `${ACT[actType].emoji} ${formatDist(completedActivity.distanceMeters)}${distUnit(completedActivity.distanceMeters)} ${ACT[actType].label.toLowerCase()} in ${formatTime(completedActivity.durationSeconds)} on Paasxo 💪`;
+      await socialMediaApi.createPost({
+        caption,
+        media: { uri: cardUri, fileName: 'activity.jpg', mimeType: 'image/jpeg' },
+        sport: 'FITNESS',
+        visibility: 'public',
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Posted to your feed!');
+    } catch (e: any) {
+      Alert.alert('Could not share as a Post', extractApiError(e, 'Please try again.'));
+    } finally {
+      setShareBusy(null);
+    }
+  }, [completedActivity, actType, shareBusy, ensureSavedAndSynced, buildShareCard]);
+
+  // Shares outside Paasxo (WhatsApp, Messages, etc). expo-sharing is used
+  // rather than RN's built-in Share so the image attaches reliably on
+  // Android too (a raw file:// url passed to Share.share works inconsistently
+  // there without a configured FileProvider) — but that API can't attach a
+  // text caption alongside the file on every platform, which is why the
+  // link is baked directly onto the card image itself (see
+  // ActivityShareCard's shareUrl prop) rather than only appended to a
+  // message that might not travel with it.
+  const handleShareExternal = useCallback(async () => {
+    if (!completedActivity || shareBusy) return;
+    setShareBusy('external');
+    try {
+      const serverId = await ensureSavedAndSynced();
+      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null);
+      if (cardUri && (await Sharing.isAvailableAsync())) {
+        await Sharing.shareAsync(cardUri, { mimeType: 'image/jpeg', dialogTitle: 'Share your activity' });
+        return;
+      }
+      // Fallback (web, or a device without a share sheet available) — plain
+      // text share, same as before this feature existed.
+      const { durationSeconds, distanceMeters, maxSpeedKmh: maxSp, avgSpeedKmh, avgPaceSecPerKm, elevationGainMeters, elevationLossMeters, stepCount } = completedActivity;
+      const speedOrPace = actType !== 'CYCLING'
+        ? `🏃 Pace: ${formatPace(avgPaceSecPerKm)} /km\n`
+        : `⚡ Speed: ${avgSpeedKmh.toFixed(1)} km/h (max ${maxSp.toFixed(1)})\n`;
+      const message =
+        `${ACT[actType].emoji} ${ACT[actType].label} complete on Paasxo!\n\n` +
+        `📍 Distance: ${formatDist(distanceMeters)} ${distUnit(distanceMeters)}\n` +
+        `⏱️ Duration: ${formatTime(durationSeconds)}\n` +
+        speedOrPace +
+        `⛰️ Elevation: ${elevationGainMeters}m gain, ${elevationLossMeters}m loss` +
+        (stepCount ? `\n👣 Steps: ${stepCount}` : '') +
+        (serverId ? `\n\n${activityShareUrl(serverId)}` : '');
       await Share.share({ message });
     } catch {
-      // User cancelled the share sheet or it's unsupported — no error surfaced.
+      // User cancelled the share sheet — no error surfaced.
+    } finally {
+      setShareBusy(null);
     }
-  }, [completedActivity, actType]);
+  }, [completedActivity, actType, shareBusy, ensureSavedAndSynced, buildShareCard]);
 
   const handleDiscard = useCallback(() => {
     Alert.alert('Discard Activity?', 'This activity will not be saved.', [
@@ -542,7 +732,7 @@ export default function ActivityTrackerScreen() {
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <Avatar type={actType} active={false} />
         <View style={{ height: 32 }} />
-        <Countdown value={countdown} color={cfg.accentColor} />
+        <Countdown value={countdown} color={cfg.accentColor} starting={starting} />
       </View>
     </View>
   );
@@ -666,9 +856,9 @@ export default function ActivityTrackerScreen() {
     if (!completedActivity) return null;
     const {
       durationSeconds, distanceMeters, avgSpeedKmh, maxSpeedKmh: maxSp, avgPaceSecPerKm,
-      elevationGainMeters, elevationLossMeters, stepCount, splits, routeCoordinates,
+      elevationGainMeters, elevationLossMeters, stepCount, splits, routeCoordinates, calories,
     } = completedActivity;
-    const bestPace = bestSplitPaceSecPerKm(splits);
+    const bestPace = completedActivity.bestSplitPaceSecPerKm;
 
     return (
       <View style={{ flex: 1, backgroundColor: '#0F172A' }}>
@@ -738,6 +928,19 @@ export default function ActivityTrackerScreen() {
             </View>
           </View>
 
+          {/* Personal records set by this activity — see finishActivity */}
+          {newRecords.length > 0 && (
+            <View style={styles.recordsBanner}>
+              <View style={styles.recordsHeader}>
+                <Trophy color="#F59E0B" size={18} strokeWidth={2.5} />
+                <Text style={styles.recordsTitle}>New Personal Best!</Text>
+              </View>
+              {newRecords.map((r) => (
+                <Text key={r} style={styles.recordsItem}>{r}</Text>
+              ))}
+            </View>
+          )}
+
           {/* Primary stats */}
           <View style={styles.primaryStats}>
             <View style={styles.primaryStatItem}>
@@ -769,6 +972,7 @@ export default function ActivityTrackerScreen() {
             <SummaryTile label="Elevation" value={`+${elevationGainMeters}`} unit={`m · -${elevationLossMeters}m`} color="#10B981" />
             <SummaryTile label="Steps" value={stepCount != null ? `${stepCount}` : '—'} unit="steps" color="#F97316" />
             <SummaryTile label="Splits" value={`${splits.length}`} unit="recorded" color="#6366F1" />
+            {calories != null && <SummaryTile label="Calories" value={`${calories}`} unit="kcal (est.)" color="#EF4444" />}
           </View>
 
           {/* Per-km splits */}
@@ -800,9 +1004,31 @@ export default function ActivityTrackerScreen() {
             </LinearGradient>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={handleShare} activeOpacity={0.8} style={styles.shareBtn}>
-            <Share2 color={cfg.accentColor} size={18} strokeWidth={2.25} />
-            <Text style={[styles.shareBtnText, { color: cfg.accentColor }]}>Share</Text>
+          {/* Share to Paasxo — Story / Post */}
+          <View style={styles.shareRow}>
+            <TouchableOpacity
+              onPress={handleShareToStory}
+              disabled={shareBusy !== null}
+              activeOpacity={0.8}
+              style={[styles.shareRowBtn, shareBusy === 'story' && styles.shareRowBtnBusy]}
+            >
+              {shareBusy === 'story' ? <ActivityIndicator color={cfg.accentColor} size="small" /> : <BookImage color={cfg.accentColor} size={18} strokeWidth={2.25} />}
+              <Text style={[styles.shareBtnText, { color: cfg.accentColor }]}>To Story</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleShareToPost}
+              disabled={shareBusy !== null}
+              activeOpacity={0.8}
+              style={[styles.shareRowBtn, shareBusy === 'post' && styles.shareRowBtnBusy]}
+            >
+              {shareBusy === 'post' ? <ActivityIndicator color={cfg.accentColor} size="small" /> : <Send color={cfg.accentColor} size={18} strokeWidth={2.25} />}
+              <Text style={[styles.shareBtnText, { color: cfg.accentColor }]}>As Post</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity onPress={handleShareExternal} disabled={shareBusy !== null} activeOpacity={0.8} style={styles.shareBtn}>
+            {shareBusy === 'external' ? <ActivityIndicator color={cfg.accentColor} size="small" /> : <Share2 color={cfg.accentColor} size={18} strokeWidth={2.25} />}
+            <Text style={[styles.shareBtnText, { color: cfg.accentColor }]}>Share Externally</Text>
           </TouchableOpacity>
 
           <TouchableOpacity onPress={handleDiscard} activeOpacity={0.8} style={styles.discardBtn}>
@@ -810,6 +1036,7 @@ export default function ActivityTrackerScreen() {
             <Text style={styles.discardBtnText}>Discard</Text>
           </TouchableOpacity>
         </ScrollView>
+        {ShareCardPortal}
       </View>
     );
   };
@@ -978,6 +1205,14 @@ const styles = StyleSheet.create({
   greatJobTitle: { fontSize: 18, fontWeight: '900', color: Colors.white },
   greatJobSub: { fontSize: 13, color: Colors.neutral400, marginTop: 2 },
 
+  recordsBanner: {
+    backgroundColor: 'rgba(245,158,11,0.12)', borderRadius: 18,
+    padding: 16, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(245,158,11,0.35)',
+  },
+  recordsHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  recordsTitle: { fontSize: 15, fontWeight: '900', color: '#F59E0B' },
+  recordsItem: { fontSize: 13, color: Colors.white, fontWeight: '600', marginTop: 4 },
+
   primaryStats: {
     flexDirection: 'row', backgroundColor: '#1E293B',
     borderRadius: 18, padding: 20, marginBottom: 12, alignItems: 'center',
@@ -1015,6 +1250,13 @@ const styles = StyleSheet.create({
     gap: 10, borderRadius: 18, paddingVertical: 18,
   },
   saveBtnText: { fontSize: 17, fontWeight: '900', color: Colors.white },
+  shareRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  shareRowBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 14,
+    borderRadius: 16, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.15)',
+  },
+  shareRowBtnBusy: { opacity: 0.7 },
   shareBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, paddingVertical: 14, marginTop: 10,

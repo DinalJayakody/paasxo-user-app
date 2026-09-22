@@ -18,7 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import { ArrowLeft, Camera, MapPin, Phone, User } from 'lucide-react-native';
+import { ArrowLeft, Camera, MapPin, Phone, Scale, User } from 'lucide-react-native';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { InputField } from '../components/InputField';
@@ -59,6 +59,7 @@ export default function EditProfileScreen() {
   const [selectedSports, setSelectedSports] = useState<string[]>(initialSports);
   const [skillLevel, setSkillLevel] = useState(user?.skillLevel ? user.skillLevel.toUpperCase() : 'BEGINNER');
   const [locationAccess, setLocationAccess] = useState(!!user?.locationAccess);
+  const [weightKg, setWeightKg] = useState(user?.weightKg ? String(user.weightKg) : '');
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -133,6 +134,12 @@ export default function EditProfileScreen() {
       setError('Select at least one activity');
       return;
     }
+    const trimmedWeight = weightKg.trim();
+    const parsedWeight = trimmedWeight ? Number(trimmedWeight) : undefined;
+    if (trimmedWeight && (Number.isNaN(parsedWeight) || parsedWeight! < 20 || parsedWeight! > 300)) {
+      setError('Enter a valid weight in kg (20–300)');
+      return;
+    }
     setError(undefined);
     setSaving(true);
     try {
@@ -143,6 +150,7 @@ export default function EditProfileScreen() {
         sports: selectedSports,
         skillLevel,
         locationAccess,
+        weightKg: parsedWeight,
         profileImage: pendingAvatarAsset
           ? {
               uri: pendingAvatarAsset.uri,
@@ -308,6 +316,24 @@ export default function EditProfileScreen() {
             </View>
           </View>
 
+          {/* Weight — optional, powers real per-activity calorie estimates */}
+          <View style={styles.card}>
+            <Text style={styles.sectionLabel}>WEIGHT (OPTIONAL)</Text>
+            <InputField
+              placeholder="e.g. 68"
+              value={weightKg}
+              onChangeText={setWeightKg}
+              keyboardType="decimal-pad"
+              leftIcon={<Scale color={colors.neutral400} size={18} />}
+              rightIcon={<Text style={styles.weightUnit}>kg</Text>}
+            />
+            <Text style={styles.weightHint}>
+              If you add your weight, calories burned will be calculated for your walk/run/cycling activities using a
+              standard formula — this is an approximate estimate, not a precise medical measurement. Leave this blank
+              and calories just won't be shown, rather than displaying an inaccurate guess.
+            </Text>
+          </View>
+
           {/* Location */}
           <View style={[styles.card, styles.locationRow]}>
             <View style={styles.locationLeft}>
@@ -468,6 +494,9 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   locationTitle: { fontSize: 14, fontWeight: '700', color: colors.neutral900 },
   locationSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+
+  weightUnit: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  weightHint: { fontSize: 12, color: colors.textSecondary, marginTop: 8, lineHeight: 17 },
 
   errorText: { color: colors.error, fontSize: 13, textAlign: 'center', marginTop: 4 },
 });

@@ -12,7 +12,7 @@ import {
 } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
 import { activityStorage, activityApi, StoredActivity, ActivityType } from '../api/activityApi';
-import { formatPace } from '../utils/activityMath';
+import { formatPace, formatTime as formatDuration } from '../utils/activityMath';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import { goBack } from '../utils/navigation';
@@ -60,6 +60,32 @@ function groupByDate(activities: StoredActivity[]): { date: string; items: Store
     groups[key].push(a);
   }
   return Object.entries(groups).map(([date, items]) => ({ date, items }));
+}
+
+// Personal bests for one activity type — reduces over that type's already-
+// loaded activities (each one's bests were precomputed once at finish time,
+// see activityMath.ts's bestSplitPaceSecPerKm/bestSplitSpeedKmh/
+// fastest400mSeconds), matching the same logic the backend uses for a
+// friend's Stats-tab summary (ActivityService#computeBests) — just run
+// client-side here since the full list is already in memory.
+function personalBests(activities: StoredActivity[]) {
+  let fastestKmSecPerKm: number | null = null;
+  let fastestKmSpeedKmh: number | null = null;
+  let fastest400m: number | null = null;
+  let longestDistM = 0;
+  for (const a of activities) {
+    if (a.bestSplitPaceSecPerKm != null && (fastestKmSecPerKm == null || a.bestSplitPaceSecPerKm < fastestKmSecPerKm)) {
+      fastestKmSecPerKm = a.bestSplitPaceSecPerKm;
+    }
+    if (a.bestSplitSpeedKmh != null && (fastestKmSpeedKmh == null || a.bestSplitSpeedKmh > fastestKmSpeedKmh)) {
+      fastestKmSpeedKmh = a.bestSplitSpeedKmh;
+    }
+    if (a.best400mSeconds != null && (fastest400m == null || a.best400mSeconds < fastest400m)) {
+      fastest400m = a.best400mSeconds;
+    }
+    if (a.distanceMeters > longestDistM) longestDistM = a.distanceMeters;
+  }
+  return { fastestKmSecPerKm, fastestKmSpeedKmh, fastest400m, longestDistM };
 }
 
 // Weekly totals
@@ -184,6 +210,31 @@ export default function ActivityHistoryScreen() {
           })}
         </ScrollView>
 
+        {/* Personal bests — only meaningful once a specific type is picked
+            (comparing a running PR against a cycling one makes no sense). */}
+        {filter !== 'ALL' && filtered.length > 0 && (() => {
+          const cfg = ACT_CFG[filter as ActivityType];
+          const isPaceBased = filter !== 'CYCLING';
+          const pb = personalBests(filtered);
+          return (
+            <View style={styles.pbSection}>
+              <View style={styles.pbHeader}>
+                <Trophy color="#F59E0B" size={16} strokeWidth={2.5} />
+                <Text style={styles.pbTitle}>{cfg.label} Personal Bests</Text>
+              </View>
+              <View style={styles.pbGrid}>
+                {isPaceBased ? (
+                  <PbTile label="Fastest km" value={pb.fastestKmSecPerKm != null ? `${formatPace(pb.fastestKmSecPerKm)}/km` : '—'} />
+                ) : (
+                  <PbTile label="Fastest km" value={pb.fastestKmSpeedKmh != null ? `${pb.fastestKmSpeedKmh.toFixed(1)} km/h` : '—'} />
+                )}
+                <PbTile label="Fastest 400m" value={pb.fastest400m != null ? formatDuration(pb.fastest400m) : '—'} />
+                <PbTile label="Longest" value={pb.longestDistM > 0 ? formatDist(pb.longestDistM) : '—'} />
+              </View>
+            </View>
+          );
+        })()}
+
         {/* Guide text when empty */}
         {!loading && filtered.length === 0 && (
           <View style={styles.emptyState}>
@@ -273,6 +324,15 @@ function ActivityCard({ activity, onPress }: { activity: StoredActivity; onPress
   );
 }
 
+function PbTile({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.pbTile}>
+      <Text style={styles.pbTileValue}>{value}</Text>
+      <Text style={styles.pbTileLabel}>{label}</Text>
+    </View>
+  );
+}
+
 function MiniStat({ icon, value }: { icon: React.ReactNode; value: string }) {
   return (
     <View style={styles.miniStat}>
@@ -313,6 +373,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155',
   },
   filterTabText: { fontSize: 13, fontWeight: '700', color: Colors.neutral400 },
+
+  pbSection: {
+    marginHorizontal: 16, marginTop: 14, marginBottom: 4,
+    backgroundColor: 'rgba(245,158,11,0.08)', borderRadius: 18,
+    padding: 16, borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)',
+  },
+  pbHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
+  pbTitle: { fontSize: 13, fontWeight: '800', color: '#F59E0B' },
+  pbGrid: { flexDirection: 'row', gap: 10 },
+  pbTile: { flex: 1, backgroundColor: '#0F172A', borderRadius: 12, padding: 10, alignItems: 'center' },
+  pbTileValue: { fontSize: 15, fontWeight: '900', color: Colors.white },
+  pbTileLabel: { fontSize: 10, fontWeight: '700', color: Colors.neutral500, marginTop: 3, textAlign: 'center' },
 
   group: { paddingHorizontal: 16, marginBottom: 8 },
   groupDate: { fontSize: 12, fontWeight: '700', color: Colors.neutral500, letterSpacing: 0.5, marginBottom: 10, marginTop: 8 },

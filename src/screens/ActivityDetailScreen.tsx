@@ -1,20 +1,27 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Alert, Animated, Dimensions, Share,
+  Alert, Animated, Dimensions, Share, ActivityIndicator, Platform, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import MapView, { Polyline, Marker, PROVIDER_DEFAULT } from 'react-native-maps';
+import * as Sharing from 'expo-sharing';
 import {
   ArrowLeft, Clock, Footprints, TrendingUp, TrendingDown, Wind, Zap,
-  MapPin, Calendar, Trash2, Share2, Trophy, ListOrdered,
+  MapPin, Calendar, Trash2, Share2, Trophy, ListOrdered, Flame, BookImage, Send,
 } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
-import { activityStorage, activityApi, StoredActivity } from '../api/activityApi';
+import { activityStorage, activityApi, ActivityWithAuthor, activityShareUrl } from '../api/activityApi';
 import { formatTime, formatDist, formatPace } from '../utils/activityMath';
 import { goBack } from '../utils/navigation';
+import { useAuth } from '../context/AuthContext';
+import { useActivityShareCard } from '../hooks/useActivityShareCard';
+import { storyApi } from '../api/storyApi';
+import { socialMediaApi } from '../api/socialMediaApi';
+import { extractApiError } from '../utils/apiError';
+import { resolveAvatarUri } from '../utils/mediaUrl';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -27,9 +34,17 @@ const ACT_CFG = {
 export default function ActivityDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [activity, setActivity] = useState<StoredActivity | null>(null);
+  const { user } = useAuth();
+  const [activity, setActivity] = useState<ActivityWithAuthor | null>(null);
   const [loading, setLoading] = useState(true);
+  const [shareBusy, setShareBusy] = useState<null | 'story' | 'post' | 'external'>(null);
   const mapRef = useRef<MapView>(null);
+
+  // Set only when the activity came back from the server tagged with an
+  // author — i.e. it's a friend's shared activity (opened via a
+  // paasxo.com/activity/{id} link, or the local-storage lookup below simply
+  // didn't have it), not one owned by the signed-in user.
+  const isOwnActivity = !activity?.authorDisplayName;
 
   // Stagger animation refs
   const headerAnim = useRef(new Animated.Value(0)).current;
@@ -39,7 +54,13 @@ export default function ActivityDetailScreen() {
   useEffect(() => {
     (async () => {
       if (!id) return;
-      const a = await activityStorage.getById(id);
+      // Local storage first (instant, works offline) — this device's own
+      // saved activities. Falls back to the server for anything not found
+      // locally: a friend's shared activity, or this device just doesn't
+      // have it cached (re-install, different device). The backend enforces
+      // its own visibility rules either way — see ActivityService#getById.
+      let a: ActivityWithAuthor | null = await activityStorage.getById(id);
+      if (!a) a = await activityApi.getById(id);
       setActivity(a);
       setLoading(false);
       if (a) {
@@ -62,25 +83,93 @@ export default function ActivityDetailScreen() {
     })();
   }, [id]);
 
-  const handleShare = async () => {
-    if (!activity) return;
-    const cfg = ACT_CFG[activity.type];
-    const speedOrPace = cfg.isPaceBased
-      ? `🏃 Pace: ${formatPace(activity.avgPaceSecPerKm)} /km\n`
-      : `⚡ Speed: ${activity.avgSpeedKmh.toFixed(1)} km/h (max ${activity.maxSpeedKmh.toFixed(1)})\n`;
-    const message =
-      `${cfg.emoji} ${cfg.label} — ${activity.title}\n\n` +
-      `📍 Distance: ${formatDist(activity.distanceMeters)}\n` +
-      `⏱️ Duration: ${formatTime(activity.durationSeconds)}\n` +
-      speedOrPace +
-      `⛰️ Elevation: ${activity.elevationGainMeters}m gain, ${activity.elevationLossMeters}m loss` +
-      (activity.stepCount ? `\n👣 Steps: ${activity.stepCount}` : '');
+  /** A locally-saved activity whose background sync never completed (e.g. it
+   * was saved offline) won't have a serverId yet — a share link needs one. */
+  const ensureServerId = useCallback(async (): Promise<string | null> => {
+    if (!activity) return null;
+    if (activity.serverId) return activity.serverId;
+    const serverId = await activityApi.syncToServer(activity);
+    if (serverId) {
+      const updated = { ...activity, serverId };
+      setActivity(updated);
+      await activityStorage.save(updated);
+    }
+    return serverId;
+  }, [activity]);
+
+  const { ShareCardPortal, buildShareCard } = useActivityShareCard(
+    activity,
+    activity?.authorDisplayName || user?.displayName || 'A Paasxo user'
+  );
+
+  const handleShareToStory = useCallback(async () => {
+    if (!activity || shareBusy) return;
+    setShareBusy('story');
     try {
+      const serverId = await ensureServerId();
+      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null);
+      if (!cardUri) throw new Error('Could not generate the share image');
+      await storyApi.createStory({ mediaUri: cardUri, mediaType: 'IMAGE', mimeType: 'image/jpeg', filterName: 'NORMAL' });
+      Alert.alert('Shared to your Story!');
+    } catch (e: any) {
+      Alert.alert('Could not share to Story', extractApiError(e, 'Please try again.'));
+    } finally {
+      setShareBusy(null);
+    }
+  }, [activity, shareBusy, ensureServerId, buildShareCard]);
+
+  const handleShareToPost = useCallback(async () => {
+    if (!activity || shareBusy) return;
+    setShareBusy('post');
+    try {
+      const cfg = ACT_CFG[activity.type];
+      const serverId = await ensureServerId();
+      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null);
+      if (!cardUri) throw new Error('Could not generate the share image');
+      const caption = `${cfg.emoji} ${formatDist(activity.distanceMeters)} ${cfg.label.toLowerCase()} in ${formatTime(activity.durationSeconds)} on Paasxo 💪`;
+      await socialMediaApi.createPost({
+        caption,
+        media: { uri: cardUri, fileName: 'activity.jpg', mimeType: 'image/jpeg' },
+        sport: 'FITNESS',
+        visibility: 'public',
+      });
+      Alert.alert('Posted to your feed!');
+    } catch (e: any) {
+      Alert.alert('Could not share as a Post', extractApiError(e, 'Please try again.'));
+    } finally {
+      setShareBusy(null);
+    }
+  }, [activity, shareBusy, ensureServerId, buildShareCard]);
+
+  const handleShare = useCallback(async () => {
+    if (!activity || shareBusy) return;
+    setShareBusy('external');
+    try {
+      const cfg = ACT_CFG[activity.type];
+      const serverId = await ensureServerId();
+      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null);
+      if (cardUri && Platform.OS !== 'web' && (await Sharing.isAvailableAsync())) {
+        await Sharing.shareAsync(cardUri, { mimeType: 'image/jpeg', dialogTitle: 'Share your activity' });
+        return;
+      }
+      const speedOrPace = cfg.isPaceBased
+        ? `🏃 Pace: ${formatPace(activity.avgPaceSecPerKm)} /km\n`
+        : `⚡ Speed: ${activity.avgSpeedKmh.toFixed(1)} km/h (max ${activity.maxSpeedKmh.toFixed(1)})\n`;
+      const message =
+        `${cfg.emoji} ${cfg.label} — ${activity.title}\n\n` +
+        `📍 Distance: ${formatDist(activity.distanceMeters)}\n` +
+        `⏱️ Duration: ${formatTime(activity.durationSeconds)}\n` +
+        speedOrPace +
+        `⛰️ Elevation: ${activity.elevationGainMeters}m gain, ${activity.elevationLossMeters}m loss` +
+        (activity.stepCount ? `\n👣 Steps: ${activity.stepCount}` : '') +
+        (serverId ? `\n\n${activityShareUrl(serverId)}` : '');
       await Share.share({ message });
     } catch {
       // User cancelled the share sheet — no error surfaced.
+    } finally {
+      setShareBusy(null);
     }
-  };
+  }, [activity, shareBusy, ensureServerId, buildShareCard]);
 
   const handleDelete = () => {
     Alert.alert('Delete Activity', 'This cannot be undone.', [
@@ -127,15 +216,25 @@ export default function ActivityDetailScreen() {
             </Text>
           </View>
         </View>
-        <TouchableOpacity onPress={handleShare} style={styles.shareIconBtn}>
-          <Share2 color={Colors.white} size={18} />
+        <TouchableOpacity onPress={handleShare} disabled={shareBusy !== null} style={styles.shareIconBtn}>
+          {shareBusy === 'external' ? <ActivityIndicator color={Colors.white} size="small" /> : <Share2 color={Colors.white} size={18} />}
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
-          <Trash2 color={Colors.error} size={18} />
-        </TouchableOpacity>
+        {isOwnActivity && (
+          <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
+            <Trash2 color={Colors.error} size={18} />
+          </TouchableOpacity>
+        )}
       </LinearGradient>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
+        {/* Author row — only shown for a friend's shared activity */}
+        {!isOwnActivity && (
+          <View style={styles.authorRow}>
+            <Image source={{ uri: resolveAvatarUri(activity.authorProfileImageUrl, activity.authorDisplayName) }} style={styles.authorAvatar} />
+            <Text style={styles.authorText}>Shared by {activity.authorDisplayName}</Text>
+          </View>
+        )}
+
         {/* Route map */}
         <Animated.View style={[styles.mapCard, { opacity: mapAnim, transform: [{ scale: mapAnim.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1] }) }] }]}>
           {activity.routeCoordinates.length > 1 ? (
@@ -216,6 +315,9 @@ export default function ActivityDetailScreen() {
             <DetailTile icon={<TrendingUp color="#10B981" size={18} />} label="Elev Gain" value={`${activity.elevationGainMeters}`} unit="m" />
             <DetailTile icon={<TrendingDown color="#F59E0B" size={18} />} label="Elev Loss" value={`${activity.elevationLossMeters}`} unit="m" />
             <DetailTile icon={<Footprints color="#F97316" size={18} />} label="Steps" value={activity.stepCount != null ? `${activity.stepCount}` : '—'} unit="steps" />
+            {activity.calories != null && (
+              <DetailTile icon={<Flame color="#EF4444" size={18} />} label="Calories" value={`${activity.calories}`} unit="kcal (est.)" />
+            )}
             <DetailTile icon={<Trophy color="#F59E0B" size={18} />} label="Route Points" value={`${activity.routeCoordinates.length}`} unit="tracked" />
           </View>
         </Animated.View>
@@ -263,7 +365,30 @@ export default function ActivityDetailScreen() {
             </View>
           </Animated.View>
         )}
+
+        {/* Share to Paasxo — Story / Post (external share is the header icon) */}
+        <View style={[styles.section, styles.shareRow]}>
+          <TouchableOpacity
+            onPress={handleShareToStory}
+            disabled={shareBusy !== null}
+            activeOpacity={0.8}
+            style={[styles.shareRowBtn, shareBusy === 'story' && styles.shareRowBtnBusy]}
+          >
+            {shareBusy === 'story' ? <ActivityIndicator color={cfg.accent} size="small" /> : <BookImage color={cfg.accent} size={18} strokeWidth={2.25} />}
+            <Text style={[styles.shareRowBtnText, { color: cfg.accent }]}>To Story</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleShareToPost}
+            disabled={shareBusy !== null}
+            activeOpacity={0.8}
+            style={[styles.shareRowBtn, shareBusy === 'post' && styles.shareRowBtnBusy]}
+          >
+            {shareBusy === 'post' ? <ActivityIndicator color={cfg.accent} size="small" /> : <Send color={cfg.accent} size={18} strokeWidth={2.25} />}
+            <Text style={[styles.shareRowBtnText, { color: cfg.accent }]}>As Post</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
+      {ShareCardPortal}
     </SafeAreaView>
   );
 }
@@ -347,4 +472,21 @@ const styles = StyleSheet.create({
   locationDot: { width: 10, height: 10, borderRadius: 5 },
   locationLabel: { fontSize: 13, fontWeight: '700', color: Colors.neutral300, width: 44 },
   locationCoord: { flex: 1, fontSize: 12, color: Colors.neutral500 },
+
+  authorRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginHorizontal: 16, marginTop: 8, backgroundColor: '#1E293B',
+    borderRadius: 14, padding: 12,
+  },
+  authorAvatar: { width: 32, height: 32, borderRadius: 16 },
+  authorText: { fontSize: 13, fontWeight: '700', color: Colors.neutral300 },
+
+  shareRow: { flexDirection: 'row', gap: 10 },
+  shareRowBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 14,
+    borderRadius: 16, backgroundColor: '#1E293B', borderWidth: 1.5, borderColor: '#334155',
+  },
+  shareRowBtnBusy: { opacity: 0.7 },
+  shareRowBtnText: { fontSize: 14, fontWeight: '800' },
 });

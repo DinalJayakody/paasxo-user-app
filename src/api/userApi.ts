@@ -15,6 +15,9 @@ export interface UpdateProfilePayload {
   sports?: string[];
   skillLevel?: string;
   locationAccess?: boolean;
+  // Optional. Enables a real per-user calorie estimate on Activity sessions —
+  // see activityMath.ts's calcCalories and User.weightKg on the backend.
+  weightKg?: number;
   profileImage?: ProfileImageAsset;
 }
 
@@ -34,6 +37,7 @@ export const userApi = {
     if (payload.bio !== undefined) formData.append('bio', payload.bio);
     if (payload.skillLevel !== undefined) formData.append('skillLevel', payload.skillLevel);
     if (payload.locationAccess !== undefined) formData.append('locationAccess', String(payload.locationAccess));
+    if (payload.weightKg !== undefined) formData.append('weightKg', String(payload.weightKg));
     payload.sports?.forEach((sport) => formData.append('sports', sport));
     if (payload.profileImage) {
       formData.append('profileImage', {

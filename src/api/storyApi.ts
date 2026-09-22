@@ -78,10 +78,13 @@ export const storyApi = {
     if (params.audioVolume != null) formData.append('audioVolume', String(params.audioVolume));
     // Boomerang processing (server-side ffmpeg) adds real time on top of the
     // upload itself, on top of the same real-network timeout issue reels had.
+    // Video stories can be just as large as reels (see reelApi.ts's
+    // createReel for why 300s), so match it here rather than the 180s used
+    // for image-only uploads.
     const { data } = await axiosInstance.post(ENDPOINTS.STORIES.CREATE, formData, {
       // No explicit Content-Type — see socialMediaApi.ts's createPost for why
       // setting a boundary-less "multipart/form-data" here breaks uploads.
-      timeout: 180000,
+      timeout: params.mediaType === 'VIDEO' ? 300000 : 180000,
     });
     return data;
   },

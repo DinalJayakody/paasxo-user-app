@@ -12,9 +12,6 @@ export interface RoutePoint {
   altitudeMeters?: number;
 }
 
-// No calorie field — there's no legitimate per-user calculation in place
-// (would need real body weight + pace-varying MET, neither of which exist),
-// so the feature was removed rather than shipped with a fabricated number.
 export interface StoredActivity {
   localId: string;
   serverId?: string;
@@ -32,12 +29,113 @@ export interface StoredActivity {
   elevationLossMeters: number;
   // Null when the device's pedometer was unavailable/denied for this session.
   stepCount: number | null;
+  // Null unless the user had a weight on file when this was recorded — see
+  // activityMath.ts's calcCalories. Never fabricated from duration alone.
+  calories: number | null;
+  // Personal-best inputs for this activity — see activityMath.ts's
+  // bestSplitPaceSecPerKm/bestSplitSpeedKmh/fastest400mSeconds.
+  bestSplitPaceSecPerKm: number | null;
+  bestSplitSpeedKmh: number | null;
+  best400mSeconds: number | null;
   splits: LiveSplit[];
   routeCoordinates: RoutePoint[];
   startLatitude: number;
   startLongitude: number;
   endLatitude?: number;
   endLongitude?: number;
+}
+
+// Present only when the activity belongs to someone other than the current
+// user (a friend's shared activity, viewed via getById or getUserSummary) —
+// undefined on your own activities.
+export interface ActivityWithAuthor extends StoredActivity {
+  authorDisplayName?: string;
+  authorProfileImageUrl?: string;
+}
+
+export interface ActivityPersonalBests {
+  activityCount: number;
+  totalDistanceMeters: number;
+  totalDurationSeconds: number;
+  fastestSplitPaceSecPerKm: number | null;
+  fastestSplitSpeedKmh: number | null;
+  fastest400mSeconds: number | null;
+  longestDistanceMeters: number;
+}
+
+export interface ActivitySummary {
+  userId: string;
+  displayName: string;
+  profileImageUrl: string | null;
+  // Keyed by ActivityType ('WALK' | 'RUN' | 'CYCLING') — absent for a type
+  // the user has never recorded.
+  bests: Partial<Record<ActivityType, ActivityPersonalBests>>;
+  recentActivities: ActivityWithAuthor[];
+}
+
+function fromActivityResponse(d: any): ActivityWithAuthor {
+  return {
+    localId: d.id ?? d.localId,
+    serverId: d.id,
+    type: d.type === 'CYCLE' ? 'CYCLING' : d.type,
+    title: d.title,
+    startTime: d.startTime,
+    endTime: d.endTime,
+    durationSeconds: d.durationSeconds,
+    distanceMeters: d.distanceMeters,
+    avgSpeedKmh: d.avgSpeedKmh,
+    maxSpeedKmh: d.maxSpeedKmh,
+    avgPaceSecPerKm: d.avgPaceSecPerKm ?? null,
+    elevationGainMeters: d.elevationGainMeters,
+    elevationLossMeters: d.elevationLossMeters ?? 0,
+    stepCount: d.stepCount ?? null,
+    calories: d.calories ?? null,
+    bestSplitPaceSecPerKm: d.bestSplitPaceSecPerKm ?? null,
+    bestSplitSpeedKmh: d.bestSplitSpeedKmh ?? null,
+    best400mSeconds: d.best400mSeconds ?? null,
+    splits: (d.splits ?? []).map((s: any) => ({
+      index: s.index,
+      durationSeconds: s.durationSeconds,
+      paceSecPerKm: s.paceSecPerKm ?? null,
+      avgSpeedKmh: s.avgSpeedKmh,
+    })),
+    routeCoordinates: (d.route ?? d.routeCoordinates ?? []).map((p: any) => ({
+      latitude: p.latitude,
+      longitude: p.longitude,
+      timestamp: p.timestampMillis ?? p.timestamp,
+      speedKmh: p.speedKmh ?? undefined,
+      altitudeMeters: p.altitudeMeters ?? undefined,
+    })),
+    startLatitude: d.startLatitude,
+    startLongitude: d.startLongitude,
+    endLatitude: d.endLatitude,
+    endLongitude: d.endLongitude,
+    authorDisplayName: d.authorDisplayName ?? undefined,
+    authorProfileImageUrl: d.authorProfileImageUrl ?? undefined,
+  };
+}
+
+/**
+ * Public link shared externally (WhatsApp/etc) and baked into the share card
+ * image (see ActivityShareCard) — opens app/activity/[id].tsx, which the
+ * existing Expo web export (see vercel.json) already serves at this same
+ * path on the web build, so the link works as a browser fallback even
+ * without the app installed.
+ *
+ * ASSUMES www.paasxo.com is where that web build is actually deployed —
+ * it's the one domain confirmed elsewhere in this codebase (see
+ * endpoints.ts's HOSTINGER_URL), but nginx.conf (mobile-app-paasxo repo)
+ * only proxies /api/ on this domain today, nothing routes "/" to the web
+ * app yet. Update this constant if the real web deployment is at a
+ * different host, and see this app's own deployment docs for wiring one up
+ * if it isn't already. For the link to open the APP directly (not just a
+ * mobile browser) when tapped, iOS Universal Links / Android App Links also
+ * need to be configured (associated domains entitlement + a hosted
+ * apple-app-site-association / assetlinks.json) — not set up by this change.
+ */
+const WEB_APP_BASE_URL = 'https://www.paasxo.com';
+export function activityShareUrl(serverId: string): string {
+  return `${WEB_APP_BASE_URL}/activity/${serverId}`;
 }
 
 const STORAGE_KEY = '@paasxo:activities';
@@ -91,6 +189,10 @@ export const activityApi = {
         elevationGainMeters: activity.elevationGainMeters,
         elevationLossMeters: activity.elevationLossMeters,
         stepCount: activity.stepCount,
+        calories: activity.calories,
+        bestSplitPaceSecPerKm: activity.bestSplitPaceSecPerKm,
+        bestSplitSpeedKmh: activity.bestSplitSpeedKmh,
+        best400mSeconds: activity.best400mSeconds,
         startLatitude: activity.startLatitude,
         startLongitude: activity.startLongitude,
         endLatitude: activity.endLatitude,
@@ -119,41 +221,41 @@ export const activityApi = {
     try {
       const { data } = await axiosInstance.get('/activities/my');
       const items: any[] = Array.isArray(data) ? data : (data?.content ?? []);
-      return items.map((d: any) => ({
-        localId: d.id ?? d.localId,
-        serverId: d.id,
-        type: d.type === 'CYCLE' ? 'CYCLING' : d.type,
-        title: d.title,
-        startTime: d.startTime,
-        endTime: d.endTime,
-        durationSeconds: d.durationSeconds,
-        distanceMeters: d.distanceMeters,
-        avgSpeedKmh: d.avgSpeedKmh,
-        maxSpeedKmh: d.maxSpeedKmh,
-        avgPaceSecPerKm: d.avgPaceSecPerKm ?? null,
-        elevationGainMeters: d.elevationGainMeters,
-        elevationLossMeters: d.elevationLossMeters ?? 0,
-        stepCount: d.stepCount ?? null,
-        splits: (d.splits ?? []).map((s: any) => ({
-          index: s.index,
-          durationSeconds: s.durationSeconds,
-          paceSecPerKm: s.paceSecPerKm ?? null,
-          avgSpeedKmh: s.avgSpeedKmh,
-        })),
-        routeCoordinates: (d.route ?? d.routeCoordinates ?? []).map((p: any) => ({
-          latitude: p.latitude,
-          longitude: p.longitude,
-          timestamp: p.timestampMillis ?? p.timestamp,
-          speedKmh: p.speedKmh ?? undefined,
-          altitudeMeters: p.altitudeMeters ?? undefined,
-        })),
-        startLatitude: d.startLatitude,
-        startLongitude: d.startLongitude,
-        endLatitude: d.endLatitude,
-        endLongitude: d.endLongitude,
-      }));
+      return items.map(fromActivityResponse);
     } catch {
       return [];
+    }
+  },
+
+  /**
+   * Not ownership-restricted server-side — also resolves a friend's shared
+   * activity (e.g. opened via a paasxo.com/activity/{id} link), gated by the
+   * backend's own follow/private-account check. Returns null both when the
+   * activity doesn't exist and when the viewer isn't allowed to see it
+   * (same as the backend, which doesn't distinguish the two either).
+   */
+  async getById(serverId: string): Promise<ActivityWithAuthor | null> {
+    try {
+      const { data } = await axiosInstance.get(`/activities/${serverId}`);
+      return fromActivityResponse(data);
+    } catch {
+      return null;
+    }
+  },
+
+  /** Powers a profile's Stats tab — own or a friend's. See ActivitySummary. */
+  async getUserSummary(firebaseUid: string): Promise<ActivitySummary | null> {
+    try {
+      const { data } = await axiosInstance.get(`/activities/user/${firebaseUid}/summary`);
+      return {
+        userId: data.userId,
+        displayName: data.displayName,
+        profileImageUrl: data.profileImageUrl ?? null,
+        bests: data.bests ?? {},
+        recentActivities: (data.recentActivities ?? []).map(fromActivityResponse),
+      };
+    } catch {
+      return null;
     }
   },
 

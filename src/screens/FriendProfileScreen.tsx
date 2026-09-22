@@ -11,6 +11,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, MoreVertical, Share2, MessageCircle, Lock, Flag, UserX, UserCheck, ShieldOff } from 'lucide-react-native';
+import { activityApi, ActivitySummary } from '../api/activityApi';
+import { ActivityStatsSection } from '../components/activity/ActivityStatsSection';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
@@ -164,17 +166,41 @@ export default function FriendProfileScreen() {
     fetchReels();
   }, [selectedTab, reelsLoaded, userId, fetchReels]);
 
+  // Walk/Run/Cycling activity summary — same lazy pattern as Reels. The
+  // backend (ActivityService#getUserSummary) is what actually enforces
+  // whether this friend's activities are visible to the viewer (private
+  // account + not an accepted follower = empty bests/recentActivities, not
+  // an error), same rule as their posts.
+  const [activitySummary, setActivitySummary] = useState<ActivitySummary | null>(null);
+  const [activitySummaryLoading, setActivitySummaryLoading] = useState(false);
+  const [activitySummaryLoaded, setActivitySummaryLoaded] = useState(false);
+  const fetchActivitySummary = React.useCallback(async () => {
+    if (!userId) return;
+    setActivitySummaryLoading(true);
+    try {
+      setActivitySummary(await activityApi.getUserSummary(userId as string));
+    } finally {
+      setActivitySummaryLoading(false);
+      setActivitySummaryLoaded(true);
+    }
+  }, [userId]);
+  useEffect(() => {
+    if (selectedTab !== 'Stats' || activitySummaryLoaded || !userId) return;
+    fetchActivitySummary();
+  }, [selectedTab, activitySummaryLoaded, userId, fetchActivitySummary]);
+
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
       const tasks = [fetchProfile(), fetchPosts()];
       if (selectedTab === 'Reels') tasks.push(fetchReels());
+      if (selectedTab === 'Stats') tasks.push(fetchActivitySummary());
       await Promise.all(tasks);
     } finally {
       setRefreshing(false);
     }
-  }, [fetchProfile, fetchPosts, fetchReels, selectedTab]);
+  }, [fetchProfile, fetchPosts, fetchReels, fetchActivitySummary, selectedTab]);
 
   const handleFollowToggle = async () => {
     try {
@@ -329,9 +355,17 @@ export default function FriendProfileScreen() {
   };
 
   const renderStatsTab = () => (
-    <View style={styles.statsSportBadge}>
-      <Text style={styles.statsSportEmoji}>{sportEmoji}</Text>
-      <Text style={[styles.statsSportLabel, { color: sportColor }]}>{sport} STATISTICS</Text>
+    <View>
+      <ActivityStatsSection
+        summary={activitySummary}
+        loading={activitySummaryLoading}
+        loaded={activitySummaryLoaded}
+        colors={colors}
+      />
+      <View style={styles.statsSportBadge}>
+        <Text style={styles.statsSportEmoji}>{sportEmoji}</Text>
+        <Text style={[styles.statsSportLabel, { color: sportColor }]}>{sport} STATISTICS</Text>
+      </View>
     </View>
   );
 

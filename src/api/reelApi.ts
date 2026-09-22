@@ -58,15 +58,20 @@ export const reelApi = {
       audioVolume: params.audioVolume,
     };
     formData.append('request', JSON.stringify(request));
-    // Real video uploads over Wi-Fi can take far longer than the app's default
-    // 15s API timeout (which is fine for JSON calls but was silently killing
-    // large uploads from physical devices — worked "instantly" on emulator's
-    // loopback network, timed out on real Wi-Fi). 3 minutes covers a full
-    // 180s/200MB reel with room to spare.
+    // Real video uploads over Wi-Fi/cellular can take far longer than the
+    // app's default 15s API timeout (which is fine for JSON calls but was
+    // silently killing large uploads from physical devices — worked
+    // "instantly" on emulator's loopback network, timed out on real Wi-Fi).
+    // Reels carry the biggest payloads of any upload in the app (raw
+    // pre-compression video, up to the low hundreds of MB) and are the most
+    // likely to land on a slow/throttled mobile connection, so this gets
+    // more headroom than the 180s used for posts/stories: 5 minutes covers
+    // a full up-to-200MB reel even over a slow upload link, plus the
+    // server's own compression + R2 upload time on top.
     const { data } = await axiosInstance.post(ENDPOINTS.REELS.CREATE, formData, {
       // No explicit Content-Type — see socialMediaApi.ts's createPost for why
       // setting a boundary-less "multipart/form-data" here breaks uploads.
-      timeout: 180000,
+      timeout: 300000,
     });
     return data;
   },

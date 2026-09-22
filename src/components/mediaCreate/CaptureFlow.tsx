@@ -47,12 +47,12 @@ import { ThemeColors } from '../../styles/colors';
 import { useTheme } from '../../context/ThemeContext';
 import { audioApi, AudioTrack } from '../../api/audioApi';
 import { goBack } from '../../utils/navigation';
+import { prepareImageForUpload } from '../../utils/mediaCompression';
 
 // Platform-safe camera / native-module imports
 let CameraView: any = null;
 let useCameraPermissions: any = null;
 let useMicrophonePermissions: any = null;
-let ImageManipulator: any = null;
 let VideoThumbnails: any = null;
 let useVideoPlayer: any = null;
 let VideoView: any = null;
@@ -64,9 +64,6 @@ if (Platform.OS !== 'web') {
     CameraView = cam.CameraView;
     useCameraPermissions = cam.useCameraPermissions;
     useMicrophonePermissions = cam.useMicrophonePermissions;
-  } catch {}
-  try {
-    ImageManipulator = require('expo-image-manipulator');
   } catch {}
   try {
     VideoThumbnails = require('expo-video-thumbnails');
@@ -486,17 +483,9 @@ export function CaptureFlow({
   const takePicture = async () => {
     if (!cameraRef.current) return;
     try {
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.75, base64: false });
-      let uri = photo.uri;
-      if (ImageManipulator) {
-        const result = await ImageManipulator.manipulateAsync(
-          uri,
-          [{ resize: { width: 720 } }],
-          { compress: 0.72, format: ImageManipulator.SaveFormat.JPEG }
-        );
-        uri = result.uri;
-      }
-      setCapturedUri(uri);
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.9, base64: false });
+      const prepared = await prepareImageForUpload(photo.uri, photo.width, photo.height);
+      setCapturedUri(prepared.uri);
       setCapturedMime('image/jpeg');
       setCapturedType('IMAGE');
       setCapturedDuration(5);
@@ -617,20 +606,19 @@ export function CaptureFlow({
       const asset = result.assets[0];
       let uri = asset.uri;
       const isVid = asset.type === 'video';
-      if (!isVid && ImageManipulator) {
-        const c = await ImageManipulator.manipulateAsync(
-          uri,
-          [{ resize: { width: 720 } }],
-          { compress: 0.72, format: ImageManipulator.SaveFormat.JPEG }
-        );
-        uri = c.uri;
+      if (!isVid) {
+        const prepared = await prepareImageForUpload(uri, asset.width, asset.height);
+        uri = prepared.uri;
       }
       setCapturedUri(uri);
-      // Picked files aren't always mp4/jpeg (a .mov from an iPhone, a .heic
-      // photo, etc.) — trust the asset's own reported mimeType first, since
-      // mislabeling it here doesn't fail the upload but does break later
-      // playback/decoding of whatever actually got uploaded.
-      setCapturedMime(inferMimeType(asset, isVid));
+      // Picked video files aren't always mp4 (a .mov from an iPhone, etc.) —
+      // trust the asset's own reported mimeType first, since mislabeling it
+      // here doesn't fail the upload but does break later playback/decoding
+      // of whatever actually got uploaded. Images always go through
+      // prepareImageForUpload above, which re-encodes to JPEG regardless of
+      // the source format (a .heic original included), so the declared type
+      // must match that rather than the original asset's mimeType.
+      setCapturedMime(isVid ? inferMimeType(asset, isVid) : 'image/jpeg');
       setCapturedType(isVid ? 'VIDEO' : 'IMAGE');
       setCapturedDuration(isVid && asset.duration ? Math.min(Math.ceil(asset.duration / 1000), maxVideoSeconds) : 5);
       setThumbnailUri(undefined);

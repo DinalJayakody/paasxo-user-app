@@ -26,6 +26,28 @@ import {
 } from '../utils/activityMath';
 import { ActivityType, RoutePoint } from '../api/activityApi';
 
+/**
+ * expo-location's requestBackgroundPermissionsAsync() has a known edge case
+ * on iOS: whether it actually shows the "Change to Always Allow?" upgrade
+ * dialog is entirely OS-timed, not app-timed, and if iOS declines to show
+ * one, the native promise can simply never settle. Without a timeout, that
+ * hangs the whole start() chain forever — with the countdown screen frozen
+ * on whatever it last rendered ("1", the number right before beginTracking()
+ * calls start()), which read as "the countdown gets stuck at 1". Background
+ * permission is already optional/best-effort here (see start()'s comment),
+ * so timing out is treated exactly like a denial — foreground-only tracking
+ * still proceeds either way.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timed out')), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
 const DRAIN_INTERVAL_MS = 2000;
 const NOTIFICATION_UPDATE_INTERVAL_MS = 5000;
 // Same GPS-noise sanity filter the previous implementation used: reject a
@@ -215,19 +237,22 @@ export function useActivityTracking(activityType: ActivityType) {
     }
   }, []);
 
-  const start = useCallback(async (): Promise<boolean> => {
+  const start = useCallback(async (): Promise<{ started: boolean; backgroundGranted: boolean }> => {
     const fg = await Location.requestForegroundPermissionsAsync();
-    if (fg.status !== 'granted') return false;
+    if (fg.status !== 'granted') return { started: false, backgroundGranted: false };
 
     // Best-effort — this is what "Always" (background) access needs on iOS
     // for tracking to survive the phone locking, but a denial never blocks
     // starting the session; it just falls back to foreground-only delivery.
+    // Timeout-guarded — see withTimeout's doc comment above for why this
+    // specific call can otherwise hang start() forever.
     let backgroundGranted = false;
     try {
-      const bg = await Location.requestBackgroundPermissionsAsync();
+      const bg = await withTimeout(Location.requestBackgroundPermissionsAsync(), 6000);
       backgroundGranted = bg.status === 'granted';
     } catch {
-      // Not supported on this platform/OS version — proceed foreground-only.
+      // Not supported on this platform/OS version, denied, or timed out —
+      // proceed foreground-only.
     }
 
     await clearLocationBuffer();
@@ -243,13 +268,39 @@ export function useActivityTracking(activityType: ActivityType) {
     startTimeRef.current = new Date();
     setStats({ ...emptyStats(), backgroundPermissionGranted: backgroundGranted });
 
-    await Location.startLocationUpdatesAsync(ACTIVITY_LOCATION_TASK, locationTaskOptions);
+    // Defensive: if a previous session ended abnormally (app killed/crashed
+    // while ACTIVE, so stopLocationAndTimers's own stop() never ran) the OS
+    // task can still be registered from last time. Starting it again while
+    // it's already running has been observed to throw on some expo-location/
+    // Android combinations rather than just updating in place, which — with
+    // no try/catch around it before this fix — surfaced as the generic
+    // "Couldn't start tracking" alert with no way to tell what actually
+    // failed. Clearing any stale registration first makes this a no-op in
+    // the normal case and fixes the stale-task case outright.
+    try {
+      if (await Location.hasStartedLocationUpdatesAsync(ACTIVITY_LOCATION_TASK)) {
+        await Location.stopLocationUpdatesAsync(ACTIVITY_LOCATION_TASK);
+      }
+    } catch {
+      // Nothing registered — fine, proceed to start fresh below.
+    }
+
+    try {
+      await Location.startLocationUpdatesAsync(ACTIVITY_LOCATION_TASK, locationTaskOptions);
+    } catch (e: any) {
+      // Rethrown with the real underlying message attached (instead of
+      // letting a bare native error surface as an unhelpful generic
+      // failure) — see ActivityTrackerScreen.tsx's beginTracking, which
+      // shows err.message directly so this is diagnosable on-screen without
+      // needing device logs.
+      throw new Error(`Failed to start location updates: ${e?.message ?? String(e)}`);
+    }
     startTimers();
     updateNotification(false);
     await startPedometer();
 
     setPhase('ACTIVE');
-    return true;
+    return { started: true, backgroundGranted };
   }, [activityType, startTimers, updateNotification, startPedometer]);
 
   const pause = useCallback(async () => {

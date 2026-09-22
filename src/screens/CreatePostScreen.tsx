@@ -48,6 +48,7 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { SearchBar } from '../components/SearchBar';
 import ScreenGlow from '../components/ScreenGlow';
 import { goBack } from '../utils/navigation';
+import { prepareImageForUpload } from '../utils/mediaCompression';
 
 export default function CreatePostScreen() {
   const { colors } = useTheme();
@@ -105,7 +106,7 @@ export default function CreatePostScreen() {
       });
 
     if (!result.canceled) {
-      setSelectedImage(result.assets[0]);
+      await applyPickedImage(result.assets[0]);
     }
   };
 
@@ -126,8 +127,27 @@ export default function CreatePostScreen() {
       });
 
     if (!result.canceled) {
-      setSelectedImage(result.assets[0]);
+      await applyPickedImage(result.assets[0]);
     }
+  };
+
+  // Resizes/recompresses a freshly picked or captured photo before it's held
+  // in state (and later uploaded) — see mediaCompression.ts for why. Runs for
+  // both the gallery and camera paths since either can hand back a full-size
+  // original (a 12MP+ HD/4K photo can be several MB to tens of MB otherwise).
+  const applyPickedImage = async (asset: ImagePicker.ImagePickerAsset) => {
+    const prepared = await prepareImageForUpload(asset.uri, asset.width, asset.height);
+    setSelectedImage({
+      ...asset,
+      uri: prepared.uri,
+      width: prepared.width ?? asset.width,
+      height: prepared.height ?? asset.height,
+      // prepareImageForUpload always re-encodes to JPEG regardless of the
+      // source format — keep the declared type in sync with the actual bytes
+      // so the backend doesn't try to decode e.g. a HEIC original as JPEG.
+      mimeType: 'image/jpeg',
+      fileName: asset.fileName?.replace(/\.[^.]+$/, '.jpg') ?? 'post.jpg',
+    });
   };
 
   // Debounced "Tag Players" search — waits 400ms after the user stops typing

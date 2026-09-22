@@ -39,6 +39,8 @@ import { PostGrid } from '../components/PostGrid';
 import { ReelGrid } from '../components/ReelGrid';
 import { PostSummary, ReelSummary } from '../types/api';
 import { reelApi } from '../api/reelApi';
+import { activityApi, ActivitySummary } from '../api/activityApi';
+import { ActivityStatsSection } from '../components/activity/ActivityStatsSection';
 import { FullScreenImageViewer } from '../components/FullScreenImageViewer';
 import { AvatarActionSheet } from '../components/AvatarActionSheet';
 import { LoadingScreen } from '../components/LoadingScreen';
@@ -249,17 +251,40 @@ export default function ProfileScreen() {
     fetchReels();
   }, [selectedTab, reelsLoaded, userId, fetchReels]);
 
+  // Walk/Run/Cycling activity summary (own Personal Bests + recent
+  // activities) shown in the Stats tab — same lazy-on-first-open pattern as
+  // Reels. Uses your own uid, so it's always the "self" branch of
+  // ActivityService#getUserSummary (no follow/private-account gate).
+  const [activitySummary, setActivitySummary] = useState<ActivitySummary | null>(null);
+  const [activitySummaryLoading, setActivitySummaryLoading] = useState(false);
+  const [activitySummaryLoaded, setActivitySummaryLoaded] = useState(false);
+  const fetchActivitySummary = React.useCallback(async () => {
+    if (!userId) return;
+    setActivitySummaryLoading(true);
+    try {
+      setActivitySummary(await activityApi.getUserSummary(userId));
+    } finally {
+      setActivitySummaryLoading(false);
+      setActivitySummaryLoaded(true);
+    }
+  }, [userId]);
+  useEffect(() => {
+    if (selectedTab !== 'Stats' || activitySummaryLoaded || !userId) return;
+    fetchActivitySummary();
+  }, [selectedTab, activitySummaryLoaded, userId, fetchActivitySummary]);
+
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
       const tasks = [fetchProfile(), fetchPosts()];
       if (selectedTab === 'Reels') tasks.push(fetchReels());
+      if (selectedTab === 'Stats') tasks.push(fetchActivitySummary());
       await Promise.all(tasks);
     } finally {
       setRefreshing(false);
     }
-  }, [fetchProfile, fetchPosts, fetchReels, selectedTab]);
+  }, [fetchProfile, fetchPosts, fetchReels, fetchActivitySummary, selectedTab]);
 
   const sport = useMemo(() => {
     const s = Array.isArray(user?.sport) ? user?.sport[0] : user?.sport;
@@ -366,6 +391,13 @@ export default function ProfileScreen() {
 
   const renderStatsTab = () => (
     <View>
+      <ActivityStatsSection
+        summary={activitySummary}
+        loading={activitySummaryLoading}
+        loaded={activitySummaryLoaded}
+        colors={colors}
+      />
+
       <View style={styles.statsSportBadge}>
         <Text style={styles.statsSportEmoji}>{sportEmoji}</Text>
         <Text style={[styles.statsSportLabel, { color: sportColor }]}>{sport} STATISTICS</Text>
@@ -660,7 +692,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   tabText: { fontSize: 13, fontWeight: '700', color: colors.neutral400 },
   tabUnderline: { marginTop: 4, width: 20, height: 3, borderRadius: 2 },
 
-  // Stats tab
   statsSportBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     marginHorizontal: 16, marginBottom: 16, backgroundColor: colors.cardBg,
