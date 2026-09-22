@@ -127,6 +127,20 @@ export default function ActivityHistoryScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<FilterType>('ALL');
 
+  // Best-effort retry for an activity that saved locally but never made it to
+  // the server — e.g. the device was offline right when the user tapped
+  // Save. Fire-and-forget: doesn't block the screen, and only runs when the
+  // user actually opens their history rather than on a timer/background
+  // task, so a device that's stayed offline for days doesn't retry on every
+  // app foreground regardless of whether anyone's looking.
+  const retryUnsyncedActivities = useCallback(async (local: StoredActivity[]) => {
+    const unsynced = local.filter((a) => !a.serverId);
+    for (const activity of unsynced) {
+      const serverId = await activityApi.syncToServer(activity);
+      if (serverId) await activityStorage.save({ ...activity, serverId });
+    }
+  }, []);
+
   const loadActivities = useCallback(async () => {
     const local = await activityStorage.getAll();
     const remote = await activityApi.getMyActivities();
@@ -140,7 +154,8 @@ export default function ActivityHistoryScreen() {
     merged.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
     setActivities(merged);
     setLoading(false);
-  }, []);
+    retryUnsyncedActivities(local);
+  }, [retryUnsyncedActivities]);
 
   useEffect(() => { loadActivities(); }, []);
 

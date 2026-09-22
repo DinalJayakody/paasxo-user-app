@@ -152,10 +152,24 @@ export const activityStorage = {
     }
   },
 
+  /**
+   * Upserts by localId — replaces an existing entry in place (preserving its
+   * position) rather than always prepending a new one. This matters for any
+   * caller that re-saves an already-saved activity to patch a field (e.g.
+   * ActivityDetailScreen's ensureServerId attaching a serverId once a
+   * previously-offline activity finally syncs) — prepending unconditionally
+   * would leave two entries with the same localId in storage, which then
+   * both surface as separate cards in ActivityHistoryScreen (its
+   * local+remote merge dedupes across sources by localId, but never within
+   * the local list itself).
+   */
   async save(activity: StoredActivity): Promise<void> {
     try {
       const existing = await activityStorage.getAll();
-      const updated = [activity, ...existing];
+      const index = existing.findIndex((a) => a.localId === activity.localId);
+      const updated = index >= 0
+        ? existing.map((a, i) => (i === index ? activity : a))
+        : [activity, ...existing];
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     } catch {}
   },
