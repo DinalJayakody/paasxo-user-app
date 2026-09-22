@@ -73,6 +73,7 @@ function personalBests(activities: StoredActivity[]) {
   let fastestKmSpeedKmh: number | null = null;
   let fastest400m: number | null = null;
   let longestDistM = 0;
+  let longestDurationS = 0;
   for (const a of activities) {
     if (a.bestSplitPaceSecPerKm != null && (fastestKmSecPerKm == null || a.bestSplitPaceSecPerKm < fastestKmSecPerKm)) {
       fastestKmSecPerKm = a.bestSplitPaceSecPerKm;
@@ -84,8 +85,9 @@ function personalBests(activities: StoredActivity[]) {
       fastest400m = a.best400mSeconds;
     }
     if (a.distanceMeters > longestDistM) longestDistM = a.distanceMeters;
+    if (a.durationSeconds > longestDurationS) longestDurationS = a.durationSeconds;
   }
-  return { fastestKmSecPerKm, fastestKmSpeedKmh, fastest400m, longestDistM };
+  return { fastestKmSecPerKm, fastestKmSpeedKmh, fastest400m, longestDistM, longestDurationS };
 }
 
 // Weekly totals
@@ -229,7 +231,8 @@ export default function ActivityHistoryScreen() {
                   <PbTile label="Fastest km" value={pb.fastestKmSpeedKmh != null ? `${pb.fastestKmSpeedKmh.toFixed(1)} km/h` : '—'} />
                 )}
                 <PbTile label="Fastest 400m" value={pb.fastest400m != null ? formatDuration(pb.fastest400m) : '—'} />
-                <PbTile label="Longest" value={pb.longestDistM > 0 ? formatDist(pb.longestDistM) : '—'} />
+                <PbTile label="Longest Distance" value={pb.longestDistM > 0 ? formatDist(pb.longestDistM) : '—'} />
+                <PbTile label="Longest Duration" value={pb.longestDurationS > 0 ? formatDuration(pb.longestDurationS) : '—'} />
               </View>
             </View>
           );
@@ -381,8 +384,11 @@ const styles = StyleSheet.create({
   },
   pbHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
   pbTitle: { fontSize: 13, fontWeight: '800', color: '#F59E0B' },
-  pbGrid: { flexDirection: 'row', gap: 10 },
-  pbTile: { flex: 1, backgroundColor: '#0F172A', borderRadius: 12, padding: 10, alignItems: 'center' },
+  pbGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  pbTile: {
+    flexBasis: '47%', flexGrow: 1,
+    backgroundColor: '#0F172A', borderRadius: 12, padding: 10, alignItems: 'center',
+  },
   pbTileValue: { fontSize: 15, fontWeight: '900', color: Colors.white },
   pbTileLabel: { fontSize: 10, fontWeight: '700', color: Colors.neutral500, marginTop: 3, textAlign: 'center' },
 

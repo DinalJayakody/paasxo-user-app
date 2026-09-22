@@ -26,6 +26,15 @@ import {
 } from '../utils/activityMath';
 import { ActivityType, RoutePoint } from '../api/activityApi';
 
+// Matches the emoji/label used in ActivityTrackerScreen.tsx's ACT config —
+// kept as its own small map here rather than importing that screen's config,
+// since this hook has no other dependency on screen-level UI code.
+const ACTIVITY_TYPE_LABEL: Record<ActivityType, string> = {
+  WALK: '🚶 Walk',
+  RUN: '🏃 Run',
+  CYCLING: '🚴 Cycle',
+};
+
 /**
  * expo-location's requestBackgroundPermissionsAsync() has a known edge case
  * on iOS: whether it actually shows the "Change to Always Allow?" upgrade
@@ -196,8 +205,12 @@ export function useActivityTracking(activityType: ActivityType) {
   const updateNotification = useCallback((paused: boolean) => {
     const distText = `${formatDist(distanceRef.current)}${distUnit(distanceRef.current)}`;
     const timeText = formatTime(elapsedRef.current);
-    showActivityNotification(paused ? 'PaasXO — Paused' : 'PaasXO — Tracking', `${timeText} · ${distText}`);
-  }, []);
+    const label = ACTIVITY_TYPE_LABEL[activityType];
+    showActivityNotification(
+      `${label} — ${paused ? 'Paused' : 'Tracking'}`,
+      `${timeText} · ${distText}`
+    );
+  }, [activityType]);
 
   const startTimers = useCallback(() => {
     drainIntervalRef.current = setInterval(drainAndProcess, DRAIN_INTERVAL_MS);

@@ -11,7 +11,10 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
-const NOTIFICATION_ID = 'paasxo-active-activity';
+// Exported so app/_layout.tsx's global notification-tap listener can tell
+// this notification apart from a push notification and route to the active
+// activity screen instead of the default /notifications feed.
+export const ACTIVITY_NOTIFICATION_ID = 'paasxo-active-activity';
 const CHANNEL_ID = 'activity-tracking';
 
 let channelReady = false;
@@ -38,11 +41,14 @@ export async function showActivityNotification(title: string, body: string): Pro
   try {
     await ensureChannel();
     await Notifications.scheduleNotificationAsync({
-      identifier: NOTIFICATION_ID,
+      identifier: ACTIVITY_NOTIFICATION_ID,
       content: {
         title,
         body,
         sound: false,
+        // Lets app/_layout.tsx's tap listener recognize this one without
+        // string-matching the identifier a second time.
+        data: { type: 'activity-tracking' },
         ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
       },
       trigger: null,
@@ -54,7 +60,7 @@ export async function showActivityNotification(title: string, body: string): Pro
 
 export async function dismissActivityNotification(): Promise<void> {
   try {
-    await Notifications.dismissNotificationAsync(NOTIFICATION_ID);
+    await Notifications.dismissNotificationAsync(ACTIVITY_NOTIFICATION_ID);
   } catch {
     // Nothing to dismiss / already gone — fine either way.
   }

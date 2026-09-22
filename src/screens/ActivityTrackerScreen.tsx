@@ -461,9 +461,13 @@ export default function ActivityTrackerScreen() {
         a.best400mSeconds != null && (min == null || a.best400mSeconds < min) ? a.best400mSeconds : min, null);
       if (prevBest == null || best400m < prevBest) records.push(`🔥 New fastest 400m: ${formatTime(best400m)}`);
     }
-    const prevLongest = priorSameType.reduce((max, a) => Math.max(max, a.distanceMeters), 0);
-    if (result.distanceMeters > prevLongest && priorSameType.length > 0) {
+    const prevLongestDist = priorSameType.reduce((max, a) => Math.max(max, a.distanceMeters), 0);
+    if (result.distanceMeters > prevLongestDist && priorSameType.length > 0) {
       records.push(`🏆 New longest ${ACT[actType].label.toLowerCase()}: ${formatDist(result.distanceMeters)}${distUnit(result.distanceMeters)}`);
+    }
+    const prevLongestDuration = priorSameType.reduce((max, a) => Math.max(max, a.durationSeconds), 0);
+    if (result.durationSeconds > prevLongestDuration && priorSameType.length > 0) {
+      records.push(`⏱️ New longest ${ACT[actType].label.toLowerCase()} duration: ${formatTime(result.durationSeconds)}`);
     }
     setNewRecords(records);
     setSavedServerId(null);

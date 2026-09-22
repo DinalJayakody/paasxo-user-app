@@ -7,6 +7,7 @@ import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { AuthProvider } from '@/src/context/AuthContext';
 import { ThemeProvider, useTheme } from '@/src/context/ThemeContext';
 import { configurePushNotificationHandler } from '@/src/lib/push';
+import { ACTIVITY_NOTIFICATION_ID } from '@/src/lib/activityNotification';
 // Registers the background GPS task (TaskManager.defineTask) at module
 // scope — this import's only purpose is that side effect. Must happen this
 // early so Expo can re-attach the task after the JS engine is torn down and
@@ -26,10 +27,17 @@ function RootLayoutNav() {
   // feed, which already knows how to deep-link every notification type from
   // its full matchSnapshot — the push payload itself only carries
   // type/bookingId/invitationId, not enough to replicate every one of those
-  // routes directly.
+  // routes directly. The one exception is the live activity-tracking
+  // notification (see activityNotification.ts) — that one isn't a push at
+  // all and has nothing to do with the notification feed, so it routes
+  // straight back to the tracker instead.
   useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener(() => {
-      router.push('/notifications' as any);
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      if (response.notification.request.identifier === ACTIVITY_NOTIFICATION_ID) {
+        router.push('/activity-tracker' as any);
+      } else {
+        router.push('/notifications' as any);
+      }
     });
     return () => sub.remove();
   }, [router]);

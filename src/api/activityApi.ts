@@ -61,6 +61,7 @@ export interface ActivityPersonalBests {
   fastestSplitSpeedKmh: number | null;
   fastest400mSeconds: number | null;
   longestDistanceMeters: number;
+  longestDurationSeconds: number;
 }
 
 export interface ActivitySummary {
