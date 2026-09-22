@@ -44,6 +44,7 @@ import ScreenGlow from '../components/ScreenGlow';
 import { PaasxoLogoLoader } from '../components/PaasxoLogoLoader';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import { useFloatingHeader } from '../hooks/useFloatingHeader';
 import { TournamentFeedCard, TournamentFeedItem } from '../components/TournamentFeedCard';
 import { bookingApi } from '../api/bookingApi';
 import { tournamentApi } from '../api/tournamentApi';
@@ -576,6 +577,13 @@ export default function HomeScreen() {
     }
   }, [loadMoreForActiveTab]);
 
+  // Doc section 1.4: header hides on scroll down, reappears on scroll up.
+  // onMainScroll (infinite-scroll pagination, above) still fires via this
+  // hook's listener option — see useFloatingHeader's doc comment for why
+  // that's threaded through rather than composed by hand here.
+  const HEADER_HEIGHT = 84;
+  const { translateY: headerTranslateY, onScroll: onFloatingScroll } = useFloatingHeader(HEADER_HEIGHT, onMainScroll);
+
   const loadTournaments = React.useCallback(async () => {
     setLoadingTournaments(true);
     try {
@@ -908,8 +916,16 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScreenGlow />
-      {/* Floating glass-gradient header */}
-      <Animated.View style={[styles.topHeaderShadow, { opacity: headerOpacity, transform: [{ scale: headerScale }] }]}>
+      {/* Floating glass-gradient header — absolutely positioned so it overlays
+          the scroll content (which reserves HEADER_HEIGHT of top padding,
+          see scrollContent below) rather than pushing it down; hiding it on
+          scroll-down then reveals more content instead of leaving a gap. */}
+      <Animated.View
+        style={[
+          styles.topHeaderShadow,
+          { opacity: headerOpacity, transform: [{ scale: headerScale }, { translateY: headerTranslateY }] },
+        ]}
+      >
         <View style={styles.topHeader}>
           <LinearGradient
             colors={[colors.primaryAccent, colors.primary, colors.primaryDark]}
@@ -955,11 +971,11 @@ export default function HomeScreen() {
       <PaasxoRefreshLogo refreshing={refreshing} />
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: navBarHeight + 18 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: HEADER_HEIGHT, paddingBottom: navBarHeight + 18 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        onScroll={onMainScroll}
-        scrollEventThrottle={100}
+        onScroll={onFloatingScroll}
+        scrollEventThrottle={16}
       >
         {/* Search + Filter — hidden on Walk/Run, which has no searchable feed */}
         {activeTab !== 'WALKING_RUNNING' && (
@@ -1474,6 +1490,9 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
 
   topHeaderShadow: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    zIndex: 20,
     marginHorizontal: 12,
     marginTop: 6,
     marginBottom: 2,
