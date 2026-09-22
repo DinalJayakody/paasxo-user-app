@@ -26,7 +26,13 @@ import {
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleAuthProvider, signInWithCredential, signInWithRedirect } from 'firebase/auth';
-import { AppleButton } from '@invertase/react-native-apple-authentication';
+// Lazy/conditional require, not a static import — this native module has no
+// web build, so a static import breaks `expo export --platform web` even
+// though the button below only ever renders when Sign in with Apple is
+// available (iOS). Same fix as appleSignIn.ts's appleAuth import.
+const AppleButton: any = Platform.OS === 'ios'
+  ? require('@invertase/react-native-apple-authentication').AppleButton
+  : null;
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';

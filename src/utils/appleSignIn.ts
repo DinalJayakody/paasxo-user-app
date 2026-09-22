@@ -1,12 +1,21 @@
 import { Platform } from 'react-native';
 import * as Crypto from 'expo-crypto';
-import { appleAuth } from '@invertase/react-native-apple-authentication';
 import { OAuthProvider, signInWithCredential, updateProfile } from 'firebase/auth';
 import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
 
 // Sign In with Apple only has a native implementation on iOS (Apple's
 // AuthenticationServices framework) - no Android/web support here.
 export const APPLE_SIGN_IN_AVAILABLE = Platform.OS === 'ios';
+
+// Lazy/conditional require rather than a static import: this native module
+// has no web build at all (not even a stub), so a static import breaks
+// `expo export --platform web` outright — Metro's web bundler tries to
+// resolve it regardless of whether performAppleSignIn ever actually runs on
+// web (it never does, guarded by APPLE_SIGN_IN_AVAILABLE below). Same
+// pattern CaptureFlow.tsx already uses for other native-only modules.
+const appleAuth = Platform.OS === 'ios'
+  ? require('@invertase/react-native-apple-authentication').appleAuth
+  : null;
 
 export interface AppleSignInResult {
   idToken: string;
@@ -22,6 +31,9 @@ export interface AppleSignInResult {
 // credential -> ID token) so the backend only ever has to verify one kind of
 // token regardless of provider.
 export async function performAppleSignIn(): Promise<AppleSignInResult> {
+  if (!appleAuth) {
+    throw new Error('Sign in with Apple is only available on iOS.');
+  }
   if (!FIREBASE_CONFIGURED) {
     throw new Error('Firebase is not configured yet.');
   }
