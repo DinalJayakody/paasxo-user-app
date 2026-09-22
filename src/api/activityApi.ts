@@ -64,6 +64,12 @@ export interface ActivityPersonalBests {
   longestDurationSeconds: number;
 }
 
+export interface ActivityPeriodProgress {
+  activityCount: number;
+  totalDistanceMeters: number;
+  totalDurationSeconds: number;
+}
+
 export interface ActivitySummary {
   userId: string;
   displayName: string;
@@ -72,6 +78,9 @@ export interface ActivitySummary {
   // the user has never recorded.
   bests: Partial<Record<ActivityType, ActivityPersonalBests>>;
   recentActivities: ActivityWithAuthor[];
+  // Rolling last-7-days / last-30-days totals, all types combined.
+  weeklyProgress: ActivityPeriodProgress;
+  monthlyProgress: ActivityPeriodProgress;
 }
 
 function fromActivityResponse(d: any): ActivityWithAuthor {
@@ -268,6 +277,8 @@ export const activityApi = {
         profileImageUrl: data.profileImageUrl ?? null,
         bests: data.bests ?? {},
         recentActivities: (data.recentActivities ?? []).map(fromActivityResponse),
+        weeklyProgress: data.weeklyProgress ?? { activityCount: 0, totalDistanceMeters: 0, totalDurationSeconds: 0 },
+        monthlyProgress: data.monthlyProgress ?? { activityCount: 0, totalDistanceMeters: 0, totalDurationSeconds: 0 },
       };
     } catch {
       return null;

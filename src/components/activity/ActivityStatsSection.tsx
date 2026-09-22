@@ -1,9 +1,9 @@
 import React from 'react';
 import { View, Text, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronRight } from 'lucide-react-native';
+import { ChevronRight, TrendingUp } from 'lucide-react-native';
 import { ThemeColors } from '../../styles/colors';
-import { ActivitySummary } from '../../api/activityApi';
+import { ActivitySummary, ActivityPeriodProgress } from '../../api/activityApi';
 import { formatDist, distUnit, formatPace, formatTime as formatDuration } from '../../utils/activityMath';
 
 const ACT_TYPE_LABEL: Record<string, string> = { WALK: '🚶 Walk', RUN: '🏃 Run', CYCLING: '🚴 Cycle' };
@@ -41,6 +41,12 @@ export function ActivityStatsSection({ summary, loading, loaded, colors }: Activ
   return (
     <View style={styles.section}>
       <Text style={styles.title}>Activity Stats</Text>
+
+      <View style={styles.progressRow}>
+        <ProgressCard styles={styles} colors={colors} label="This Week" progress={summary?.weeklyProgress} />
+        <ProgressCard styles={styles} colors={colors} label="This Month" progress={summary?.monthlyProgress} />
+      </View>
+
       {ACT_TYPE_ORDER.map((type) => {
         const b = bests[type];
         if (!b) return null;
@@ -88,6 +94,36 @@ export function ActivityStatsSection({ summary, loading, loaded, colors }: Activ
   );
 }
 
+function ProgressCard({
+  label, progress, styles, colors,
+}: {
+  label: string;
+  progress: ActivityPeriodProgress | undefined;
+  styles: ReturnType<typeof createStyles>;
+  colors: ThemeColors;
+}) {
+  const count = progress?.activityCount ?? 0;
+  return (
+    <View style={styles.progressCard}>
+      <View style={styles.progressHeader}>
+        <TrendingUp color={colors.primary} size={13} strokeWidth={2.5} />
+        <Text style={styles.progressLabel}>{label}</Text>
+      </View>
+      {count > 0 ? (
+        <>
+          <Text style={styles.progressValue}>
+            {formatDist(progress!.totalDistanceMeters)}
+            <Text style={styles.progressUnit}> {distUnit(progress!.totalDistanceMeters)}</Text>
+          </Text>
+          <Text style={styles.progressSub}>{count} {count === 1 ? 'session' : 'sessions'} · {formatDuration(progress!.totalDurationSeconds)}</Text>
+        </>
+      ) : (
+        <Text style={styles.progressEmpty}>No activity yet</Text>
+      )}
+    </View>
+  );
+}
+
 function MiniStat({ label, value, styles }: { label: string; value: string; styles: ReturnType<typeof createStyles> }) {
   return (
     <View style={styles.miniStat}>
@@ -100,6 +136,17 @@ function MiniStat({ label, value, styles }: { label: string; value: string; styl
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
   section: { marginHorizontal: 16, marginBottom: 18, marginTop: 8 },
   title: { fontSize: 13, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.8, marginBottom: 10 },
+  progressRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  progressCard: {
+    flex: 1, backgroundColor: colors.cardBg, borderRadius: 14, padding: 14,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
+  },
+  progressHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 8 },
+  progressLabel: { fontSize: 11, fontWeight: '800', color: colors.textSecondary },
+  progressValue: { fontSize: 20, fontWeight: '900', color: colors.text },
+  progressUnit: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
+  progressSub: { fontSize: 11, color: colors.textMuted, marginTop: 3, fontWeight: '600' },
+  progressEmpty: { fontSize: 12, color: colors.textMuted, marginTop: 4 },
   typeCard: {
     backgroundColor: colors.cardBg, borderRadius: 14, padding: 14, marginBottom: 10,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
