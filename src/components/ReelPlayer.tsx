@@ -16,16 +16,10 @@ import { reelApi } from '../api/reelApi';
 import { parseMediaUrl } from '../utils/postFormat';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
+import { LoopingVideo } from './LoopingVideo';
 
-let useVideoPlayer: any = null;
-let VideoView: any = null;
 let Audio: any = null;
 if (Platform.OS !== 'web') {
-  try {
-    const vid = require('expo-video');
-    useVideoPlayer = vid.useVideoPlayer;
-    VideoView = vid.VideoView;
-  } catch {}
   try {
     Audio = require('expo-av').Audio;
   } catch {}
@@ -47,28 +41,6 @@ interface ReelPlayerProps {
   visible: boolean;
   reel: ReelSummary | null;
   onClose: () => void;
-}
-
-function LoopingVideo({ uri, muted, styles }: { uri: string; muted: boolean; styles: ReturnType<typeof createStyles> }) {
-  if (!useVideoPlayer || !VideoView) {
-    return (
-      <View style={[StyleSheet.absoluteFillObject, styles.videoFallback]}>
-        <Text style={styles.videoFallbackText}>Video unavailable on this platform</Text>
-      </View>
-    );
-  }
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const player = useVideoPlayer({ uri }, (p: any) => {
-    p.loop = true;
-    p.muted = muted;
-    p.play();
-  });
-  useEffect(() => {
-    player.muted = muted;
-  }, [muted, player]);
-  return (
-    <VideoView player={player} style={StyleSheet.absoluteFillObject} contentFit="cover" nativeControls={false} />
-  );
 }
 
 export function ReelPlayer({ visible, reel, onClose }: ReelPlayerProps) {
@@ -159,7 +131,7 @@ export function ReelPlayer({ visible, reel, onClose }: ReelPlayerProps) {
       <StatusBar hidden />
       <View style={styles.root}>
         {mediaUri ? (
-          <LoopingVideo uri={mediaUri} muted={!!reel.audioTrackUrl} styles={styles} />
+          <LoopingVideo uri={mediaUri} muted={!!reel.audioTrackUrl} />
         ) : (
           <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#1a1a2e' }]} />
         )}
@@ -218,8 +190,6 @@ export function ReelPlayer({ visible, reel, onClose }: ReelPlayerProps) {
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
-  videoFallback: { backgroundColor: '#111', alignItems: 'center', justifyContent: 'center' },
-  videoFallbackText: { color: '#fff', fontSize: 13 },
 
   stickerPos: { position: 'absolute' },
   stickerCaptionText: {

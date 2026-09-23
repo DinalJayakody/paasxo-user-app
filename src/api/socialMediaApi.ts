@@ -10,6 +10,7 @@ export const socialMediaApi = {
         caption: payload.caption,
   sport: payload.sport,
         visibility: payload.visibility,
+        mediaType: payload.mediaType,
         locationName: payload.locationName,
         latitude: payload.latitude,
         longitude: payload.longitude,
@@ -24,6 +25,14 @@ export const socialMediaApi = {
       name: payload.media.fileName || 'post.jpg',
       type: payload.media.mimeType || 'image/jpeg',
     } as any);
+
+    if (payload.thumbnail) {
+      formData.append('thumbnail', {
+        uri: payload.thumbnail.uri,
+        name: payload.thumbnail.fileName || 'thumb.jpg',
+        type: payload.thumbnail.mimeType || 'image/jpeg',
+      } as any);
+    }
 
     const response = await axiosInstance.post(
       ENDPOINTS.SOCIAL.CREATE_POST,

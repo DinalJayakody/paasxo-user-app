@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, ViewToken } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Heart, MessageCircle, X } from 'lucide-react-native';
+import { Heart, MessageCircle, Play, X } from 'lucide-react-native';
 import { Colors, ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { PostSummary } from '../types/api';
@@ -23,7 +23,10 @@ interface PostGridProps {
 
 function GridTile({ post, onPress, styles }: { post: PostSummary; onPress: () => void; styles: ReturnType<typeof createStyles> }) {
   const interaction = usePostInteraction(post);
-  const imgUri = parseMediaUrl(post.mediaUrl);
+  const isVideo = post.mediaType === 'VIDEO';
+  // A video's mediaUrl is the video FILE, not an image — the grid tile needs
+  // the poster-frame thumbnail instead, same as ReelGrid's tiles.
+  const imgUri = isVideo ? parseMediaUrl(post.thumbnailUrl) : parseMediaUrl(post.mediaUrl);
 
   return (
     <View style={styles.tileWrap}>
@@ -33,6 +36,11 @@ function GridTile({ post, onPress, styles }: { post: PostSummary; onPress: () =>
         ) : (
           <View style={[styles.tileImage, styles.tilePlaceholder]}>
             <Text style={styles.tilePlaceholderText} numberOfLines={3}>{post.caption || 'Post'}</Text>
+          </View>
+        )}
+        {isVideo && (
+          <View style={styles.tilePlayBadge}>
+            <Play color={Colors.white} size={18} strokeWidth={2.5} fill={Colors.white} />
           </View>
         )}
         <View style={styles.tileMeta}>
@@ -149,6 +157,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   tileImage: { width: '100%', height: '100%' },
   tilePlaceholder: { alignItems: 'center', justifyContent: 'center', padding: 8 },
   tilePlaceholderText: { fontSize: 11, color: colors.textSecondary, textAlign: 'center' },
+  tilePlayBadge: {
+    position: 'absolute', top: '50%', left: '50%',
+    marginTop: -14, marginLeft: -14,
+    opacity: 0.9,
+  },
   tileMeta: {
     position: 'absolute', bottom: 6, left: 6,
     flexDirection: 'row', alignItems: 'center', gap: 4,

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Alert, View, Text, Image, Pressable, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Heart, MessageCircle, Share2, Bookmark, Camera, Sparkles, MoreHorizontal, Flag, UserX, Trophy, ChevronRight } from 'lucide-react-native';
+import { Heart, MessageCircle, Share2, Bookmark, Camera, Sparkles, MoreHorizontal, Flag, UserX, Trophy, ChevronRight, Play } from 'lucide-react-native';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -14,6 +14,7 @@ import { usePostInteraction, postInteractionStore } from '../stores/postInteract
 import { CommentSheet } from './CommentSheet';
 import { ActionMenuSheet } from './ActionMenuSheet';
 import { ReportSheet } from './ReportSheet';
+import { PostVideoPlayer } from './PostVideoPlayer';
 
 interface PostCardProps {
   post: PostSummary;
@@ -31,11 +32,14 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
   const [commentsVisible, setCommentsVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
   const [reportVisible, setReportVisible] = useState(false);
+  const [videoPlayerVisible, setVideoPlayerVisible] = useState(false);
 
   const avatarUri = resolveAvatarUri(post.authorProfileImageUrl, post.authorDisplayName);
   const imageUri = parseMediaUrl(post.mediaUrl);
+  const videoThumbUri = parseMediaUrl(post.thumbnailUrl);
   const isProfileUpdate = post.postType === 'PROFILE_PICTURE_UPDATE';
   const isTournamentAnnouncement = post.postType === 'TOURNAMENT_CREATED';
+  const isVideo = post.mediaType === 'VIDEO';
   const isOwnPost = !!user?.firebaseUid && user.firebaseUid === post.authorId;
 
   const handleBlockAuthor = () => {
@@ -154,6 +158,15 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
           <Text style={styles.tournamentCardText}>View Tournament</Text>
           <ChevronRight color={colors.primary} size={18} strokeWidth={2.5} />
         </Pressable>
+      ) : isVideo ? (
+        (videoThumbUri || imageUri) && (
+          <Pressable onPress={() => setVideoPlayerVisible(true)} style={{ marginTop: 10 }}>
+            <Image source={{ uri: videoThumbUri || imageUri! }} style={[styles.postImage, { marginTop: 0 }]} />
+            <View style={styles.videoPlayBadge}>
+              <Play color={colors.white} size={22} strokeWidth={2.5} fill={colors.white} />
+            </View>
+          </Pressable>
+        )
       ) : (
         imageUri && <Image source={{ uri: imageUri }} style={styles.postImage} />
       )}
@@ -190,6 +203,9 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
       </View>
 
       <CommentSheet postId={post.id} visible={commentsVisible} onClose={() => setCommentsVisible(false)} />
+      {isVideo && (
+        <PostVideoPlayer visible={videoPlayerVisible} post={post} onClose={() => setVideoPlayerVisible(false)} />
+      )}
 
       {!isOwnPost && (
         <>
@@ -279,6 +295,13 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     height: 220,
     borderRadius: 14,
     marginTop: 10,
+  },
+  videoPlayBadge: {
+    position: 'absolute', top: '50%', left: '50%',
+    marginTop: -22, marginLeft: -22,
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center', justifyContent: 'center',
   },
 
   tournamentCard: {

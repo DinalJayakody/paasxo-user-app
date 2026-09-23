@@ -89,6 +89,7 @@ export interface PostSummary {
   authorProfileImageUrl?: string;
   caption?: string;
   mediaUrl?: string;
+  thumbnailUrl?: string;
   sport?: string;
   // 'PROFILE_PICTURE_UPDATE' for the auto-generated "updated their profile
   // picture" post (see backend SocialService.createProfilePictureUpdatePost);
@@ -98,6 +99,9 @@ export interface PostSummary {
   postType?: 'NORMAL' | 'PROFILE_PICTURE_UPDATE' | 'TOURNAMENT_CREATED';
   referenceId?: string;
   visibility?: 'public' | 'friends' | 'private';
+  // 'VIDEO' opens PostVideoPlayer (Reels-style fullscreen) instead of the
+  // inline <Image>; absent/'IMAGE' renders as a normal photo post.
+  mediaType?: 'IMAGE' | 'VIDEO';
   likeCount: number;
   commentCount: number;
   likedByCurrentUser: boolean;
@@ -188,6 +192,11 @@ export type CreatePostPayload = {
   longitude?: number;
   locationName?: string;
   visibility?: 'public' | 'friends' | 'private';
+  mediaType?: 'IMAGE' | 'VIDEO';
+  // Required alongside media when mediaType is 'VIDEO' - a still frame
+  // extracted client-side (expo-video-thumbnails) so a video post can show a
+  // real preview instead of a blank tile before it's ever played.
+  thumbnail?: any;
 };
 
 export interface MatchOrganizer {

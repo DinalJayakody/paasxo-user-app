@@ -50,6 +50,22 @@ import { SearchBar } from '../components/SearchBar';
 import ScreenGlow from '../components/ScreenGlow';
 import { goBack } from '../utils/navigation';
 import { prepareImageForUpload } from '../utils/mediaCompression';
+import { Play } from 'lucide-react-native';
+
+// Platform-gated, matches the same native-only-module convention used by
+// CaptureFlow.tsx (Reels/Stories) - no web target for this.
+let VideoThumbnails: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    VideoThumbnails = require('expo-video-thumbnails');
+  } catch {}
+}
+
+// Shorter than Reels' 180s cap (CreateReelScreen.MAX_REEL_SECONDS) - a
+// regular feed Post is feed-weight content, not a headline video, and a
+// tighter cap keeps R2 storage/transcoding cost down for what's still a
+// secondary use case of this screen.
+const MAX_POST_VIDEO_SECONDS = 60;
 
 export default function CreatePostScreen() {
   const { colors } = useTheme();
@@ -66,6 +82,9 @@ export default function CreatePostScreen() {
 
   const [selectedImage, setSelectedImage] =
     useState<any>(null);
+
+  const [mediaType, setMediaType] = useState<'IMAGE' | 'VIDEO'>('IMAGE');
+  const [videoThumbnail, setVideoThumbnail] = useState<any>(null);
 
   const [loading, setLoading] =
     useState(false);
@@ -102,12 +121,13 @@ export default function CreatePostScreen() {
     const result =
       await ImagePicker.launchImageLibraryAsync({
         mediaTypes:
-          ImagePicker.MediaTypeOptions.Images,
+          ImagePicker.MediaTypeOptions.All,
+        videoMaxDuration: MAX_POST_VIDEO_SECONDS,
         quality: 0.8,
       });
 
     if (!result.canceled) {
-      await applyPickedImage(result.assets[0]);
+      await applyPickedAsset(result.assets[0]);
     }
   };
 
@@ -124,11 +144,14 @@ export default function CreatePostScreen() {
 
     const result =
       await ImagePicker.launchCameraAsync({
+        mediaTypes:
+          ImagePicker.MediaTypeOptions.All,
+        videoMaxDuration: MAX_POST_VIDEO_SECONDS,
         quality: 0.8,
       });
 
     if (!result.canceled) {
-      await applyPickedImage(result.assets[0]);
+      await applyPickedAsset(result.assets[0]);
     }
   };
 
@@ -138,6 +161,8 @@ export default function CreatePostScreen() {
   // original (a 12MP+ HD/4K photo can be several MB to tens of MB otherwise).
   const applyPickedImage = async (asset: ImagePicker.ImagePickerAsset) => {
     const prepared = await prepareImageForUpload(asset.uri, asset.width, asset.height);
+    setMediaType('IMAGE');
+    setVideoThumbnail(null);
     setSelectedImage({
       ...asset,
       uri: prepared.uri,
@@ -149,6 +174,36 @@ export default function CreatePostScreen() {
       mimeType: 'image/jpeg',
       fileName: asset.fileName?.replace(/\.[^.]+$/, '.jpg') ?? 'post.jpg',
     });
+  };
+
+  // No client-side video compression exists in this codebase yet (same as
+  // Reels' capture flow - the backend's FileStorageService/VideoProcessingService
+  // re-encodes server-side), so the picked file is used as-is, capped to
+  // MAX_POST_VIDEO_SECONDS by the picker's own videoMaxDuration option.
+  const applyPickedVideo = async (asset: ImagePicker.ImagePickerAsset) => {
+    setMediaType('VIDEO');
+    setSelectedImage({
+      uri: asset.uri,
+      mimeType: asset.mimeType || 'video/mp4',
+      fileName: asset.fileName ?? 'post.mp4',
+    });
+    setVideoThumbnail(null);
+    if (VideoThumbnails) {
+      try {
+        const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(asset.uri, { time: 0 });
+        setVideoThumbnail({ uri: thumbUri, mimeType: 'image/jpeg', fileName: 'thumb.jpg' });
+      } catch {
+        // Non-fatal - the post just won't have a poster-frame thumbnail.
+      }
+    }
+  };
+
+  const applyPickedAsset = async (asset: ImagePicker.ImagePickerAsset) => {
+    if (asset.type === 'video') {
+      await applyPickedVideo(asset);
+    } else {
+      await applyPickedImage(asset);
+    }
   };
 
   // Debounced "Tag Players" search — waits 400ms after the user stops typing
@@ -191,6 +246,8 @@ export default function CreatePostScreen() {
       await socialMediaApi.createPost({
         caption,
         media: selectedImage,
+        thumbnail: mediaType === 'VIDEO' ? videoThumbnail : undefined,
+        mediaType,
         sport: 'CRICKET',
         visibility,
         taggedUsers: taggedUsers.map(
@@ -341,7 +398,18 @@ export default function CreatePostScreen() {
           </TouchableOpacity>
         </View>
 
-        {selectedImage && (
+        {selectedImage && mediaType === 'VIDEO' ? (
+          <View style={styles.previewImage}>
+            {videoThumbnail ? (
+              <Image source={{ uri: videoThumbnail.uri }} style={StyleSheet.absoluteFillObject} />
+            ) : (
+              <View style={[StyleSheet.absoluteFillObject, styles.videoPreviewFallback]} />
+            )}
+            <View style={styles.videoPreviewPlayBadge}>
+              <Play color="#fff" size={26} strokeWidth={2.5} fill="#fff" />
+            </View>
+          </View>
+        ) : selectedImage && (
           <Image
             source={{
               uri: selectedImage.uri,
@@ -816,6 +884,22 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     height: 220,
     borderRadius: 16,
     marginBottom: 16,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoPreviewFallback: {
+    // Fixed dark background regardless of app theme, matching ReelPlayer's
+    // own video-surface fallback — a video frame reads as dark either way.
+    backgroundColor: '#1a1a2e',
+  },
+  videoPreviewPlayBadge: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   captionCard: {
