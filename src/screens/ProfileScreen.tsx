@@ -381,7 +381,7 @@ export default function ProfileScreen() {
   const displayName = user?.displayName || 'Sports Player';
   const sportsText = Array.isArray(user?.sport) ? user.sport.join(' • ').toUpperCase() : (user?.sport || 'SPORT PLAYER').toUpperCase();
   const skillLevel = user?.skillLevel ? ` • ${String(user.skillLevel).toUpperCase()}` : '';
-  const bioText = user?.bio || `Passionate ${sport.toLowerCase()} player striving for excellence in every match. Let's play!`;
+  const bioText = user?.bio || 'Begin your Journey. Grow and make friends along the way.';
 
   if (loading) {
     return <LoadingScreen message="Loading your profile…" />;

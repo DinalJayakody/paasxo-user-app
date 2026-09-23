@@ -12,6 +12,8 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Linking,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -744,7 +746,12 @@ export default function CreateMatch() {
         <View style={{ width: 36 }} />
       </LinearGradient>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
 
         {/* Activity Selection — radial pie trigger */}
         <View style={styles.section}>
@@ -1105,6 +1112,7 @@ export default function CreateMatch() {
           </>
         )}
       </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* ── Venue Search Modal ──────────────────────────────────────────────── */}
       {/* statusBarTranslucent is required on Android: without it, RN's Modal

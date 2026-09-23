@@ -1,4 +1,4 @@
-import { Trophy, Users, Dumbbell, Activity, LucideIcon } from 'lucide-react-native';
+import { Trophy, Users, Dumbbell, Activity, Footprints, PersonStanding, Route, LucideIcon } from 'lucide-react-native';
 
 // Mirrors com.pasxo.dto.enums.Sport on the backend (minus FOOTBALL, which
 // isn't offered as a selectable activity in this app yet).
@@ -14,4 +14,7 @@ export const SPORTS: SportOption[] = [
   { id: 'PICKLEBALL', label: 'Pickleball', icon: Dumbbell },
   { id: 'PADDLEBALL', label: 'Paddleball', icon: Activity },
   { id: 'TRAINER_GYM', label: 'Trainer (Gym)', icon: Dumbbell },
+  { id: 'GYM', label: 'Gym', icon: PersonStanding },
+  { id: 'WALKING', label: 'Walking', icon: Footprints },
+  { id: 'RUNNING', label: 'Running', icon: Route },
 ];
