@@ -266,6 +266,7 @@ export default function CreateTournamentScreen() {
         description: description.trim() || undefined,
         date: selectedDate,
         slotIds: selectedSlotIds.length > 0 ? selectedSlotIds : undefined,
+        isOpen: isOpenTournament,
       });
       const id = created?.id ?? created?._id;
       setTournamentId(id);

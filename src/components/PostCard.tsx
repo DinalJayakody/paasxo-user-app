@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Alert, View, Text, Image, Pressable, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Heart, MessageCircle, Share2, Bookmark, Camera, Sparkles, MoreHorizontal, Flag, UserX } from 'lucide-react-native';
+import { Heart, MessageCircle, Share2, Bookmark, Camera, Sparkles, MoreHorizontal, Flag, UserX, Trophy, ChevronRight } from 'lucide-react-native';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +23,7 @@ interface PostCardProps {
 export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
+  const router = useRouter();
   const { user } = useAuth();
   const interaction = usePostInteraction(post);
   const [likeBusy, setLikeBusy] = useState(false);
@@ -33,6 +35,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
   const avatarUri = resolveAvatarUri(post.authorProfileImageUrl, post.authorDisplayName);
   const imageUri = parseMediaUrl(post.mediaUrl);
   const isProfileUpdate = post.postType === 'PROFILE_PICTURE_UPDATE';
+  const isTournamentAnnouncement = post.postType === 'TOURNAMENT_CREATED';
   const isOwnPost = !!user?.firebaseUid && user.firebaseUid === post.authorId;
 
   const handleBlockAuthor = () => {
@@ -140,6 +143,17 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
             <Text style={styles.profileUpdatePillText}>New Profile Photo</Text>
           </View>
         </LinearGradient>
+      ) : isTournamentAnnouncement ? (
+        <Pressable
+          style={styles.tournamentCard}
+          onPress={() => post.referenceId && router.push(`/tournament/${post.referenceId}` as any)}
+        >
+          <View style={styles.tournamentIconWrap}>
+            <Trophy color={colors.white} size={20} strokeWidth={2.5} />
+          </View>
+          <Text style={styles.tournamentCardText}>View Tournament</Text>
+          <ChevronRight color={colors.primary} size={18} strokeWidth={2.5} />
+        </Pressable>
       ) : (
         imageUri && <Image source={{ uri: imageUri }} style={styles.postImage} />
       )}
@@ -266,6 +280,17 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     borderRadius: 14,
     marginTop: 10,
   },
+
+  tournamentCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginTop: 10, padding: 12, borderRadius: 14,
+    backgroundColor: colors.primaryLight, borderWidth: 1, borderColor: colors.primary + '30',
+  },
+  tournamentIconWrap: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
+  },
+  tournamentCardText: { flex: 1, fontSize: 14, fontWeight: '700', color: colors.primary },
 
   profileUpdateGradient: {
     marginTop: 10,

@@ -92,8 +92,11 @@ export interface PostSummary {
   sport?: string;
   // 'PROFILE_PICTURE_UPDATE' for the auto-generated "updated their profile
   // picture" post (see backend SocialService.createProfilePictureUpdatePost);
+  // 'TOURNAMENT_CREATED' for an open-tournament announcement (see
+  // createTournamentAnnouncementPost, referenceId is the tournament id);
   // absent/'NORMAL' for a regular post.
-  postType?: 'NORMAL' | 'PROFILE_PICTURE_UPDATE';
+  postType?: 'NORMAL' | 'PROFILE_PICTURE_UPDATE' | 'TOURNAMENT_CREATED';
+  referenceId?: string;
   likeCount: number;
   commentCount: number;
   likedByCurrentUser: boolean;
@@ -455,6 +458,10 @@ export interface CreateTournamentPayload {
   description?: string;
   date: string; // ISO date "2026-06-20"
   slotIds?: number[];
+  // Defaults to invite-only (false) on the backend when omitted. An open
+  // tournament is discoverable and announces itself to the organizer's
+  // followers via the feed (see SocialService.createTournamentAnnouncementPost).
+  isOpen?: boolean;
 }
 
 export interface CreateTournamentTeamPayload {
