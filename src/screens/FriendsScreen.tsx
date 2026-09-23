@@ -33,7 +33,6 @@ import { userApi } from '../api/userApi';
 import { useAuth } from '../context/AuthContext';
 import { UserCard, FollowRelationship } from '../types/api';
 import {
-  NoFollowersIllustration,
   NoFollowingIllustration,
   AllCaughtUpIllustration,
   NoSuggestionsIllustration,
@@ -44,7 +43,10 @@ import ScreenGlow from '../components/ScreenGlow';
 
 const PAGE_SIZE = 10;
 
-const SEGMENT_ITEMS = ['Followers', 'Following', 'Requests', 'Suggested'] as const;
+// Followers/Following are no longer separate tabs here (see ProfileScreen's
+// FOLLOWERS/FOLLOWING stat tiles + FollowListModal for browsing those lists) -
+// this page is purely for discovering/managing NEW connections.
+const SEGMENT_ITEMS = ['Requests', 'Suggested'] as const;
 type Segment = typeof SEGMENT_ITEMS[number];
 
 // Module-scope, always light-palette (see similar note in HomeScreen.tsx).
@@ -91,7 +93,7 @@ export default function FriendsScreen() {
   const { user } = useAuth();
   const myUid = user?.firebaseUid ?? 'me';
 
-  const [activeTab, setActiveTab] = useState<Segment>('Followers');
+  const [activeTab, setActiveTab] = useState<Segment>('Suggested');
   const [searchValue, setSearchValue] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [actionLoadingUids, setActionLoadingUids] = useState<Set<string>>(new Set());
@@ -100,18 +102,6 @@ export default function FriendsScreen() {
   const locationRequestedRef = useRef(false);
 
   const isSearching = searchValue.trim().length >= 2;
-
-  const fetchFollowersPage = useCallback(
-    (page: number) => socialMediaApi.getFollowers(myUid, page, PAGE_SIZE),
-    [myUid]
-  );
-  const followersList = usePaginatedList<UserCard>(fetchFollowersPage, cardKey);
-
-  const fetchFollowingPage = useCallback(
-    (page: number) => socialMediaApi.getFollowing(myUid, page, PAGE_SIZE),
-    [myUid]
-  );
-  const followingList = usePaginatedList<UserCard>(fetchFollowingPage, cardKey);
 
   const fetchRequestsPage = useCallback((page: number) => socialMediaApi.getFollowRequests(page, PAGE_SIZE), []);
   const requestsList = usePaginatedList<UserCard>(fetchRequestsPage, cardKey);
@@ -125,11 +115,9 @@ export default function FriendsScreen() {
   );
   const searchList = usePaginatedList<UserCard>(fetchSearchPage, cardKey);
 
-  // Initial load — Followers/Following/Requests are cheap and give the
-  // Requests-tab badge a real count as soon as the screen opens.
+  // Initial load — cheap, and gives the Requests-tab badge a real count as
+  // soon as the screen opens.
   useEffect(() => {
-    followersList.reload();
-    followingList.reload();
     requestsList.reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myUid]);
@@ -185,7 +173,7 @@ export default function FriendsScreen() {
   const handleFollowPress = async (item: UserCard) => {
     const uid = item.firebaseUid;
     if (actionLoadingUids.has(uid)) return;
-    const allLists = [followersList, followingList, suggestedList, searchList];
+    const allLists = [suggestedList, searchList];
     setActionLoading(uid, true);
     try {
       if (item.relationshipStatus === 'NONE') {
@@ -210,7 +198,6 @@ export default function FriendsScreen() {
     try {
       await socialMediaApi.acceptFollowRequest(uid);
       requestsList.removeItem(uid);
-      followersList.updateItem(uid, { relationshipStatus: 'ACCEPTED' });
     } catch {
       // Leave the request in place on failure.
     } finally {
@@ -411,39 +398,17 @@ export default function FriendsScreen() {
     );
   };
 
-  const renderFollowersTab = () =>
-    isSearching
-      ? renderPaginatedTab(
-          searchList,
-          renderUserRow,
-          <NoFollowingIllustration />,
-          'No results',
-          `No players found for "${searchValue.trim()}"`
-        )
-      : renderPaginatedTab(
-          followersList,
-          renderUserRow,
-          <NoFollowersIllustration />,
-          'No followers yet',
-          'Share your profile to grow your network'
-        );
-
-  const renderFollowingTab = () =>
-    isSearching
-      ? renderPaginatedTab(
-          searchList,
-          renderUserRow,
-          <NoFollowingIllustration />,
-          'No results',
-          `No players found for "${searchValue.trim()}"`
-        )
-      : renderPaginatedTab(
-          followingList,
-          renderUserRow,
-          <NoFollowingIllustration />,
-          'Not following anyone yet',
-          'Discover players in Suggested'
-        );
+  // Search is global (not scoped to a tab) - takes over whichever tab is
+  // active whenever there's an active query, same as before Followers/
+  // Following existed as tabs of their own.
+  const renderSearchResults = () =>
+    renderPaginatedTab(
+      searchList,
+      renderUserRow,
+      <NoFollowingIllustration />,
+      'No results',
+      `No players found for "${searchValue.trim()}"`
+    );
 
   const renderRequestsTab = () =>
     renderPaginatedTab(requestsList, renderRequestRow, <AllCaughtUpIllustration />, 'No pending requests', "You're all caught up!");
@@ -529,10 +494,14 @@ export default function FriendsScreen() {
 
       {/* Tab content */}
       <View style={{ flex: 1 }}>
-        {activeTab === 'Followers' && renderFollowersTab()}
-        {activeTab === 'Following' && renderFollowingTab()}
-        {activeTab === 'Requests' && renderRequestsTab()}
-        {activeTab === 'Suggested' && renderSuggestedTab()}
+        {isSearching ? (
+          renderSearchResults()
+        ) : (
+          <>
+            {activeTab === 'Requests' && renderRequestsTab()}
+            {activeTab === 'Suggested' && renderSuggestedTab()}
+          </>
+        )}
       </View>
 
       <BottomNavbar activeTab="FRIENDS" showCreateButton={false} />
