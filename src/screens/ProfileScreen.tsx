@@ -13,7 +13,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import {
-  ArrowLeft,
   Menu,
   Activity,
   Target,
@@ -49,7 +48,6 @@ import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import ScreenGlow from '../components/ScreenGlow';
 import { FollowListModal } from '../components/FollowListModal';
-import { goBack } from '../utils/navigation';
 
 // Module-scope, always light-palette accent colors regardless of theme (see
 // SPORT_MASCOTS in HomeScreen.tsx for the same deliberate choice).
@@ -507,9 +505,6 @@ export default function ProfileScreen() {
             to its own top edge, right next to the avatar. */}
         <Animated.View style={[styles.heroBanner, { opacity: headerFade, transform: [{ translateY: headerSlide }] }]}>
           <View style={styles.heroTopRow}>
-            <AnimatedPressable onPress={() => goBack(router)} style={styles.topIconButton}>
-              <ArrowLeft color={colors.neutral900} size={18} strokeWidth={2} />
-            </AnimatedPressable>
             <AnimatedPressable onPress={() => router.push('/settings')} style={styles.topIconButton}>
               <Menu color={colors.neutral900} size={18} strokeWidth={2} />
             </AnimatedPressable>
@@ -634,7 +629,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingHorizontal: 20, alignItems: 'center', marginBottom: 4,
   },
   heroTopRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end',
     width: '100%', marginBottom: 12,
   },
 
