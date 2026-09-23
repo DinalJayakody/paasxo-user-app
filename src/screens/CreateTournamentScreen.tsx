@@ -302,7 +302,7 @@ export default function CreateTournamentScreen() {
       if (!playerSearch.trim()) { setPlayerResults([]); return; }
       setSearchingPlayers(true);
       socialMediaApi.searchUsers(playerSearch.trim())
-        .then((data) => setPlayerResults(Array.isArray(data) ? data : []))
+        .then((data) => setPlayerResults(Array.isArray(data?.content) ? data.content : []))
         .catch(() => setPlayerResults([]))
         .finally(() => setSearchingPlayers(false));
     }, 300);
