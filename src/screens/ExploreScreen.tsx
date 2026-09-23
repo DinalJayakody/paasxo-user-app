@@ -707,6 +707,20 @@ export default function ExploreScreen() {
     [searchText, sportFilter, dateQuick, customDate, radiusKm, freeOnly, userLat, userLng, mapDist]
   );
 
+  // Location resolves asynchronously (permission prompt + GPS/network fix), so a
+  // "Show Results" tap can easily beat it — that fetch then runs with lat/lng
+  // undefined, silently skipping radius filtering for every card and marker
+  // already on screen. Once the fix lands, re-run the active search so the list
+  // and map (both driven by the same `results` state) pick up real distances
+  // instead of staying stuck on that unfiltered snapshot until the user manually
+  // re-searches.
+  const locationReadyRef = useRef(false);
+  useEffect(() => {
+    if (userLat == null || userLng == null || locationReadyRef.current) return;
+    locationReadyRef.current = true;
+    if (step !== 'SEARCH') fetchResults(category, 0, false, true);
+  }, [userLat, userLng, step, category, fetchResults]);
+
   const handleShowResults = () => {
     setStep('RESULTS');
     fetchResults(category, 0, false);
