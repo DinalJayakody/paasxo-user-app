@@ -554,7 +554,11 @@ export default function ActivityTrackerScreen() {
         caption,
         media: { uri: cardUri, fileName: 'activity.jpg', mimeType: 'image/jpeg' },
         sport: 'FITNESS',
-        visibility: 'public',
+        // Personal fitness data defaults to Friends-only rather than Public —
+        // a quieter default for route/pace/location than a regular post; the
+        // full visibility picker (CreatePostScreen) still applies to
+        // everything else.
+        visibility: 'friends',
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Posted to your feed!');

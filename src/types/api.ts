@@ -97,6 +97,7 @@ export interface PostSummary {
   // absent/'NORMAL' for a regular post.
   postType?: 'NORMAL' | 'PROFILE_PICTURE_UPDATE' | 'TOURNAMENT_CREATED';
   referenceId?: string;
+  visibility?: 'public' | 'friends' | 'private';
   likeCount: number;
   commentCount: number;
   likedByCurrentUser: boolean;
@@ -186,7 +187,7 @@ export type CreatePostPayload = {
   latitude?: number;
   longitude?: number;
   locationName?: string;
-  visibility?: 'public' | 'private';
+  visibility?: 'public' | 'friends' | 'private';
 };
 
 export interface MatchOrganizer {

@@ -29,6 +29,7 @@ import {
   MapPin,
   Globe,
   Lock,
+  Users,
   ChevronRight,
   LayoutGrid,
   X,
@@ -59,7 +60,7 @@ export default function CreatePostScreen() {
   const [caption, setCaption] = useState('');
 
   const [visibility, setVisibility] =
-    useState<'public' | 'private'>(
+    useState<'public' | 'friends' | 'private'>(
       'public'
     );
 
@@ -464,6 +465,36 @@ export default function CreatePostScreen() {
               ]}
             >
               Public
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.visibilityButton,
+              visibility === 'friends' &&
+                styles.visibilityButtonActive,
+            ]}
+            onPress={() =>
+              setVisibility('friends')
+            }
+          >
+            <Users
+              size={18}
+              color={
+                visibility === 'friends'
+                  ? colors.white
+                  : colors.textSecondary
+              }
+            />
+
+            <Text
+              style={[
+                styles.visibilityText,
+                visibility === 'friends' &&
+                  styles.visibilityTextActive,
+              ]}
+            >
+              Friends
             </Text>
           </TouchableOpacity>
 

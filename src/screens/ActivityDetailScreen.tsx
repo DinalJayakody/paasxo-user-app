@@ -131,7 +131,9 @@ export default function ActivityDetailScreen() {
         caption,
         media: { uri: cardUri, fileName: 'activity.jpg', mimeType: 'image/jpeg' },
         sport: 'FITNESS',
-        visibility: 'public',
+        // See ActivityTrackerScreen's handleShareToPost for why this
+        // defaults to Friends-only rather than Public.
+        visibility: 'friends',
       });
       Alert.alert('Posted to your feed!');
     } catch (e: any) {
