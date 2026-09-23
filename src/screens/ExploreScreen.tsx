@@ -43,7 +43,6 @@ import {
   Target,
   Volleyball,
   LayoutGrid,
-  Bell,
   type LucideIcon,
 } from 'lucide-react-native';
 import * as Location from 'expo-location';
@@ -51,6 +50,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useFocusEffect } from '@react-navigation/native';
 import { Colors, ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
+import { WhistleIcon } from '../components/icons/WhistleIcon';
 import { notificationApi } from '../api/notificationApi';
 import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
 import { futsalApi } from '../api/futsalApi';
@@ -1026,7 +1026,7 @@ export default function ExploreScreen() {
           onPress={() => router.push('/notifications?category=GENERAL' as any)}
           hitSlop={8}
         >
-          <Bell color={colors.white} size={19} strokeWidth={2} />
+          <WhistleIcon color={colors.white} size={19} strokeWidth={2} />
           {unreadGeneral > 0 && (
             <View style={styles.exploreBellBadge}>
               <Text style={styles.exploreBellBadgeText}>{unreadGeneral > 9 ? '9+' : unreadGeneral}</Text>

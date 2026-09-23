@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  Bell,
   MessageCircle,
   Search,
   X,
@@ -29,7 +28,6 @@ import { PaasxoLogoLoader } from '../components/PaasxoLogoLoader';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
-import HeaderIconButton from '../components/HeaderIconButton';
 import { socialMediaApi } from '../api/socialMediaApi';
 import { userApi } from '../api/userApi';
 import { useAuth } from '../context/AuthContext';
@@ -486,11 +484,6 @@ export default function FriendsScreen() {
             <Users color={colors.white} size={22} strokeWidth={2.5} />
             <Text style={styles.headerTitle}>Friends</Text>
           </View>
-          <View style={styles.headerRight}>
-            <HeaderIconButton onPress={() => router.push('/notifications' as any)} style={styles.iconBtn}>
-              <Bell color={colors.white} size={20} strokeWidth={2} />
-            </HeaderIconButton>
-          </View>
         </View>
       </View>
 
@@ -577,12 +570,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerTitle: { fontSize: 22, fontWeight: '900', color: colors.white },
-  headerRight: { flexDirection: 'row', gap: 8 },
-  iconBtn: {
-    width: 38, height: 38, borderRadius: 19,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.18)',
-  },
 
   // Search
   searchWrap: {

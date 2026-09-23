@@ -271,6 +271,31 @@ export default function NotificationScreen({ category }: NotificationScreenProps
 
   useEffect(() => { load(); }, [load]);
 
+  // Auto-mark-as-read: once the list the user is actually looking at has
+  // rendered, mark everything currently unread in *this* filtered view as
+  // read - mirroring the read-on-view behavior of a standard notification
+  // feed instead of requiring an explicit tap per item or the "Mark all
+  // read" button. Scoped to markRead(id) per item (not the backend's
+  // markAllRead, which clears every category for the user regardless of
+  // what's actually been seen) so opening GENERAL notifications can never
+  // silently clear unread SOCIAL ones the user hasn't looked at yet, and
+  // vice versa. A short delay gives the unread styling a moment to be seen
+  // before it clears, same idea as Instagram/Twitter's activity tabs.
+  const unreadIdsKey = notifications.filter((n) => !n.read).map((n) => n.id).join(',');
+  useEffect(() => {
+    if (loading || !unreadIdsKey) return;
+    const unreadIds = unreadIdsKey.split(',');
+    const t = setTimeout(() => {
+      Promise.allSettled(unreadIds.map((id) => notificationApi.markRead(id)))
+        .then(() => {
+          const readIds = new Set(unreadIds);
+          setNotifications((prev) => prev.map((n) => (readIds.has(n.id) ? { ...n, read: true } : n)));
+        });
+    }, 900);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, unreadIdsKey]);
+
   const markRead = async (n: NotificationResponse) => {
     if (n.read) return;
     try {
@@ -364,10 +389,18 @@ export default function NotificationScreen({ category }: NotificationScreenProps
     // WALK_RUN_INVITE_* has no dedicated viewer screen yet - falls through to mark-read only.
   };
 
+  // Scoped to markRead(id) per currently-listed item rather than the
+  // backend's markAllRead, which clears every category for this user
+  // regardless of what's shown here (see the auto-mark-read effect above
+  // for the full reasoning) - a manual tap on this button should only
+  // affect what's actually in front of the user.
   const handleMarkAllRead = async () => {
+    const unread = notifications.filter((n) => !n.read);
+    if (unread.length === 0) return;
     try {
-      await notificationApi.markAllRead();
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      await Promise.allSettled(unread.map((n) => notificationApi.markRead(n.id)));
+      const readIds = new Set(unread.map((n) => n.id));
+      setNotifications((prev) => prev.map((n) => (readIds.has(n.id) ? { ...n, read: true } : n)));
     } catch { /* ignore */ }
   };
 
