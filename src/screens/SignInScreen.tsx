@@ -41,6 +41,7 @@ import { GOOGLE_CLIENT_IDS, GOOGLE_CONFIGURED } from '../config/googleAuth';
 import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
 import { APPLE_SIGN_IN_AVAILABLE, performAppleSignIn } from '../utils/appleSignIn';
 import ScreenGlow from '../components/ScreenGlow';
+import { AdaptiveLogo } from '../components/AdaptiveLogo';
 import { goBack } from '../utils/navigation';
 
 // Required by expo-auth-session on web to close the auth popup and
@@ -261,11 +262,7 @@ export default function SignInScreen() {
             >
               <View style={styles.heroContainer}>
                 <Animated.View style={[styles.heroLogoWrap, { transform: [{ scale: logoPulse }] }]}>
-                  <Image
-                    source={require('../../assets/logo.jpeg')}
-                    style={styles.heroLogo}
-                    resizeMode="contain"
-                  />
+                  <AdaptiveLogo style={styles.heroLogo} />
                 </Animated.View>
               </View>
             </LinearGradient>
@@ -319,9 +316,9 @@ export default function SignInScreen() {
 
           {/* Form card */}
           <Animated.View style={[styles.card, { opacity: cardFade, transform: [{ translateY: cardSlide }] }]}>
-            <Text style={styles.fieldLabel}>ACCOUNT IDENTITY</Text>
+            <Text style={styles.fieldLabel}>EMAIL</Text>
             <InputField
-              placeholder="Email or Username"
+              placeholder="Email"
               value={email}
               onChangeText={(t) => { setEmail(t); setErrors((e) => ({ ...e, email: undefined })); }}
               keyboardType="email-address"
@@ -403,10 +400,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     overflow: 'hidden',
     paddingVertical: 16,
   },
+  // No shadow/borderRadius/background here on purpose — the logo itself is
+  // a transparent PNG now (AdaptiveLogo), not an opaque JPEG that needed a
+  // card-like frame to look intentional. Doc section 4: "Remove the
+  // existing boxes/design elements."
   heroLogoWrap: {
-    shadowColor: colors.neutral900, shadowOpacity: 0.1, shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 }, elevation: 4,
-    borderRadius: 26, marginBottom: 4,
+    marginBottom: 4,
   },
   header: {
     flexDirection: 'row',
@@ -428,7 +427,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   heroLogo: {
     width: 110,
     height: 110,
-    borderRadius: 22,
   },
   title: {
     fontSize: 28,

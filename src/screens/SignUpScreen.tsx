@@ -20,8 +20,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   ArrowLeft,
   UserPlus,
-  Trophy,
   Check,
+  User,
+  Briefcase,
 } from 'lucide-react-native';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
@@ -47,6 +48,7 @@ import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
 import { APPLE_SIGN_IN_AVAILABLE, performAppleSignIn } from '../utils/appleSignIn';
 import { getPrivacyPolicyUrl, getTermsOfServiceUrl } from '../constants/legal';
 import ScreenGlow from '../components/ScreenGlow';
+import { AdaptiveLogo } from '../components/AdaptiveLogo';
 import { goBack } from '../utils/navigation';
 
 // Required by expo-auth-session on web to close the auth popup and return
@@ -81,16 +83,7 @@ export default function SignUpScreen() {
     ).start();
   }, [pulse]);
 
-  // gentle pulse for the hero trophy badge
-  const badgePulse = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(badgePulse, { toValue: 1.08, duration: 1300, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(badgePulse, { toValue: 1, duration: 1300, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ])
-    ).start();
-  }, [badgePulse]);
+  const [accountType, setAccountType] = useState<'USER' | 'VENDOR'>('USER');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -196,6 +189,7 @@ const payload: RegisterPayload = {
   phoneNumber: phone,
   sports: selectedSports,
   referralCode: referralCode || undefined,
+  accountType,
   profileImage: avatarUri
     ? {
         uri: avatarUri,
@@ -208,10 +202,18 @@ const payload: RegisterPayload = {
 
     try {
       // Call signUp via AuthContext which uses authApi.register
-await auth.signUp(payload);
-      
-      // After successful registration and login, navigate to main app
-      router.push('/post-verification'); // optional welcome screen after registration
+      const registeredUser = await auth.signUp(payload);
+
+      // A Service Provider (VENDOR) account needs manual admin review before
+      // it can actually log in (see AuthService#assertVendorActive on the
+      // backend) — active:false on the response is how that's signaled here.
+      // Showing the normal "Welcome to the Community!" screen would be
+      // actively misleading for an account that isn't usable yet.
+      if (registeredUser.accountType === 'VENDOR' && registeredUser.active === false) {
+        router.push('/post-verification?pending=vendor' as any);
+      } else {
+        router.push('/post-verification'); // optional welcome screen after registration
+      }
     } catch (err: any) {
       setErrors({ general: err.message ?? 'Registration failed. Try again.' });
     } finally {
@@ -325,22 +327,49 @@ await auth.signUp(payload);
             <TouchableOpacity onPress={() => goBack(router)} style={styles.backBtn} activeOpacity={0.7}>
               <ArrowLeft color={colors.primary} size={22} strokeWidth={2.5} />
             </TouchableOpacity>
-            <Image source={require('../../assets/logo.jpeg')} style={{width:40, height:40}} resizeMode="contain" />
+            <AdaptiveLogo style={{ width: 40, height: 40 }} />
             <View style={{ width: 40 }} />
           </View>
 
-          {/* Colorful gradient hero band */}
-          <LinearGradient colors={[colors.primaryLight, colors.background]} style={styles.heroGradient}>
-            <Animated.View style={[styles.heroBadge, { transform: [{ scale: badgePulse }] }]}>
-              <Trophy color={colors.primary} size={30} strokeWidth={2} />
-            </Animated.View>
-          </LinearGradient>
-
           {/* Hero text */}
-          <Text style={styles.title}>Join the{'\n'}Movement.</Text>
+          <Text style={styles.title}>Join the Movement.</Text>
           <Text style={styles.subtitle}>
-            Create your profile and start your athletic{'\n'}journey.
+            Create your profile and Start your Journey
           </Text>
+
+          {/* Account type */}
+          <View style={styles.card}>
+            <Text style={styles.sectionLabel}>ACCOUNT TYPE</Text>
+            <View style={styles.accountTypeRow}>
+              <TouchableOpacity
+                style={[styles.accountTypeOption, accountType === 'USER' && styles.accountTypeOptionActive]}
+                onPress={() => setAccountType('USER')}
+                activeOpacity={0.85}
+              >
+                <User color={accountType === 'USER' ? colors.primary : colors.textSecondary} size={22} strokeWidth={2} />
+                <Text style={[styles.accountTypeLabel, accountType === 'USER' && styles.accountTypeLabelActive]}>
+                  Personal Account
+                </Text>
+                <Text style={styles.accountTypeHint}>Play, book, and connect</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.accountTypeOption, accountType === 'VENDOR' && styles.accountTypeOptionActive]}
+                onPress={() => setAccountType('VENDOR')}
+                activeOpacity={0.85}
+              >
+                <Briefcase color={accountType === 'VENDOR' ? colors.primary : colors.textSecondary} size={22} strokeWidth={2} />
+                <Text style={[styles.accountTypeLabel, accountType === 'VENDOR' && styles.accountTypeLabelActive]}>
+                  Service Provider
+                </Text>
+                <Text style={styles.accountTypeHint}>List venues, sessions & more</Text>
+              </TouchableOpacity>
+            </View>
+            {accountType === 'VENDOR' && (
+              <Text style={styles.accountTypeNotice}>
+                Service Provider accounts are reviewed by our team before you can log in — we'll notify you once approved.
+              </Text>
+            )}
+          </View>
 
           {/* Social login buttons + Avatar + Full name */}
           <View style={[styles.card, { alignItems: 'center' }]}> 
@@ -587,21 +616,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingBottom: 24,
     paddingTop: 8,
   },
-  heroGradient: {
-    borderRadius: 28,
-    marginBottom: 16,
-    paddingVertical: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  heroBadge: {
-    width: 64, height: 64, borderRadius: 32,
-    backgroundColor: colors.cardBg,
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: colors.neutral900, shadowOpacity: 0.1, shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 }, elevation: 4,
-  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -621,12 +635,13 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     letterSpacing: 2,
   },
   title: {
-    fontSize: 36,
+    fontSize: 26,
     fontWeight: '800',
     color: colors.text,
-    lineHeight: 44,
-    letterSpacing: -0.8,
-    marginBottom: 10,
+    lineHeight: 32,
+    letterSpacing: -0.5,
+    marginBottom: 8,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: 14,
@@ -645,6 +660,46 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 12,
     elevation: 2,
+  },
+  accountTypeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  accountTypeOption: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: colors.neutral200,
+    backgroundColor: colors.tagBg,
+  },
+  accountTypeOptionActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.tagBgSelected,
+  },
+  accountTypeLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  accountTypeLabelActive: {
+    color: colors.primary,
+  },
+  accountTypeHint: {
+    fontSize: 11,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+  accountTypeNotice: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.textSecondary,
+    marginTop: 12,
   },
   socialColumn: {
     width: '100%',

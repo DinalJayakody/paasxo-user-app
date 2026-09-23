@@ -10,11 +10,13 @@ import {
   Easing,
   Platform,
 } from 'react-native';
-import { X, ArrowRight, CircleCheck as CheckCircle } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
+import { X, ArrowRight, CircleCheck as CheckCircle, Clock } from 'lucide-react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/Button';
+import { AdaptiveLogo } from '../components/AdaptiveLogo';
 import ScreenGlow from '../components/ScreenGlow';
 
 const SPORT_CHARS = [
@@ -65,6 +67,9 @@ export default function PostVerificationScreen() {
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
+  const { pending } = useLocalSearchParams<{ pending?: string }>();
+  const { signOut } = useAuth();
+  const isPendingVendor = pending === 'vendor';
 
   const logoScale   = useRef(new Animated.Value(1)).current;
   const logoOpacity = useRef(new Animated.Value(1)).current;
@@ -74,6 +79,19 @@ export default function PostVerificationScreen() {
     Animated.timing(textOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
   }, []);
 
+  // A pending VENDOR account is `active: false` on the backend (see
+  // AuthService#register / #assertVendorActive) — it can't sign in and use
+  // the app yet, so there's nothing at `/home` for it. Send it back to
+  // sign-in instead, after clearing the session AuthContext already created
+  // from the registration response.
+  const handleCta = () => {
+    if (isPendingVendor) {
+      signOut().finally(() => router.replace('/sign-in'));
+    } else {
+      router.push('/home');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScreenGlow />
@@ -81,7 +99,7 @@ export default function PostVerificationScreen() {
       <View style={styles.header}>
         <View style={{ width: 44 }} />
         <TouchableOpacity
-          onPress={() => router.push('/home')}
+          onPress={handleCta}
           activeOpacity={0.7}
           style={styles.closeBtn}
         >
@@ -104,35 +122,56 @@ export default function PostVerificationScreen() {
         ]}
       >
         <View style={styles.logoBg}>
-          <Image
-            source={require('../../assets/logo.jpeg')}
-            style={styles.logoImg}
-            resizeMode="contain"
-          />
+          <AdaptiveLogo style={styles.logoImg} />
         </View>
         <View style={styles.glowRing} />
       </Animated.View>
 
       {/* Text + CTA */}
       <Animated.View style={[styles.content, { opacity: textOpacity }]}>
-        <View style={styles.verifiedRow}>
-          <CheckCircle color={colors.success} size={20} strokeWidth={2} />
-          <Text style={styles.verifiedText}>Account Verified!</Text>
-        </View>
+        {isPendingVendor ? (
+          <>
+            <View style={[styles.verifiedRow, styles.pendingRow]}>
+              <Clock color={colors.warning} size={20} strokeWidth={2} />
+              <Text style={[styles.verifiedText, styles.pendingText]}>Under Review</Text>
+            </View>
 
-        <Text style={styles.mainTitle}>Welcome to the{'\n'}Community!</Text>
+            <Text style={styles.mainTitle}>Your Application{'\n'}is Being Reviewed</Text>
 
-        <Text style={styles.subtitle}>
-          Whether you play, train, or compete — Paasxo is your home.{'\n'}
-          Find games, book sessions, and connect with others.
-        </Text>
+            <Text style={styles.subtitle}>
+              Thanks for registering as a Service Provider. Our team is reviewing your{'\n'}
+              account and will notify you by email once it's approved — usually within 24-48 hours.
+            </Text>
 
-        <Button
-          title="Get Started"
-          onPress={() => router.push('/home')}
-          style={styles.ctaButton}
-          icon={<ArrowRight color={colors.white} size={20} strokeWidth={2.5} />}
-        />
+            <Button
+              title="Back to Sign In"
+              onPress={handleCta}
+              style={styles.ctaButton}
+              icon={<ArrowRight color={colors.white} size={20} strokeWidth={2.5} />}
+            />
+          </>
+        ) : (
+          <>
+            <View style={styles.verifiedRow}>
+              <CheckCircle color={colors.success} size={20} strokeWidth={2} />
+              <Text style={styles.verifiedText}>Account Verified!</Text>
+            </View>
+
+            <Text style={styles.mainTitle}>Welcome to the{'\n'}Community!</Text>
+
+            <Text style={styles.subtitle}>
+              Whether you play, train, or compete — Paasxo is your home.{'\n'}
+              Find games, book sessions, and connect with others.
+            </Text>
+
+            <Button
+              title="Get Started"
+              onPress={handleCta}
+              style={styles.ctaButton}
+              icon={<ArrowRight color={colors.white} size={20} strokeWidth={2.5} />}
+            />
+          </>
+        )}
       </Animated.View>
     </SafeAreaView>
   );
@@ -226,6 +265,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.success,
     fontSize: 13,
     fontWeight: '700',
+  },
+  pendingRow: {
+    backgroundColor: colors.warning + '18',
+  },
+  pendingText: {
+    color: colors.warning,
   },
   mainTitle: {
     fontSize: 38,

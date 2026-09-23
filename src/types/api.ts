@@ -16,6 +16,11 @@ export interface RegisterPayload {
   phoneNumber: string;
   sports: string[];
   referralCode?: string;
+  // 'USER' (Personal Account) or 'VENDOR' (Service Provider) — see
+  // AuthService#register on the backend, which already fully supports both;
+  // VENDOR accounts go through manual admin verification before they can
+  // log in (see PendingVerification handling in SignUpScreen/PostVerificationScreen).
+  accountType?: 'USER' | 'VENDOR';
   profileImage?: {
     uri: string;
     name: string;
@@ -44,6 +49,13 @@ export interface UserProfile {
   // Account-level visibility. Undefined/false = public. When true, new
   // followers must be accepted via a follow request (see FriendsScreen).
   isPrivate?: boolean;
+  // 'USER' | 'VENDOR' | 'TRAINER' | 'ADMIN' — see AccountType.java. Checked
+  // right after registration to route a pending VENDOR sign-up to
+  // PostVerificationScreen's "under review" state instead of "welcome in".
+  accountType?: string;
+  // False only for a VENDOR account still awaiting admin verification (see
+  // AuthService#assertVendorActive) — true for every other account type.
+  active?: boolean;
   // Optional, user-entered on EditProfileScreen. Enables a real per-user
   // calorie estimate on Activity sessions (see activityMath.ts's
   // calcCalories) — undefined means "not provided", which leaves calories

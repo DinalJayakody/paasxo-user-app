@@ -20,9 +20,8 @@ const request = {
   phoneNumber: payload.phoneNumber,
   sports: payload.sports,
   referralCode: payload.referralCode,
+  accountType: payload.accountType,
 };
-
-console.log('Register payload:', request, 'Avatar URI:', payload.profileImage);
 
 // 🔥 2. Append request as JSON blob (IMPORTANT)
 formData.append(

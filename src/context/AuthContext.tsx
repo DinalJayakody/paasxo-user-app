@@ -20,7 +20,10 @@ type AuthContextShape = {
   // activity yet. Drives the CompleteProfileModal rendered below.
   needsProfileCompletion: boolean;
   signIn: (payload: LoginPayload) => Promise<void>;
-  signUp: (payload: RegisterPayload) => Promise<void>;
+  // Returns the freshly-registered user so the caller can branch on
+  // accountType/active immediately (e.g. a pending VENDOR sign-up) without
+  // relying on this context's own state having re-rendered yet.
+  signUp: (payload: RegisterPayload) => Promise<UserProfile>;
   signOut: () => Promise<void>;
   // signInWithGoogle receives the Firebase ID token obtained by the screen-level
   // OAuth flow (expo-auth-session + Firebase SignInWithCredential).
@@ -148,12 +151,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signUp = async (payload: RegisterPayload): Promise<void> => {
+  const signUp = async (payload: RegisterPayload): Promise<UserProfile> => {
     setLoading(true);
     try {
       const data: AuthResponse = await authApi.register(payload);
       await persistTokens(data);
-      if (data.user) setUser(data.user);
+      if (!data.user) throw new Error('Registration succeeded but no user was returned');
+      setUser(data.user);
+      return data.user;
     } finally {
       setLoading(false);
     }
