@@ -107,7 +107,7 @@ export default function ActivityDetailScreen() {
     setShareBusy('story');
     try {
       const serverId = await ensureServerId();
-      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null);
+      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null, 'story');
       if (!cardUri) throw new Error('Could not generate the share image');
       await storyApi.createStory({ mediaUri: cardUri, mediaType: 'IMAGE', mimeType: 'image/jpeg', filterName: 'NORMAL' });
       Alert.alert('Shared to your Story!');

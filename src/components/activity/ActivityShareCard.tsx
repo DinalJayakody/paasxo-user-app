@@ -4,12 +4,21 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StoredActivity, ActivityType } from '../../api/activityApi';
 import { formatTime, formatDist, distUnit, formatPace } from '../../utils/activityMath';
 
-// 4:5 — a good universal ratio for both a feed Post and an external
-// WhatsApp/Instagram share; not a perfect 9:16 Story fit but close enough to
-// read cleanly there too, and this app has exactly one card design rather
-// than a separate render per destination.
-export const SHARE_CARD_WIDTH = 1080;
-export const SHARE_CARD_HEIGHT = 1350;
+// Two supported canvas sizes sharing one card design: 'post' (4:5) reads
+// cleanly in-feed and for a general external share, while 'story' (9:16)
+// matches the actual Instagram/WhatsApp/Facebook Story canvas instead of
+// being letterboxed into it.
+export type ShareCardAspectRatio = 'post' | 'story';
+
+export const SHARE_CARD_DIMENSIONS: Record<ShareCardAspectRatio, { width: number; height: number }> = {
+  post: { width: 1080, height: 1350 },
+  story: { width: 1080, height: 1920 },
+};
+
+// Back-compat for existing callers that just want "the" card size (the Post
+// destination's — the original, and still the default aspect ratio below).
+export const SHARE_CARD_WIDTH = SHARE_CARD_DIMENSIONS.post.width;
+export const SHARE_CARD_HEIGHT = SHARE_CARD_DIMENSIONS.post.height;
 
 export const ACT_META: Record<ActivityType, { emoji: string; label: string; colors: [string, string]; isPaceBased: boolean }> = {
   WALK: { emoji: '🚶', label: 'Walk', colors: ['#059669', '#047857'], isPaceBased: true },
@@ -35,6 +44,11 @@ interface ActivityShareCardProps {
    * waits for this before capturing the card, otherwise a screenshot taken
    * too early can come out with a blank map area. */
   onMapImageLoad?: () => void;
+  /** 'post' (4:5, default) for feed/external, 'story' (9:16) for Stories. */
+  aspectRatio?: ShareCardAspectRatio;
+  /** Personal-record messages for this activity (see ActivityTrackerScreen's
+   * finishActivity) — when non-empty, shows a trophy ribbon on the card. */
+  records?: string[];
 }
 
 /**
@@ -44,14 +58,26 @@ interface ActivityShareCardProps {
  * ref must point at the outermost View for captureRef to work.
  */
 export const ActivityShareCard = React.forwardRef<View, ActivityShareCardProps>(
-  ({ activity, authorName, mapSnapshotUri, shareUrl, onMapImageLoad }, ref) => {
+  ({ activity, authorName, mapSnapshotUri, shareUrl, onMapImageLoad, aspectRatio = 'post', records = [] }, ref) => {
     const meta = ACT_META[activity.type];
+    const dim = SHARE_CARD_DIMENSIONS[aspectRatio];
     const dateLabel = new Date(activity.startTime).toLocaleDateString('en-US', {
       weekday: 'long', month: 'long', day: 'numeric',
     });
 
+    // Up to the first 8 km splits, scaled so the fastest bar reads tallest —
+    // a compact version of the same per-km breakdown ActivityHistoryScreen
+    // shows in full, kept to pace-based activities only (CYCLING has no
+    // meaningful "pace" split).
+    const paceSplits = meta.isPaceBased
+      ? activity.splits.filter((s) => s.paceSecPerKm != null).slice(0, 8)
+      : [];
+    const splitPaces = paceSplits.map((s) => s.paceSecPerKm as number);
+    const minSplitPace = splitPaces.length > 0 ? Math.min(...splitPaces) : 0;
+    const maxSplitPace = splitPaces.length > 0 ? Math.max(...splitPaces) : 0;
+
     return (
-      <View ref={ref} collapsable={false} style={styles.card}>
+      <View ref={ref} collapsable={false} style={[styles.card, { width: dim.width, height: dim.height }]}>
         {mapSnapshotUri ? (
           <Image
             source={{ uri: mapSnapshotUri }}
@@ -76,6 +102,14 @@ export const ActivityShareCard = React.forwardRef<View, ActivityShareCardProps>(
             <Text style={styles.typeBadgeText}>{meta.emoji}  {meta.label.toUpperCase()}</Text>
           </View>
         </View>
+
+        {records.length > 0 && (
+          <View style={styles.prBadge}>
+            <Text style={styles.prBadgeText} numberOfLines={1}>
+              🏆 {records.length > 1 ? `${records.length} NEW RECORDS` : 'NEW PERSONAL RECORD'}
+            </Text>
+          </View>
+        )}
 
         {/* Stats block */}
         <View style={styles.footer}>
@@ -104,6 +138,36 @@ export const ActivityShareCard = React.forwardRef<View, ActivityShareCardProps>(
             {activity.calories != null && <StatChip label="Calories" value={`${activity.calories} kcal`} />}
           </View>
 
+          {paceSplits.length > 1 && (
+            <View style={styles.splitsBlock}>
+              <Text style={styles.splitsLabel}>SPLITS</Text>
+              <View style={styles.splitsRow}>
+                {paceSplits.map((s) => {
+                  const pace = s.paceSecPerKm as number;
+                  const range = maxSplitPace - minSplitPace;
+                  // Faster (lower pace) reads as a taller bar, like a
+                  // performance chart — clamped to a 35–100% range so even
+                  // the slowest km still renders a visible bar.
+                  const heightPct = range > 0 ? 100 - ((pace - minSplitPace) / range) * 65 : 100;
+                  const isBest = pace === minSplitPace;
+                  return (
+                    <View key={s.index} style={styles.splitBarWrap}>
+                      <View style={styles.splitBarTrack}>
+                        <View
+                          style={[
+                            styles.splitBar,
+                            { height: `${heightPct}%`, backgroundColor: isBest ? '#22C55E' : 'rgba(255,255,255,0.35)' },
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.splitBarLabel}>{s.index}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
           <View style={styles.ctaRow}>
             <View style={styles.ctaDot} />
             <Text style={styles.cta} numberOfLines={1}>
@@ -127,8 +191,6 @@ function StatChip({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   card: {
-    width: SHARE_CARD_WIDTH,
-    height: SHARE_CARD_HEIGHT,
     backgroundColor: '#0F172A',
     overflow: 'hidden',
   },
@@ -139,6 +201,21 @@ const styles = StyleSheet.create({
   wordmark: { fontSize: 34, fontWeight: '900', color: '#fff', letterSpacing: 2 },
   typeBadge: { paddingHorizontal: 22, paddingVertical: 12, borderRadius: 30 },
   typeBadgeText: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
+
+  prBadge: {
+    position: 'absolute', top: 140, left: 56,
+    backgroundColor: '#F59E0B', borderRadius: 14,
+    paddingHorizontal: 18, paddingVertical: 10,
+  },
+  prBadgeText: { fontSize: 18, fontWeight: '900', color: '#1A1A2E', letterSpacing: 0.5 },
+
+  splitsBlock: { marginBottom: 24 },
+  splitsLabel: { fontSize: 14, fontWeight: '800', color: 'rgba(255,255,255,0.6)', letterSpacing: 1, marginBottom: 10 },
+  splitsRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, height: 90 },
+  splitBarWrap: { flex: 1, alignItems: 'center', height: '100%', justifyContent: 'flex-end' },
+  splitBarTrack: { width: '100%', height: 68, justifyContent: 'flex-end' },
+  splitBar: { width: '100%', borderRadius: 6, minHeight: 6 },
+  splitBarLabel: { fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.55)', marginTop: 6 },
 
   footer: { position: 'absolute', left: 56, right: 56, bottom: 56 },
   authorLine: { fontSize: 24, fontWeight: '700', color: 'rgba(255,255,255,0.75)', marginBottom: 18 },

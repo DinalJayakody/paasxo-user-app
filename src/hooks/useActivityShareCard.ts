@@ -11,7 +11,7 @@ import { View } from 'react-native';
 import MapView from 'react-native-maps';
 import { captureRef } from 'react-native-view-shot';
 import { StoredActivity } from '../api/activityApi';
-import { ActivityShareCard, SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT } from '../components/activity/ActivityShareCard';
+import { ActivityShareCard, ShareCardAspectRatio, SHARE_CARD_DIMENSIONS } from '../components/activity/ActivityShareCard';
 
 // Snapshotted at a lower resolution than the final card (which is captured
 // at SHARE_CARD_WIDTH/HEIGHT) — react-native-maps upscales/crops fine as a
@@ -20,10 +20,15 @@ import { ActivityShareCard, SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT } from '../compo
 const MAP_SNAPSHOT_WIDTH = 1080;
 const MAP_SNAPSHOT_HEIGHT = 900;
 
-export function useActivityShareCard(activity: StoredActivity | null, authorName: string) {
+export function useActivityShareCard(
+  activity: StoredActivity | null,
+  authorName: string,
+  records: string[] = []
+) {
   const cardRef = useRef<View>(null);
   const [mapSnapshotUri, setMapSnapshotUri] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [aspectRatio, setAspectRatio] = useState<ShareCardAspectRatio>('post');
   const imageLoadedRef = useRef(false);
   const cachedCardUriRef = useRef<string | null>(null);
 
@@ -33,20 +38,28 @@ export function useActivityShareCard(activity: StoredActivity | null, authorName
 
   /**
    * Returns a local file:// URI for the flattened share card (cached after
-   * the first call for this activity instance — pass a new `shareLinkUrl`
-   * to force a rebuild, e.g. once the activity has just been synced and a
-   * real link is available for the first time). `mapRef` is the MapView
-   * already showing the fitted route on the calling screen — reused rather
-   * than mounting a second hidden map, which would need its own GPS/tile
-   * load time.
+   * the first call for this activity+aspect-ratio combo — pass a new
+   * `shareLinkUrl` to force a rebuild, e.g. once the activity has just been
+   * synced and a real link is available for the first time). `mapRef` is the
+   * MapView already showing the fitted route on the calling screen — reused
+   * rather than mounting a second hidden map, which would need its own
+   * GPS/tile load time. `targetAspectRatio` defaults to 'post' (4:5,
+   * feed/external); pass 'story' for the 9:16 Story canvas.
    */
   const buildShareCard = useCallback(async (
     mapRef?: React.RefObject<MapView | null>,
-    shareLinkUrl?: string | null
+    shareLinkUrl?: string | null,
+    targetAspectRatio: ShareCardAspectRatio = 'post'
   ): Promise<string | null> => {
     if (!activity) return null;
-    if (cachedCardUriRef.current && shareLinkUrl === undefined) return cachedCardUriRef.current;
+    if (cachedCardUriRef.current && shareLinkUrl === undefined && targetAspectRatio === aspectRatio) {
+      return cachedCardUriRef.current;
+    }
 
+    if (targetAspectRatio !== aspectRatio) {
+      setAspectRatio(targetAspectRatio);
+      cachedCardUriRef.current = null;
+    }
     if (shareLinkUrl !== undefined) {
       setShareUrl(shareLinkUrl);
       cachedCardUriRef.current = null;
@@ -89,12 +102,13 @@ export function useActivityShareCard(activity: StoredActivity | null, authorName
     }
 
     try {
+      const dim = SHARE_CARD_DIMENSIONS[targetAspectRatio];
       const uri = await captureRef(cardRef, {
         format: 'jpg',
         quality: 0.92,
         result: 'tmpfile',
-        width: SHARE_CARD_WIDTH,
-        height: SHARE_CARD_HEIGHT,
+        width: dim.width,
+        height: dim.height,
       });
       cachedCardUriRef.current = uri;
       return uri;
@@ -102,7 +116,7 @@ export function useActivityShareCard(activity: StoredActivity | null, authorName
       console.warn('[useActivityShareCard] capture failed:', e);
       return null;
     }
-  }, [activity]);
+  }, [activity, aspectRatio]);
 
   const ShareCardPortal = activity
     ? React.createElement(
@@ -114,6 +128,8 @@ export function useActivityShareCard(activity: StoredActivity | null, authorName
         React.createElement(ActivityShareCard, {
           ref: cardRef,
           activity,
+          aspectRatio,
+          records,
           authorName,
           mapSnapshotUri,
           shareUrl,

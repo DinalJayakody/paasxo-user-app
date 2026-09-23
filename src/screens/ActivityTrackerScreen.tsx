@@ -523,14 +523,14 @@ export default function ActivityTrackerScreen() {
     return serverId;
   }, [completedActivity, savedServerId]);
 
-  const { ShareCardPortal, buildShareCard } = useActivityShareCard(completedActivity, user?.displayName || 'A Paasxo user');
+  const { ShareCardPortal, buildShareCard } = useActivityShareCard(completedActivity, user?.displayName || 'A Paasxo user', newRecords);
 
   const handleShareToStory = useCallback(async () => {
     if (!completedActivity || shareBusy) return;
     setShareBusy('story');
     try {
       const serverId = await ensureSavedAndSynced();
-      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null);
+      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null, 'story');
       if (!cardUri) throw new Error('Could not generate the share image');
       await storyApi.createStory({ mediaUri: cardUri, mediaType: 'IMAGE', mimeType: 'image/jpeg', filterName: 'NORMAL' });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
