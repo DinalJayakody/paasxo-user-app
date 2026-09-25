@@ -21,6 +21,16 @@ interface PostCardProps {
   onShare?: () => void;
 }
 
+// A post's image used to be forced into a fixed 220px-tall box with RN's
+// default resizeMode:'cover', which crops anything that isn't exactly that
+// box's aspect ratio — a tall portrait photo could lose its top/bottom, a
+// wide landscape its sides. Sizing the box to the image's own aspect ratio
+// (learned from onLoad, no extra network fetch beyond the image itself)
+// shows it in full instead, clamped so an extreme photo (a receipt-shaped
+// sliver, a panorama) can't blow out the feed's layout.
+const MIN_IMAGE_ASPECT_RATIO = 0.66; // tallest allowed — 2:3 portrait
+const MAX_IMAGE_ASPECT_RATIO = 1.91; // widest allowed — landscape cap
+
 export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
@@ -33,6 +43,14 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
   const [menuVisible, setMenuVisible] = useState(false);
   const [reportVisible, setReportVisible] = useState(false);
   const [videoPlayerVisible, setVideoPlayerVisible] = useState(false);
+  // Square until the real image loads and reports its natural size.
+  const [imageAspectRatio, setImageAspectRatio] = useState(1);
+  const handleImageLoad = (e: { nativeEvent: { source?: { width: number; height: number } } }) => {
+    const size = e.nativeEvent.source;
+    if (!size?.width || !size.height) return;
+    const ratio = size.width / size.height;
+    setImageAspectRatio(Math.min(Math.max(ratio, MIN_IMAGE_ASPECT_RATIO), MAX_IMAGE_ASPECT_RATIO));
+  };
 
   const avatarUri = resolveAvatarUri(post.authorProfileImageUrl, post.authorDisplayName);
   const imageUri = parseMediaUrl(post.mediaUrl);
@@ -161,14 +179,24 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
       ) : isVideo ? (
         (videoThumbUri || imageUri) && (
           <Pressable onPress={() => setVideoPlayerVisible(true)} style={{ marginTop: 10 }}>
-            <Image source={{ uri: videoThumbUri || imageUri! }} style={[styles.postImage, { marginTop: 0 }]} />
+            <Image
+              source={{ uri: videoThumbUri || imageUri! }}
+              style={[styles.postImage, { marginTop: 0, aspectRatio: imageAspectRatio }]}
+              onLoad={handleImageLoad}
+            />
             <View style={styles.videoPlayBadge}>
               <Play color={colors.white} size={22} strokeWidth={2.5} fill={colors.white} />
             </View>
           </Pressable>
         )
       ) : (
-        imageUri && <Image source={{ uri: imageUri }} style={styles.postImage} />
+        imageUri && (
+          <Image
+            source={{ uri: imageUri }}
+            style={[styles.postImage, { aspectRatio: imageAspectRatio }]}
+            onLoad={handleImageLoad}
+          />
+        )
       )}
 
       {/* ACTIONS */}
@@ -292,9 +320,9 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
 
   postImage: {
     width: '100%',
-    height: 220,
     borderRadius: 14,
     marginTop: 10,
+    backgroundColor: colors.neutral100,
   },
   videoPlayBadge: {
     position: 'absolute', top: '50%', left: '50%',
