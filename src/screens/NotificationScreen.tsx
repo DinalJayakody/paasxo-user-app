@@ -28,6 +28,7 @@ import {
   MapPin,
   MessageCircle,
   Sparkles,
+  Swords,
   Trophy,
   UserCheck,
   UserMinus,
@@ -90,6 +91,9 @@ function NotificationIcon({ type }: { type: string }) {
     case 'TOURNAMENT_REMINDER':   return <Calendar color={colors.primary} size={size} strokeWidth={sw} />;
     case 'VENUE_CLOSED':          return <MapPin color="#F59E0B" size={size} strokeWidth={sw} />;
     case 'BOOKING_PENDING_VENDOR_APPROVAL': return <Clock color="#F59E0B" size={size} strokeWidth={sw} />;
+    case 'TEAM_CHALLENGE_RECEIVED': return <Swords color={colors.primary} size={size} strokeWidth={sw} />;
+    case 'TEAM_CHALLENGE_ACCEPTED': return <Swords color={colors.success} size={size} strokeWidth={sw} />;
+    case 'TEAM_CHALLENGE_DECLINED': return <Swords color={colors.error} size={size} strokeWidth={sw} />;
     default:                      return <Bell color={colors.textMuted} size={size} strokeWidth={sw} />;
   }
 }
@@ -360,6 +364,16 @@ export default function NotificationScreen({ category }: NotificationScreenProps
       router.push(`/trainer-session/${snap.sessionId}` as any);
     } else if (n.type === 'NEARBY_SUGGESTION' && snap.venueId) {
       router.push('/explore?category=VENUES' as any);
+    } else if (n.type === 'TEAM_CHALLENGE_RECEIVED' && snap.challengedTeamId) {
+      // Recipient is the challenged team's captain - land them on their own
+      // team, where the pending challenge (and Accept/Decline) shows up.
+      router.push(`/team/${snap.challengedTeamId}` as any);
+    } else if (
+      (n.type === 'TEAM_CHALLENGE_ACCEPTED' || n.type === 'TEAM_CHALLENGE_DECLINED') &&
+      snap.challengerTeamId
+    ) {
+      // Recipient is the challenger's captain - land them back on their own team.
+      router.push(`/team/${snap.challengerTeamId}` as any);
     }
     // WALK_RUN_INVITE_* has no dedicated viewer screen yet - falls through to mark-read only.
   };

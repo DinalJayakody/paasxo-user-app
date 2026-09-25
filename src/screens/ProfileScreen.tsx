@@ -47,6 +47,7 @@ import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import ScreenGlow from '../components/ScreenGlow';
 import { FollowListModal } from '../components/FollowListModal';
+import { TeamsSection } from '../components/team/TeamsSection';
 import { goBack } from '../utils/navigation';
 
 // Module-scope, always light-palette accent colors regardless of theme (see
@@ -366,6 +367,8 @@ export default function ProfileScreen() {
 
   const renderStatsTab = () => (
     <View>
+      <TeamsSection uid={userId} colors={colors} showCreateButton />
+
       <View style={styles.statsSportBadge}>
         <Text style={styles.statsSportEmoji}>{sportEmoji}</Text>
         <Text style={[styles.statsSportLabel, { color: sportColor }]}>{sport} STATISTICS</Text>
