@@ -17,6 +17,7 @@ import { MapPin, Trophy } from 'lucide-react-native';
 import { Colors, ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import ScreenGlow from '../components/ScreenGlow';
+import { AdaptiveLogo } from '../components/AdaptiveLogo';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -144,11 +145,7 @@ export default function WelcomeScreen() {
             },
           ]}
         >
-          <Image
-            source={require('../../assets/logo.jpeg')}
-            style={styles.logo}
-            resizeMode="cover"
-          />
+          <AdaptiveLogo style={styles.logo} />
         </Animated.View>
         <Text style={styles.heroTagline}>Play. Connect. Compete.</Text>
       </View>
@@ -298,14 +295,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   logoWrapper: {
     width: LOGO_SIZE,
     height: LOGO_SIZE,
-    borderRadius: 24,
-    overflow: 'hidden',
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 14,
-    elevation: 6,
-    backgroundColor: colors.white,
   },
   logo: {
     width: '100%',

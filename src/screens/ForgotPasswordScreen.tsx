@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Image,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
@@ -22,6 +21,7 @@ import axiosInstance from '../api/axios';
 import { ENDPOINTS } from '../api/endpoints';
 import ScreenGlow from '../components/ScreenGlow';
 import { goBack } from '../utils/navigation';
+import { AdaptiveLogo } from '../components/AdaptiveLogo';
 
 const isValidEmail = (val: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
 
@@ -124,11 +124,7 @@ export default function ForgotPasswordScreen() {
             <TouchableOpacity onPress={() => goBack(router)} style={styles.backBtn} activeOpacity={0.7}>
               <ArrowLeft color={colors.primary} size={22} strokeWidth={2.5} />
             </TouchableOpacity>
-            <Image
-              source={require('../../assets/logo.jpeg')}
-              style={styles.headerLogo}
-              resizeMode="contain"
-            />
+            <AdaptiveLogo style={styles.headerLogo} />
             <View style={{ width: 40 }} />
           </View>
 

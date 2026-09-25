@@ -77,10 +77,14 @@ export function PaasxoLogoLoader({ size = 56, elevated = true }: Props) {
           elevated && styles.badgeElevated,
         ]}
       >
+        {/* The badge behind this is always colors.white regardless of app
+            theme, so the blue mark (not the theme-adaptive one, which would
+            turn white in dark mode and vanish here) is always the right
+            contrast choice — see AdaptiveLogo's own doc comment. */}
         <Image
-          source={require('../../assets/logo.jpeg')}
-          style={{ width: logoSize, height: logoSize, borderRadius: logoSize * 0.22 }}
-          resizeMode="cover"
+          source={require('../../assets/logo-mark-blue.png')}
+          style={{ width: logoSize, height: logoSize }}
+          resizeMode="contain"
         />
       </Animated.View>
     </View>
