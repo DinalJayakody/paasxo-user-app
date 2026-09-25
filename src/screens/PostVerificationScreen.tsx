@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,14 @@ import {
   SafeAreaView,
   Easing,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
-import { X, ArrowRight, CircleCheck as CheckCircle, Clock } from 'lucide-react-native';
+import { X, ArrowRight, CircleCheck as CheckCircle, Clock, Mail } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import { authApi } from '../api/authApi';
 import { Button } from '../components/Button';
 import { AdaptiveLogo } from '../components/AdaptiveLogo';
 import ScreenGlow from '../components/ScreenGlow';
@@ -68,8 +70,24 @@ export default function PostVerificationScreen() {
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const { pending } = useLocalSearchParams<{ pending?: string }>();
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const isPendingVendor = pending === 'vendor';
+  const [resendState, setResendState] = useState<'idle' | 'sending' | 'sent'>('idle');
+
+  // Informational only — this app never blocks access on email verification
+  // (unlike the vendor pending-review gate below), so this is just a courtesy
+  // resend, not a requirement to proceed. See AuthService#register, which
+  // already sends this automatically on registration.
+  const handleResendVerification = async () => {
+    if (resendState === 'sending') return;
+    setResendState('sending');
+    try {
+      await authApi.resendVerificationEmail();
+      setResendState('sent');
+    } catch {
+      setResendState('idle');
+    }
+  };
 
   const logoScale   = useRef(new Animated.Value(1)).current;
   const logoOpacity = useRef(new Animated.Value(1)).current;
@@ -170,6 +188,24 @@ export default function PostVerificationScreen() {
               style={styles.ctaButton}
               icon={<ArrowRight color={colors.white} size={20} strokeWidth={2.5} />}
             />
+
+            <TouchableOpacity
+              onPress={handleResendVerification}
+              disabled={resendState !== 'idle'}
+              activeOpacity={0.7}
+              style={styles.resendRow}
+            >
+              {resendState === 'sending' ? (
+                <ActivityIndicator size="small" color={colors.textMuted} />
+              ) : (
+                <Mail color={colors.textMuted} size={14} strokeWidth={2} />
+              )}
+              <Text style={styles.resendText}>
+                {resendState === 'sent'
+                  ? `Verification email resent to ${user?.email ?? 'your inbox'}`
+                  : `Verify ${user?.email ?? 'your email'} · Resend link`}
+              </Text>
+            </TouchableOpacity>
           </>
         )}
       </Animated.View>
@@ -290,5 +326,17 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   ctaButton: {
     width: '100%',
+  },
+  resendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 16,
+    paddingVertical: 6,
+  },
+  resendText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textMuted,
   },
 });

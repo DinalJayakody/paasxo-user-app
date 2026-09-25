@@ -82,6 +82,9 @@ export const ENDPOINTS = {
     // Permanently deletes the signed-in user's account — see SettingsScreen's
     // "Delete Account" row and AuthController#deleteAccount.
     DELETE_ACCOUNT: '/auth/account',
+    // Re-sends the informational verification email a fresh email/password
+    // registration already gets automatically — see PostVerificationScreen.
+    RESEND_VERIFICATION: '/auth/resend-verification',
   },
   // com.pasxo.controller.AuthController exposes profile under /auth, not /user.
   // PUT /auth/profile is multipart (UpdateProfileRequest bound via

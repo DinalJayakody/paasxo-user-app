@@ -67,6 +67,13 @@ formData.append("profileImage", {
   deleteAccount: async (): Promise<void> => {
     await axiosInstance.delete(ENDPOINTS.AUTH.DELETE_ACCOUNT);
   },
+
+  // Re-sends the verification email a fresh registration already gets
+  // automatically — see PostVerificationScreen's "Resend" button. Never
+  // blocks anything if it fails; email verification is informational only.
+  resendVerificationEmail: async (): Promise<void> => {
+    await axiosInstance.post(ENDPOINTS.AUTH.RESEND_VERIFICATION);
+  },
 };
 
 /*
