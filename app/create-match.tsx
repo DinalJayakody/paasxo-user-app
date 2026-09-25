@@ -14,6 +14,7 @@ import {
   Linking,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -39,6 +40,7 @@ import {
   ChevronDown,
   Globe,
   Lock,
+  Sparkles,
 } from 'lucide-react-native';
 import Svg, { Path as SvgPath } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -55,6 +57,11 @@ import ScreenGlow from '../src/components/ScreenGlow';
 import { goBack } from '../src/utils/navigation';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+
+// Display-only mirror of the backend's default PlatformProperties.publicMatchJoinFee
+// (LKR) — shown before the booking exists to join; the actual charge is always
+// computed server-side (BookingService.createJoinOrder / MatchJoinPaymentListener).
+const PUBLIC_MATCH_FEE_DISPLAY = 300;
 
 const SPORTS = [
   { id: 'FUTSAL',           label: 'Futsal',      emoji: '⚽', color: Colors.futsal,      grad: [Colors.futsal, Colors.futsalLight] as [string,string] },
@@ -565,6 +572,13 @@ export default function CreateMatch() {
   const [maxCapacity, setMaxCapacity] = useState('10');
   const [minPlayers, setMinPlayers] = useState('6');
   const [isPublic, setIsPublic] = useState(true);
+  // Distinct from isPublic (search discoverability, free) — an opt-in mode
+  // where a stranger can join this match directly, no invitation, for a flat
+  // platform fee. Off by default. The displayed amount mirrors the backend's
+  // configurable default (PlatformProperties.publicMatchJoinFee) purely for
+  // display before the booking exists — the actual charge is always computed
+  // server-side, never trusted from the client.
+  const [isPublicMatch, setIsPublicMatch] = useState(false);
   const [description, setDescription] = useState('');
   const [rulesModalVisible, setRulesModalVisible] = useState(false);
   const [rulesAccepted, setRulesAccepted] = useState(false);
@@ -683,6 +697,7 @@ export default function CreateMatch() {
         maxPlayers: maxP,
         minPlayers: minP,
         isPublic,
+        isPublicMatch: isPublic && isPublicMatch,
         players: directPlayers.length > 0
           ? directPlayers.map((p) => p.firebaseUid)
           : undefined,
@@ -930,6 +945,40 @@ export default function CreateMatch() {
                 </Pressable>
               </View>
             </View>
+
+            {/* Public Match — opt-in flat-fee open join, only meaningful when
+                the match is already discoverable (isPublic above). */}
+            {isPublic && (
+              <View style={styles.section}>
+                <View style={styles.publicMatchRow}>
+                  <View style={styles.publicMatchIconWrap}>
+                    <Sparkles color={currentSport.color} size={18} strokeWidth={2} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.label}>Public Match</Text>
+                    <Text style={styles.fieldGuide}>
+                      Let anyone join instantly, no invitation needed, for a flat LKR {PUBLIC_MATCH_FEE_DISPLAY} platform fee per join (on top of their venue-cost share).
+                    </Text>
+                  </View>
+                  <Switch
+                    value={isPublicMatch}
+                    onValueChange={setIsPublicMatch}
+                    trackColor={{ false: colors.neutral300, true: currentSport.color + '80' }}
+                    thumbColor={isPublicMatch ? currentSport.color : colors.white}
+                  />
+                </View>
+                {isPublicMatch && (
+                  <View style={styles.pbInfoRow}>
+                    <Info color={currentSport.color} size={13} strokeWidth={2} />
+                    <Text style={styles.pbInfoText}>
+                      {perPlayer > 0
+                        ? `Each joiner pays their LKR ${perPlayer.toFixed(2)} venue share plus the LKR ${PUBLIC_MATCH_FEE_DISPLAY} platform fee.`
+                        : `Even though this match is free to host, each joiner still pays the LKR ${PUBLIC_MATCH_FEE_DISPLAY} platform fee to join.`}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
 
             {/* Max & Min Players side by side */}
             <View style={styles.row}>
@@ -1625,6 +1674,25 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
     lineHeight: 13,
+  },
+
+  publicMatchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.cardBg,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.neutral200,
+    padding: 12,
+  },
+  publicMatchIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.neutral100,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // ── Price breakdown card

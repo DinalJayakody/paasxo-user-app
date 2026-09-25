@@ -167,7 +167,13 @@ export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], 
 
   // If user is bringing additional players, they pay for all of them
   const playersJoining = 1 + additionalPlayerIds.length;
-  const amountDue = perPlayer != null ? perPlayer * playersJoining : null;
+  const venueShare = perPlayer != null ? perPlayer * playersJoining : 0;
+  // Flat, once-per-join fee (not multiplied by playersJoining) for a Public
+  // Match — see CreateBookingPayload.isPublicMatch / BookingService.createJoinOrder,
+  // the actual server-side source of truth this preview mirrors.
+  const publicMatchFee = match.isPublicMatch ? (match.publicMatchJoinFee ?? 0) : 0;
+  const isFreeToJoin = perPlayer == null && publicMatchFee <= 0;
+  const amountDue = isFreeToJoin ? null : venueShare + publicMatchFee;
   const serviceFee = amountDue != null
     ? Number(((amountDue * (match.serviceFeePercent ?? 0)) / 100).toFixed(2))
     : 0;
@@ -210,6 +216,11 @@ export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], 
               <Text style={styles.chipText}>{sym}{Number(perPlayer).toFixed(2)} / player</Text>
             </View>
           )}
+          {publicMatchFee > 0 && (
+            <View style={styles.chip}>
+              <Text style={styles.chipText}>+{sym}{publicMatchFee.toFixed(2)} public match fee</Text>
+            </View>
+          )}
         </View>
 
         {/* Match summary */}
@@ -224,21 +235,31 @@ export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], 
         {/* Payment breakdown */}
         <Text style={styles.sectionTitle}>Payment Breakdown</Text>
         <View style={styles.card}>
-          {perPlayer != null ? (
+          {!isFreeToJoin ? (
             <>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>
-                  Player fee{playersJoining > 1 ? ` × ${playersJoining} players` : ''}
-                </Text>
-                <Text style={styles.summaryValue}>
-                  {sym}{amountDue != null ? amountDue.toFixed(2) : '—'}
-                </Text>
-              </View>
-              {playersJoining > 1 && (
-                <View style={styles.summarySubRow}>
-                  <Text style={styles.summarySubLabel}>
-                    {sym}{Number(perPlayer).toFixed(2)} × {playersJoining}
-                  </Text>
+              {perPlayer != null && (
+                <>
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>
+                      Player fee{playersJoining > 1 ? ` × ${playersJoining} players` : ''}
+                    </Text>
+                    <Text style={styles.summaryValue}>
+                      {sym}{venueShare.toFixed(2)}
+                    </Text>
+                  </View>
+                  {playersJoining > 1 && (
+                    <View style={styles.summarySubRow}>
+                      <Text style={styles.summarySubLabel}>
+                        {sym}{Number(perPlayer).toFixed(2)} × {playersJoining}
+                      </Text>
+                    </View>
+                  )}
+                </>
+              )}
+              {publicMatchFee > 0 && (
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Public Match platform fee</Text>
+                  <Text style={styles.summaryValue}>{sym}{publicMatchFee.toFixed(2)}</Text>
                 </View>
               )}
               <View style={styles.summaryRow}>
@@ -273,7 +294,7 @@ export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], 
           </View>
         </View>
 
-        {perPlayer != null && (
+        {!isFreeToJoin && (
           <View style={styles.guideCard}>
             <View style={styles.guideHeader}>
               <RefreshCw color={colors.primary} size={16} strokeWidth={2.2} />

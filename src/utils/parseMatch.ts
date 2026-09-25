@@ -80,6 +80,8 @@ export const parseMatchDetails = (raw: any): MatchDetails => {
     slotCount: data.slotCount ?? 1,
     pricePerPlayer: data.pricePerPlayer ?? undefined,
     serviceFeePercent: data.serviceFeePercent ?? 0,
+    isPublicMatch: data.isPublicMatch ?? false,
+    publicMatchJoinFee: data.publicMatchJoinFee ?? undefined,
     totalPrice: data.totalPrice ?? data.pricePerSlot ?? data.price,
     currencySymbol: data.currencySymbol || 'LKR ',
     rules: Array.isArray(data.rules) && data.rules.length > 0 ? data.rules : GENERIC_RULES,

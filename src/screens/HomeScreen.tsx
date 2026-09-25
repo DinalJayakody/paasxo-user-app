@@ -324,7 +324,14 @@ export default function HomeScreen() {
         startDate: combinedStart,
         endDate: item.endDate || item.end ||
           (item.slotDate && item.endTime ? `${item.slotDate}T${item.endTime}` : undefined),
-        price: totalBookingPrice == null ? 'Free' : `LKR ${totalBookingPrice.toFixed(2)}`,
+        // A Public Match (see CreateBookingPayload.isPublicMatch) always
+        // carries a flat platform join fee even at $0 venue cost, so it's
+        // never truly "Free" — surface that instead of a misleading label.
+        price: totalBookingPrice == null
+          ? (item.isPublicMatch && item.publicMatchJoinFee != null
+              ? `LKR ${Number(item.publicMatchJoinFee).toFixed(2)} to join`
+              : 'Free')
+          : `LKR ${totalBookingPrice.toFixed(2)}`,
         pricePerPlayer: perPlayer,
         spotsLeft: item.spotsLeft ?? item.availableSpots ?? 0,
         maxSpots: maxP,

@@ -306,6 +306,10 @@ export interface MatchDetails {
   slotCount?: number;
   pricePerPlayer?: number;
   serviceFeePercent?: number;
+  /** Opt-in open-join mode with a flat platform fee — see CreateBookingPayload.isPublicMatch. */
+  isPublicMatch?: boolean;
+  /** Only set when isPublicMatch is true — the flat fee (LKR) a joiner pays on top of their venue-cost share. */
+  publicMatchJoinFee?: number;
   totalPrice?: number;
   currencySymbol?: string;
   rules?: string[];
@@ -338,6 +342,13 @@ export interface CreateBookingPayload {
   minPlayers?: number;
   /** true (default) = discoverable in public search/discovery; false = invitees-only. */
   isPublic?: boolean;
+  /**
+   * Distinct from isPublic above (which is only about search discoverability
+   * and free) — an opt-in "Public Match" mode where anyone can join directly,
+   * no invitation needed, for a flat platform fee on top of the venue-cost
+   * split. Defaults false: an ordinary match is never silently charged this.
+   */
+  isPublicMatch?: boolean;
   players?: string[];
 }
 

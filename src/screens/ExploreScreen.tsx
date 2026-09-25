@@ -102,6 +102,7 @@ interface GameResult {
   locationName: string; joinedPlayersCount: number; maxSpots: number;
   spotsLeft: number; totalPrice: number | null; pricePerPlayer: number | null;
   latitude: number; longitude: number; distance?: number;
+  isPublicMatch?: boolean; publicMatchJoinFee?: number | null;
 }
 interface TrainerResult {
   id: string; name: string; location: string;
@@ -670,6 +671,8 @@ export default function ExploreScreen() {
             pricePerPlayer: b.pricePerPlayer != null ? Number(b.pricePerPlayer) : null,
             latitude: b.latitude ?? DEFAULT_LAT, longitude: b.longitude ?? DEFAULT_LNG,
             distance: mapDist(b.latitude, b.longitude),
+            isPublicMatch: b.isPublicMatch ?? false,
+            publicMatchJoinFee: b.publicMatchJoinFee != null ? Number(b.publicMatchJoinFee) : null,
           }));
           setResults((prev) => (append ? [...prev, ...mapped] : mapped));
 
@@ -836,6 +839,10 @@ export default function ExploreScreen() {
         ? `LKR ${game.pricePerPlayer.toFixed(2)}/player`
         : game.totalPrice != null
         ? `LKR ${game.totalPrice.toFixed(2)} total`
+        // A Public Match always carries a flat platform join fee even at $0
+        // venue cost — never truly "Free" (see CreateBookingPayload.isPublicMatch).
+        : game.isPublicMatch && game.publicMatchJoinFee != null
+        ? `LKR ${game.publicMatchJoinFee.toFixed(2)} to join`
         : 'Free';
     return (
       <TouchableOpacity
