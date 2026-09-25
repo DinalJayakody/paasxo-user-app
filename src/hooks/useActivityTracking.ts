@@ -25,6 +25,9 @@ import {
   haversineMeters, ElevationTracker, SplitTracker, LiveSplit, formatTime, formatDist, distUnit, calcPaceSecPerKm,
 } from '../utils/activityMath';
 import { ActivityType, RoutePoint } from '../api/activityApi';
+import {
+  PersistedTrackingSession, saveTrackingSession, clearTrackingSession,
+} from '../lib/activeTrackingSession';
 
 // Matches the emoji/label used in ActivityTrackerScreen.tsx's ACT config —
 // kept as its own small map here rather than importing that screen's config,
@@ -59,6 +62,11 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 const DRAIN_INTERVAL_MS = 2000;
 const NOTIFICATION_UPDATE_INTERVAL_MS = 5000;
+// Checkpointing the full session (route included) on every 2s drain would be
+// a lot of AsyncStorage churn for a long session's growing route array —
+// every 3rd drain (~6s) bounds that while still keeping an app-kill's worst
+// case recovery loss small.
+const CHECKPOINT_EVERY_N_DRAINS = 3;
 // Same GPS-noise sanity filter the previous implementation used: reject a
 // sample-to-sample jump too small to be real movement or too large to be
 // plausible (a GPS glitch), rather than folding either into distance.
@@ -131,6 +139,11 @@ const locationTaskOptions: Location.LocationTaskOptions = {
 export function useActivityTracking(activityType: ActivityType) {
   const [phase, setPhase] = useState<TrackingPhase>('IDLE');
   const [stats, setStats] = useState<TrackingStats>(emptyStats());
+  // Mirrors `phase` for the unmount safety-net effect below, which (with an
+  // empty dep array, so it only ever registers its cleanup once) would
+  // otherwise always see the stale phase='IDLE' from its very first render.
+  const phaseRef = useRef<TrackingPhase>('IDLE');
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
 
   const routeRef = useRef<RoutePoint[]>([]);
   const distanceRef = useRef(0);
@@ -141,12 +154,24 @@ export function useActivityTracking(activityType: ActivityType) {
   const elapsedRef = useRef(0);
   const lastProcessedTimestampRef = useRef(0);
   const stepCountRef = useRef<number | null>(null);
+  // Pedometer.watchStepCount's `steps` is cumulative only since THAT
+  // subscription started, resetting to 0 on every fresh watchStepCount call —
+  // resuming a session needs to add new steps on top of the restored total,
+  // not silently overwrite it the moment the first new pedometer tick lands.
+  const stepCountBaseRef = useRef(0);
   const currentLocationRef = useRef<{ latitude: number; longitude: number } | null>(null);
 
   const drainIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const tickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const notifyIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pedometerSubRef = useRef<{ remove: () => void } | null>(null);
+  const drainCountRef = useRef(0);
+  // The session's real activity type at the moment tracking actually started —
+  // kept separate from the `activityType` hook param so a resumed session
+  // (which may have started before this specific hook instance existed, e.g.
+  // after an app-kill) always checkpoints/restores as whatever it actually
+  // was, never silently relabeled to whatever the caller's current param is.
+  const sessionActivityTypeRef = useRef<ActivityType>(activityType);
 
   const processSample = useCallback((sample: BufferedSample) => {
     // Dedupe + reject-out-of-order — background delivery can occasionally
@@ -196,11 +221,40 @@ export function useActivityTracking(activityType: ActivityType) {
     }));
   }, []);
 
+  // Persists a full recoverable snapshot — see activeTrackingSession.ts's doc
+  // comment for why the raw GPS buffer alone isn't enough to survive a kill.
+  const checkpoint = useCallback(async (phaseOverride?: 'ACTIVE' | 'PAUSED') => {
+    if (!startTimeRef.current) return; // nothing to checkpoint before start()
+    const splitBaseline = splitTrackerRef.current.getBaseline();
+    const session: PersistedTrackingSession = {
+      activityType: sessionActivityTypeRef.current,
+      startTime: startTimeRef.current.toISOString(),
+      phase: phaseOverride ?? 'ACTIVE',
+      distanceMeters: distanceRef.current,
+      maxSpeedKmh: maxSpeedRef.current,
+      elevationGainMeters: elevationRef.current.gainMeters,
+      elevationLossMeters: elevationRef.current.lossMeters,
+      route: routeRef.current,
+      splits: splitTrackerRef.current.getAll(),
+      lastSplitDistanceM: splitBaseline.lastSplitDistanceM,
+      lastSplitElapsedS: splitBaseline.lastSplitElapsedS,
+      stepCount: stepCountRef.current,
+      lastProcessedTimestamp: lastProcessedTimestampRef.current,
+    };
+    await saveTrackingSession(session);
+  }, []);
+
   const drainAndProcess = useCallback(async () => {
     const samples = await drainLocationBuffer();
-    if (!samples.length) return;
-    samples.sort((a, b) => a.timestamp - b.timestamp).forEach(processSample);
-  }, [processSample]);
+    if (samples.length) {
+      samples.sort((a, b) => a.timestamp - b.timestamp).forEach(processSample);
+    }
+    drainCountRef.current += 1;
+    if (drainCountRef.current >= CHECKPOINT_EVERY_N_DRAINS) {
+      drainCountRef.current = 0;
+      checkpoint('ACTIVE');
+    }
+  }, [processSample, checkpoint]);
 
   const updateNotification = useCallback((paused: boolean) => {
     const distText = `${formatDist(distanceRef.current)}${distUnit(distanceRef.current)}`;
@@ -227,8 +281,9 @@ export function useActivityTracking(activityType: ActivityType) {
       const available = await Pedometer.isAvailableAsync();
       if (!available) return;
       pedometerSubRef.current = Pedometer.watchStepCount((result) => {
-        stepCountRef.current = result.steps;
-        setStats((s) => ({ ...s, stepCount: result.steps }));
+        const total = stepCountBaseRef.current + result.steps;
+        stepCountRef.current = total;
+        setStats((s) => ({ ...s, stepCount: total }));
       });
     } catch {
       // Pedometer unavailable/denied on this device — step count just stays
@@ -277,8 +332,11 @@ export function useActivityTracking(activityType: ActivityType) {
     elapsedRef.current = 0;
     lastProcessedTimestampRef.current = 0;
     stepCountRef.current = null;
+    stepCountBaseRef.current = 0;
     currentLocationRef.current = null;
     startTimeRef.current = new Date();
+    sessionActivityTypeRef.current = activityType;
+    drainCountRef.current = 0;
     setStats({ ...emptyStats(), backgroundPermissionGranted: backgroundGranted });
 
     // Defensive: if a previous session ended abnormally (app killed/crashed
@@ -311,17 +369,19 @@ export function useActivityTracking(activityType: ActivityType) {
     startTimers();
     updateNotification(false);
     await startPedometer();
+    await checkpoint('ACTIVE'); // covers a kill in the first few seconds, before the first periodic checkpoint
 
     setPhase('ACTIVE');
     return { started: true, backgroundGranted };
-  }, [activityType, startTimers, updateNotification, startPedometer]);
+  }, [activityType, startTimers, updateNotification, startPedometer, checkpoint]);
 
   const pause = useCallback(async () => {
     await drainAndProcess(); // capture anything buffered right up to the pause moment
     await stopLocationAndTimers();
     setPhase('PAUSED');
     updateNotification(true);
-  }, [drainAndProcess, stopLocationAndTimers, updateNotification]);
+    await checkpoint('PAUSED'); // so a kill while paused still resumes into PAUSED, not ACTIVE
+  }, [drainAndProcess, stopLocationAndTimers, updateNotification, checkpoint]);
 
   const resume = useCallback(async () => {
     await Location.startLocationUpdatesAsync(ACTIVITY_LOCATION_TASK, locationTaskOptions);
@@ -335,6 +395,7 @@ export function useActivityTracking(activityType: ActivityType) {
     await drainAndProcess();
     await stopLocationAndTimers();
     await dismissActivityNotification();
+    await clearTrackingSession();
     setPhase('IDLE');
 
     const coords = routeRef.current;
@@ -369,6 +430,80 @@ export function useActivityTracking(activityType: ActivityType) {
     };
   }, [activityType, drainAndProcess, stopLocationAndTimers]);
 
+  /**
+   * Reconstructs an in-progress session from a checkpoint written before the
+   * app was killed (see activeTrackingSession.ts) — restores every
+   * accumulator (route/distance/elevation/splits/steps) so the resumed
+   * session reads as a continuation, not a restart, then re-registers the
+   * OS location task and timers exactly like start() does. Caller (the
+   * screen) is responsible for setting its own UI phase and activity-type
+   * selection to match `session.phase`/`session.activityType` — this only
+   * restores the tracking engine itself.
+   */
+  const resumeFromSession = useCallback(async (session: PersistedTrackingSession) => {
+    routeRef.current = session.route;
+    distanceRef.current = session.distanceMeters;
+    maxSpeedRef.current = session.maxSpeedKmh;
+    elevationRef.current = ElevationTracker.restore(session.elevationGainMeters, session.elevationLossMeters);
+    splitTrackerRef.current = SplitTracker.restore(
+      session.activityType !== 'CYCLING', session.splits, session.lastSplitDistanceM, session.lastSplitElapsedS
+    );
+    lastProcessedTimestampRef.current = session.lastProcessedTimestamp;
+    stepCountRef.current = session.stepCount;
+    stepCountBaseRef.current = session.stepCount ?? 0;
+    currentLocationRef.current = routeRef.current.length > 0
+      ? { latitude: routeRef.current[routeRef.current.length - 1].latitude, longitude: routeRef.current[routeRef.current.length - 1].longitude }
+      : null;
+    startTimeRef.current = new Date(session.startTime);
+    sessionActivityTypeRef.current = session.activityType;
+    // Wall-clock, matching stop()'s own duration math — a session resumed
+    // after sitting dead for a while should show that dead time as elapsed,
+    // same as if the app had just been slow to reopen, not silently erase it.
+    elapsedRef.current = Math.max(0, Math.round((Date.now() - startTimeRef.current.getTime()) / 1000));
+    drainCountRef.current = 0;
+
+    setStats((s) => ({
+      ...s,
+      distanceMeters: distanceRef.current,
+      maxSpeedKmh: maxSpeedRef.current,
+      elevationGainMeters: Math.round(elevationRef.current.gainMeters),
+      elevationLossMeters: Math.round(elevationRef.current.lossMeters),
+      route: routeRef.current,
+      mapCoords: routeRef.current.map((p) => ({ latitude: p.latitude, longitude: p.longitude })),
+      currentLocation: currentLocationRef.current,
+      splits: splitTrackerRef.current.getAll(),
+      stepCount: stepCountRef.current,
+      elapsedSeconds: elapsedRef.current,
+    }));
+
+    if (session.phase === 'PAUSED') {
+      setPhase('PAUSED');
+      updateNotification(true);
+      await checkpoint('PAUSED');
+      return;
+    }
+
+    // Defensive re-registration, same reasoning as start()'s own — the OS
+    // task may or may not still be alive depending on how the app died.
+    try {
+      if (await Location.hasStartedLocationUpdatesAsync(ACTIVITY_LOCATION_TASK)) {
+        await Location.stopLocationUpdatesAsync(ACTIVITY_LOCATION_TASK);
+      }
+    } catch {
+      // Nothing registered — fine, proceed to start fresh below.
+    }
+    try {
+      await Location.startLocationUpdatesAsync(ACTIVITY_LOCATION_TASK, locationTaskOptions);
+    } catch (e: any) {
+      throw new Error(`Failed to resume location updates: ${e?.message ?? String(e)}`);
+    }
+    startTimers();
+    updateNotification(false);
+    await startPedometer();
+    setPhase('ACTIVE');
+    await checkpoint('ACTIVE');
+  }, [startTimers, updateNotification, startPedometer, checkpoint]);
+
   // Drain immediately on returning to the foreground while ACTIVE, so the UI
   // catches up on anything collected while backgrounded instead of waiting
   // for the next poll tick.
@@ -381,14 +516,20 @@ export function useActivityTracking(activityType: ActivityType) {
 
   // Safety net — if the screen unmounts while still tracking (e.g. the user
   // navigates away unexpectedly), don't leave the OS-level location task and
-  // a stale notification running forever.
+  // a stale notification running forever. Guarded to phase !== 'IDLE': this
+  // hook instance never actually started/resumed anything in the IDLE case
+  // (e.g. the app-kill resume prompt was showing but never answered before
+  // the screen unmounted) — stopping here would wrongly tear down a session
+  // that's still legitimately running in the background, waiting to be
+  // resumed next time the screen mounts.
   useEffect(() => {
     return () => {
+      if (phaseRef.current === 'IDLE') return;
       stopLocationAndTimers();
       dismissActivityNotification();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { phase, stats, start, pause, resume, stop };
+  return { phase, stats, start, pause, resume, stop, resumeFromSession };
 }

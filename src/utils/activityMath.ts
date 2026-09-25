@@ -65,6 +65,21 @@ export class ElevationTracker {
   gainMeters = 0;
   lossMeters = 0;
 
+  /**
+   * Reconstructs a tracker after an app-kill/resume with its accumulated
+   * totals intact — the private smoothing window/baseline can't be
+   * meaningfully restored (it was never persisted, only the running totals
+   * were), so it just starts fresh from the next sample, same as a brand
+   * new tracker. That's a one-sample discontinuity at the resume point at
+   * worst, not a lost session.
+   */
+  static restore(gainMeters: number, lossMeters: number): ElevationTracker {
+    const t = new ElevationTracker();
+    t.gainMeters = gainMeters;
+    t.lossMeters = lossMeters;
+    return t;
+  }
+
   addSample(altitudeMeters: number | null | undefined): void {
     if (altitudeMeters == null || Number.isNaN(altitudeMeters)) return;
     this.window.push(altitudeMeters);
@@ -98,6 +113,17 @@ export class SplitTracker {
 
   constructor(private readonly isPaceBased: boolean) {}
 
+  /** Reconstructs a tracker after an app-kill/resume with its completed
+   * splits and baseline intact, so the next completed kilometer is measured
+   * from where the session actually left off rather than from zero. */
+  static restore(isPaceBased: boolean, splits: LiveSplit[], lastSplitDistanceM: number, lastSplitElapsedS: number): SplitTracker {
+    const t = new SplitTracker(isPaceBased);
+    t.splits = [...splits];
+    t.lastSplitDistanceM = lastSplitDistanceM;
+    t.lastSplitElapsedS = lastSplitElapsedS;
+    return t;
+  }
+
   /** Call on every distance/time update. Returns the newly-completed split
    * (there can be at most one per call given the ~3m GPS sample spacing),
    * or null if no new kilometer has been completed yet. */
@@ -125,6 +151,12 @@ export class SplitTracker {
 
   getAll(): LiveSplit[] {
     return [...this.splits];
+  }
+
+  /** Snapshot of the private baseline fields — for persisting a resumable
+   * session (see SplitTracker.restore). */
+  getBaseline(): { lastSplitDistanceM: number; lastSplitElapsedS: number } {
+    return { lastSplitDistanceM: this.lastSplitDistanceM, lastSplitElapsedS: this.lastSplitElapsedS };
   }
 }
 

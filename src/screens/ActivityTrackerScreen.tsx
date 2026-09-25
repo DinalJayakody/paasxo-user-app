@@ -29,6 +29,7 @@ import { activityStorage, activityApi, StoredActivity, ActivityType, activitySha
 import { goBack } from '../utils/navigation';
 import { useActivityTracking } from '../hooks/useActivityTracking';
 import { useActivityShareCard } from '../hooks/useActivityShareCard';
+import { PersistedTrackingSession, loadTrackingSession, clearTrackingSession } from '../lib/activeTrackingSession';
 import { storyApi } from '../api/storyApi';
 import { socialMediaApi } from '../api/socialMediaApi';
 import { extractApiError } from '../utils/apiError';
@@ -222,6 +223,12 @@ export default function ActivityTrackerScreen() {
   // what a share link actually points at. See ensureSavedAndSynced.
   const [savedServerId, setSavedServerId] = useState<string | null>(null);
   const [shareBusy, setShareBusy] = useState<null | 'story' | 'post' | 'external'>(null);
+  // A checkpoint found on mount from a session that never got a normal
+  // finish — the app was killed (or crashed) while ACTIVE/PAUSED. Non-null
+  // shows the resume-or-discard prompt instead of the usual SELECT screen;
+  // see checkForResumableSession below and activeTrackingSession.ts.
+  const [resumableSession, setResumableSession] = useState<PersistedTrackingSession | null>(null);
+  const [resuming, setResuming] = useState(false);
 
   const tracking = useActivityTracking(actType);
   const { stats } = tracking;
@@ -230,6 +237,50 @@ export default function ActivityTrackerScreen() {
   const prevSplitCountRef = useRef(0);
 
   const cfg = ACT[actType];
+
+  // ── App-kill recovery — check once on mount for a session that never got
+  // a normal finish (see activeTrackingSession.ts). Runs before/alongside
+  // the GPS bootstrap below since finding one takes over the whole screen
+  // regardless of GPS readiness. ──────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      const session = await loadTrackingSession();
+      if (session) setResumableSession(session);
+    })();
+  }, []);
+
+  const handleResumeSession = useCallback(async () => {
+    if (!resumableSession) return;
+    setResuming(true);
+    try {
+      setActType(resumableSession.activityType);
+      await tracking.resumeFromSession(resumableSession);
+      setPhase(resumableSession.phase === 'PAUSED' ? 'PAUSED' : 'ACTIVE');
+      setResumableSession(null);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      console.warn('[ActivityTracker] failed to resume session:', e);
+      Alert.alert(
+        "Couldn't resume your activity",
+        `Your previous session's data is still saved — you can try again, or discard it and start fresh.${e?.message ? `\n\n(${e.message})` : ''}`
+      );
+    } finally {
+      setResuming(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumableSession]);
+
+  const handleDiscardSession = useCallback(() => {
+    Alert.alert('Discard this activity?', "This can't be undone — the distance and time recorded so far will be lost.", [
+      { text: 'Keep It', style: 'cancel' },
+      {
+        text: 'Discard', style: 'destructive', onPress: async () => {
+          await clearTrackingSession();
+          setResumableSession(null);
+        },
+      },
+    ]);
+  }, []);
 
   // ── GPS bootstrap (one-shot, for the "ready to start" screen only —
   // the actual tracking session's GPS comes from useActivityTracking) ──────
@@ -1049,7 +1100,49 @@ export default function ActivityTrackerScreen() {
     );
   };
 
+  const renderResumePrompt = () => {
+    const session = resumableSession!;
+    const sessionCfg = ACT[session.activityType];
+    const elapsedNow = Math.max(0, Math.round((Date.now() - new Date(session.startTime).getTime()) / 1000));
+    return (
+      <View style={{ flex: 1 }}>
+        <LinearGradient colors={['#0F172A', '#1E293B', '#0F172A']} style={StyleSheet.absoluteFill} />
+        <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+          <View style={styles.resumeCenterWrap}>
+            <Text style={styles.resumeEmoji}>{sessionCfg.emoji}</Text>
+            <Text style={styles.resumeTitle}>Unfinished {sessionCfg.label}</Text>
+            <Text style={styles.resumeSubtitle}>
+              Paasxo was closed before this session ended. Your progress is still here.
+            </Text>
+            <View style={styles.resumeStatsRow}>
+              <View style={styles.resumeStatItem}>
+                <Text style={styles.resumeStatValue}>{formatDist(session.distanceMeters)}{distUnit(session.distanceMeters)}</Text>
+                <Text style={styles.resumeStatLabel}>Distance</Text>
+              </View>
+              <View style={styles.resumeStatItem}>
+                <Text style={styles.resumeStatValue}>{formatTime(elapsedNow)}</Text>
+                <Text style={styles.resumeStatLabel}>Elapsed</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              onPress={handleResumeSession}
+              disabled={resuming}
+              activeOpacity={0.85}
+              style={[styles.resumePrimaryBtn, { backgroundColor: sessionCfg.accentColor }]}
+            >
+              {resuming ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.resumePrimaryBtnText}>Resume Activity</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleDiscardSession} disabled={resuming} activeOpacity={0.8} style={styles.resumeDiscardBtn}>
+              <Text style={styles.resumeDiscardBtnText}>Discard</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  };
+
   // ── Phase router ──────────────────────────────────────────────────────────
+  if (resumableSession) return renderResumePrompt();
   if (phase === 'SELECT') return renderSelectPhase();
   if (phase === 'COUNTDOWN') return renderCountdownPhase();
   if (phase === 'ACTIVE') return renderActivePhase(false);
@@ -1084,6 +1177,22 @@ function SummaryTile({ label, value, unit, color }: { label: string; value: stri
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  resumeCenterWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
+  resumeEmoji: { fontSize: 56, marginBottom: 16 },
+  resumeTitle: { fontSize: 22, fontWeight: '800', color: Colors.white, marginBottom: 8, textAlign: 'center' },
+  resumeSubtitle: { fontSize: 14, color: 'rgba(255,255,255,0.65)', textAlign: 'center', lineHeight: 20, marginBottom: 28 },
+  resumeStatsRow: { flexDirection: 'row', gap: 32, marginBottom: 36 },
+  resumeStatItem: { alignItems: 'center' },
+  resumeStatValue: { fontSize: 28, fontWeight: '900', color: Colors.white },
+  resumeStatLabel: { fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.55)', marginTop: 4 },
+  resumePrimaryBtn: {
+    width: '100%', paddingVertical: 16, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 12,
+  },
+  resumePrimaryBtnText: { fontSize: 16, fontWeight: '800', color: Colors.white },
+  resumeDiscardBtn: { paddingVertical: 12, paddingHorizontal: 20 },
+  resumeDiscardBtnText: { fontSize: 14, fontWeight: '700', color: 'rgba(255,255,255,0.5)' },
+
   headerRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8,
