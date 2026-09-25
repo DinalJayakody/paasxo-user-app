@@ -17,6 +17,7 @@ export const trainerApi = {
     lat?: number;
     lng?: number;
     radiusKm?: number;
+    freeOnly?: boolean;
     page?: number;
     size?: number;
   }): Promise<{ content: any[]; hasMore: boolean }> => {

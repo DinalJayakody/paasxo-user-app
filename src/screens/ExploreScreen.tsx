@@ -628,7 +628,7 @@ export default function ExploreScreen() {
 
         } else if (cat === 'TRAINERS') {
           const { content, hasMore: m } = await trainerApi.filterTrainers({
-            query: q, lat: lat2, lng: lng2, radiusKm, ...pageParams,
+            query: q, lat: lat2, lng: lng2, radiusKm, freeOnly: freeOnly || undefined, ...pageParams,
           });
           more = m;
           const mapped = content.map((t: any): TrainerResult => ({
