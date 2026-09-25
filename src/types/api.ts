@@ -611,3 +611,55 @@ export interface TrainerBooking {
   pricePaid?: number;
   bookedAt: string;
 }
+
+// ─── Team domain — mirrors mobile-app-paasxo's dto.team.* responses exactly ──
+// A persistent, cross-tournament, cross-match social Team (create once,
+// captain manages the roster, teams can challenge each other). Deliberately
+// distinct from TournamentTeamRecord above, which only ever exists scoped
+// inside a single Tournament - the two are unrelated and not convertible.
+
+export interface TeamMemberSummary {
+  firebaseUid: string;
+  displayName: string;
+  profileImageUrl?: string;
+  captain: boolean;
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  logoUrl?: string;
+  sport: string; // com.pasxo.dto.enums.Sport
+  captainFirebaseUid: string;
+  members: TeamMemberSummary[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ChallengeStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED';
+
+export interface TeamChallenge {
+  id: string;
+  challengerTeamId: string;
+  challengerTeamName?: string;
+  challengedTeamId: string;
+  challengedTeamName?: string;
+  challengerFirebaseUid: string;
+  status: ChallengeStatus;
+  message?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Request payloads - match com.pasxo.dto.team.* exactly.
+export interface CreateTeamPayload {
+  name: string;
+  sport: string;
+  logoUrl?: string;
+  logo?: { uri: string; name?: string; type?: string };
+}
+
+export interface SendChallengePayload {
+  challengerTeamId: string;
+  message?: string;
+}

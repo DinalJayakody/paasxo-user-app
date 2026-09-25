@@ -287,6 +287,24 @@ export const ENDPOINTS = {
       `/social/users/blocked?page=${page}&size=${size}`,
     REPORT: '/moderation/reports',
   },
+
+  // Matches com.pasxo.controller.TeamController / ChallengeController exactly.
+  // Team here is a persistent, cross-tournament social Team - unrelated to
+  // TOURNAMENTS.CREATE_TEAM above, which is a TournamentTeam scoped to one
+  // Tournament.
+  TEAMS: {
+    CREATE: '/teams',
+    MINE: '/teams/mine',
+    SEARCH: (query: string) => `/teams/search?query=${encodeURIComponent(query)}`,
+    FOR_USER: (uid: string) => `/teams/user/${uid}`,
+    DETAIL: (id: string) => `/teams/${id}`,
+    ADD_MEMBER: (id: string) => `/teams/${id}/members`,
+    REMOVE_MEMBER: (id: string, uid: string) => `/teams/${id}/members/${uid}`,
+    DELETE: (id: string) => `/teams/${id}`,
+    CHALLENGE: (challengedTeamId: string) => `/teams/${challengedTeamId}/challenge`,
+    CHALLENGES_FOR_TEAM: (id: string) => `/teams/${id}/challenges`,
+    RESPOND_TO_CHALLENGE: (challengeId: string) => `/challenges/${challengeId}/respond`,
+  },
 };
 
 export default ENDPOINTS;

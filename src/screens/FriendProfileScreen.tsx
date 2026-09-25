@@ -33,6 +33,7 @@ import { FollowListModal } from '../components/FollowListModal';
 import { ActionMenuSheet } from '../components/ActionMenuSheet';
 import { ReportSheet } from '../components/ReportSheet';
 import ScreenGlow from '../components/ScreenGlow';
+import { TeamsSection } from '../components/team/TeamsSection';
 import { goBack } from '../utils/navigation';
 
 const FRIEND_TABS = ['Moments', 'Stats', 'Reels', 'Tagged'] as const;
@@ -362,6 +363,8 @@ export default function FriendProfileScreen() {
         loaded={activitySummaryLoaded}
         colors={colors}
       />
+
+      <TeamsSection uid={userId as string} colors={colors} />
       <View style={styles.statsSportBadge}>
         <Text style={styles.statsSportEmoji}>{sportEmoji}</Text>
         <Text style={[styles.statsSportLabel, { color: sportColor }]}>{sport} STATISTICS</Text>

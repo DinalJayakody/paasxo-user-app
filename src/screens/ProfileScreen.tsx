@@ -48,6 +48,7 @@ import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import ScreenGlow from '../components/ScreenGlow';
 import { FollowListModal } from '../components/FollowListModal';
+import { TeamsSection } from '../components/team/TeamsSection';
 
 // Module-scope, always light-palette accent colors regardless of theme (see
 // SPORT_MASCOTS in HomeScreen.tsx for the same deliberate choice).
@@ -395,6 +396,8 @@ export default function ProfileScreen() {
         loaded={activitySummaryLoaded}
         colors={colors}
       />
+
+      <TeamsSection uid={userId} colors={colors} showCreateButton />
 
       <View style={styles.statsSportBadge}>
         <Text style={styles.statsSportEmoji}>{sportEmoji}</Text>

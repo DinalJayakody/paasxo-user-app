@@ -46,7 +46,10 @@ export type NotificationType =
   | 'SESSION_REMINDER'
   | 'MATCH_REMINDER'
   | 'TOURNAMENT_REMINDER'
-  | 'VENUE_CLOSED';
+  | 'VENUE_CLOSED'
+  | 'TEAM_CHALLENGE_RECEIVED'
+  | 'TEAM_CHALLENGE_ACCEPTED'
+  | 'TEAM_CHALLENGE_DECLINED';
 
 export const notificationApi = {
   getAll: async (category?: NotificationCategory): Promise<NotificationResponse[]> => {
