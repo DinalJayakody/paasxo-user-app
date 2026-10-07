@@ -17,7 +17,6 @@ import {
   Bell,
   Calendar,
   Check,
-  CheckCheck,
   ChevronRight,
   CircleCheckBig,
   CircleX,
@@ -94,6 +93,9 @@ function NotificationIcon({ type }: { type: string }) {
     case 'TEAM_CHALLENGE_RECEIVED': return <Swords color={colors.primary} size={size} strokeWidth={sw} />;
     case 'TEAM_CHALLENGE_ACCEPTED': return <Swords color={colors.success} size={size} strokeWidth={sw} />;
     case 'TEAM_CHALLENGE_DECLINED': return <Swords color={colors.error} size={size} strokeWidth={sw} />;
+    case 'TEAM_MATCH_CHALLENGE_RECEIVED': return <Swords color={colors.primary} size={size} strokeWidth={sw} />;
+    case 'TEAM_MATCH_CHALLENGE_ACCEPTED': return <Swords color={colors.success} size={size} strokeWidth={sw} />;
+    case 'TEAM_MATCH_CHALLENGE_DECLINED': return <Swords color={colors.error} size={size} strokeWidth={sw} />;
     default:                      return <Bell color={colors.textMuted} size={size} strokeWidth={sw} />;
   }
 }
@@ -378,7 +380,11 @@ export default function NotificationScreen({ category }: NotificationScreenProps
     } else if ((n.type === 'POST_LIKED' || n.type === 'POST_COMMENTED') && snap.postId) {
       // These notifications are always about the recipient's own post, so the
       // right landing spot is that exact post in the recipient's own profile.
-      router.push(`/profile?openPostId=${snap.postId}` as any);
+      // POST_COMMENTED also opens straight into the comment sheet — otherwise
+      // "X commented on your photo" lands on the photo with the comment that
+      // triggered it nowhere in sight, one more tap away.
+      const openComments = n.type === 'POST_COMMENTED' ? '&openComments=1' : '';
+      router.push(`/profile?openPostId=${snap.postId}${openComments}` as any);
     } else if (n.type === 'REEL_LIKED' && snap.reelId) {
       router.push(`/profile?openReelId=${snap.reelId}&tab=Reels` as any);
     } else if ((n.type === 'TOURNAMENT_PLAYER_ADDED' || n.type === 'TOURNAMENT_REMINDER') && snap.tournamentId) {
@@ -399,30 +405,34 @@ export default function NotificationScreen({ category }: NotificationScreenProps
     ) {
       // Recipient is the challenger's captain - land them back on their own team.
       router.push(`/team/${snap.challengerTeamId}` as any);
+    } else if (n.type === 'TEAM_MATCH_CHALLENGE_RECEIVED' && snap.challengedTeamId) {
+      // Recipient is the challenged team's captain - the Match Challenges
+      // card on their own team screen is where Pay/Decline lives.
+      router.push(`/team/${snap.challengedTeamId}` as any);
+    } else if (
+      (n.type === 'TEAM_MATCH_CHALLENGE_ACCEPTED' || n.type === 'TEAM_MATCH_CHALLENGE_DECLINED') &&
+      snap.bookingId
+    ) {
+      // Recipient is the organizer - land them on the actual match, now
+      // either confirmed (accepted) or cancelled+refunded (declined).
+      router.push(`/match/${snap.bookingId}` as any);
+    } else if (n.type === 'COMMUNITY_JOIN_REQUEST' && snap.communityId) {
+      // Recipient is a community admin - land them straight on the pending
+      // requests list so Accept/Decline is one tap away, not buried behind
+      // the overflow menu.
+      router.push(`/community/${snap.communityId}?openRequests=1` as any);
+    } else if (
+      (n.type === 'COMMUNITY_JOIN_APPROVED' || n.type === 'COMMUNITY_JOIN_DECLINED') &&
+      snap.communityId
+    ) {
+      router.push(`/community/${snap.communityId}` as any);
     }
     // WALK_RUN_INVITE_* has no dedicated viewer screen yet - falls through to mark-read only.
-  };
-
-  // Scoped to markRead(id) per currently-listed item rather than the
-  // backend's markAllRead, which clears every category for this user
-  // regardless of what's shown here (see the auto-mark-read effect above
-  // for the full reasoning) - a manual tap on this button should only
-  // affect what's actually in front of the user.
-  const handleMarkAllRead = async () => {
-    const unread = notifications.filter((n) => !n.read);
-    if (unread.length === 0) return;
-    try {
-      await Promise.allSettled(unread.map((n) => notificationApi.markRead(n.id)));
-      const readIds = new Set(unread.map((n) => n.id));
-      setNotifications((prev) => prev.map((n) => (readIds.has(n.id) ? { ...n, read: true } : n)));
-    } catch { /* ignore */ }
   };
 
   if (loading) {
     return <LoadingScreen message="Loading notifications…" />;
   }
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
@@ -443,14 +453,7 @@ export default function NotificationScreen({ category }: NotificationScreenProps
               <ArrowLeft color={colors.white} size={20} strokeWidth={2.5} />
             </HeaderIconButton>
             <Text style={styles.screenTitle} numberOfLines={1}>{copy ? copy.title : 'Notifications'}</Text>
-            {unreadCount > 0 ? (
-              <Pressable style={styles.markAllBtn} onPress={handleMarkAllRead}>
-                <CheckCheck color={colors.white} size={16} strokeWidth={2} />
-                <Text style={styles.markAllTxt}>Mark all read</Text>
-              </Pressable>
-            ) : (
-              <View style={styles.headerSpacer} />
-            )}
+            <View style={styles.headerSpacer} />{/* Notifications mark themselves read automatically shortly after being viewed — see the auto-read effect below; no manual action needed. */}
           </View>
           <Text style={styles.headerGuideText} numberOfLines={2}>
             {copy ? copy.guide : DEFAULT_GUIDE}
@@ -556,16 +559,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     color: 'rgba(255,255,255,0.82)',
     marginTop: 8,
     lineHeight: 17,
-  },
-  markAllBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  markAllTxt: {
-    fontSize: 13,
-    color: colors.white,
-    fontWeight: '600',
   },
   card: {
     flexDirection: 'row',

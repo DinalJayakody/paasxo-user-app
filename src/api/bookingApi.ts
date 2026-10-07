@@ -72,10 +72,16 @@ export const bookingApi = {
     return data;
   },
 
-  // PATCH /bookings/{id}/cancel - the only mutation the backend supports
-  // for an existing booking.
+  // PATCH /bookings/{id}/cancel - organizer cancels their own match.
   cancelBooking: async (id: string | number) => {
     const { data } = await axiosInstance.patch(ENDPOINTS.BOOKINGS.CANCEL(id));
+    return data;
+  },
+
+  // PATCH /bookings/{id}/leave - a joined player (not the organizer) leaves a match.
+  // Refunds their own paid share if still within the refund window (server-authoritative).
+  leaveMatch: async (id: string | number) => {
+    const { data } = await axiosInstance.patch(ENDPOINTS.BOOKINGS.LEAVE(id));
     return data;
   },
 

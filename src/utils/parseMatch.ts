@@ -82,6 +82,7 @@ export const parseMatchDetails = (raw: any): MatchDetails => {
     serviceFeePercent: data.serviceFeePercent ?? 0,
     isPublicMatch: data.isPublicMatch ?? false,
     publicMatchJoinFee: data.publicMatchJoinFee ?? undefined,
+    isPublicSpaceMatch: data.isPublicSpaceMatch ?? false,
     totalPrice: data.totalPrice ?? data.pricePerSlot ?? data.price,
     currencySymbol: data.currencySymbol || 'LKR ',
     rules: Array.isArray(data.rules) && data.rules.length > 0 ? data.rules : GENERIC_RULES,
@@ -100,5 +101,7 @@ export const parseMatchDetails = (raw: any): MatchDetails => {
     paymentStatus: data.paymentStatus,
     isWithinCancellationWindow: data.isWithinCancellationWindow,
     paidParticipants: data.paidParticipants,
+    organizerTeamId: data.organizerTeamId,
+    opponentTeamId: data.opponentTeamId,
   };
 };

@@ -2,15 +2,16 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   Image,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
@@ -25,10 +26,12 @@ import {
   Sparkles,
   Star,
   Trophy,
+  Users,
   X,
   Zap,
 } from 'lucide-react-native';
 import { useSubscription } from '../hooks/useSubscription';
+import { useFloatingHeader } from '../hooks/useFloatingHeader';
 import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
 import { SearchBar } from '../components/SearchBar';
 import HeaderIconButton from '../components/HeaderIconButton';
@@ -44,29 +47,8 @@ import { StoryReel } from '../components/StoryReel';
 import { resolveAvatarUri } from '../utils/mediaUrl';
 import { notificationApi } from '../api/notificationApi';
 import ScreenGlow from '../components/ScreenGlow';
-
-const communityCards = [
-  {
-    id: 'futsal',
-    label: 'Futsal Hub',
-    image: 'https://images.pexels.com/photos/209280/pexels-photo-209280.jpeg?auto=compress&cs=tinysrgb&w=800',
-  },
-  {
-    id: 'cricket',
-    label: 'Cricket Clan',
-    image: 'https://images.pexels.com/photos/163403/cricket-batsman-batting-cricket-pitch-163403.jpeg?auto=compress&cs=tinysrgb&w=800',
-  },
-  {
-    id: 'pickleball',
-    label: 'Pickleball Pro',
-    image: 'https://images.pexels.com/photos/3823096/pexels-photo-3823096.jpeg?auto=compress&cs=tinysrgb&w=800',
-  },
-  {
-    id: 'dance',
-    label: 'Dance Arena',
-    image: 'https://images.pexels.com/photos/396548/pexels-photo-396548.jpeg?auto=compress&cs=tinysrgb&w=800',
-  },
-];
+import { communityApi, Community } from '../api/communityApi';
+import { resolveMediaUrl } from '../utils/mediaUrl';
 
 const users = [
   { id: 'alex', name: 'Alex “Thunder” Ray' },
@@ -96,15 +78,39 @@ const FeedScreen = () => {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const navBarHeight = useBottomNavBarHeight();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { active: isPro } = useSubscription();
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Instagram/Facebook-style floating header (see useFloatingHeader) — same
+  // pattern as HomeScreen. The header's own height is measured on-device
+  // (onLayout below) rather than hardcoded, since it grows when the search
+  // panel opens. `disabled` while searching: the search UI lives inside
+  // this header, so it must not be able to scroll away mid-search.
+  //
+  // topHeaderShadowVerticalMargin covers styles.topHeaderShadow's marginTop
+  // (6) + marginBottom (18), which onLayout doesn't report (margins live
+  // outside a view's own layout box) but which still need reserving as list
+  // top padding and as part of how far the header must travel to fully
+  // clear the screen.
+  const topHeaderShadowVerticalMargin = 24; // marginTop 6 + marginBottom 18
+  const [headerCardHeight, setHeaderCardHeight] = useState(88);
+  const headerHeight = headerCardHeight + topHeaderShadowVerticalMargin;
+  const HEADER_HIDE_DISTANCE = headerHeight + insets.top;
+  const { translateY: headerTranslateY, onScroll: onFeedScroll } = useFloatingHeader(
+    HEADER_HIDE_DISTANCE,
+    undefined,
+    searchOpen
+  );
 
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
   // Tournament ads injected between posts
   const [tournamentAds, setTournamentAds] = useState<TournamentFeedItem[]>([]);
+
+  const [discoverCommunities, setDiscoverCommunities] = useState<Community[]>([]);
 
   const [unreadSocial, setUnreadSocial] = useState(0);
   useFocusEffect(
@@ -191,6 +197,11 @@ const FeedScreen = () => {
       } catch { /* silent */ }
     };
     loadTournamentAds();
+  }, []);
+
+  // Discover Communities strip — one shot per screen mount, top 4 only.
+  useEffect(() => {
+    communityApi.discover(0, 4).then((res) => setDiscoverCommunities(res.content)).catch(() => {});
   }, []);
 
   const loadMore = () => {
@@ -300,10 +311,22 @@ const FeedScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScreenGlow />
-      {/* Floating glass-gradient header */}
-      <View style={styles.topHeaderShadow}>
+      {/* Floating glass-gradient header — absolutely positioned so it
+          overlays the list (which reserves headerHeight of top padding,
+          see the FlatList below) and slides fully off-screen on scroll
+          down / snaps back on scroll up. `top: insets.top` anchors it below
+          the notch/status bar/camera cutout on every device — an absolutely
+          positioned child ignores its SafeAreaView parent's own padding in
+          React Native, so this has to be set explicitly. */}
+      <Animated.View
+        onLayout={(e) => setHeaderCardHeight(e.nativeEvent.layout.height)}
+        style={[
+          styles.topHeaderShadow,
+          { top: insets.top, transform: [{ translateY: headerTranslateY }] },
+        ]}
+      >
       <View style={styles.topBar}>
         <LinearGradient
           colors={[colors.primaryAccent, colors.primary, colors.primaryDark]}
@@ -335,6 +358,12 @@ const FeedScreen = () => {
               style={styles.iconButton}
             >
               <Search color={colors.white} size={20} />
+            </HeaderIconButton>
+            <HeaderIconButton
+              style={[styles.iconButton, styles.topBarActionButton]}
+              onPress={() => router.push('/communities' as any)}
+            >
+              <Users color={colors.white} size={20} />
             </HeaderIconButton>
             <HeaderIconButton
               style={[styles.iconButton, styles.topBarActionButton]}
@@ -415,12 +444,14 @@ const FeedScreen = () => {
           </View>
         )} */}
       </View>
-      </View>
+      </Animated.View>
 
       <View style={styles.refreshableArea}>
       <PaasxoRefreshLogo refreshing={refreshing} />
       <FlatList
         data={feedItems}
+        onScroll={onFeedScroll}
+        scrollEventThrottle={16}
         refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         keyExtractor={(item, index) =>
           item.kind === 'post' ? `post-${item.data.id}-${index}` : `ad-${item.data.id}-${index}`
@@ -443,7 +474,7 @@ const FeedScreen = () => {
           return <PostCard post={item.data} />;
         }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.content, { paddingBottom: navBarHeight + 48 }]}
+        contentContainerStyle={[styles.content, { paddingTop: headerHeight, paddingBottom: navBarHeight + 48 }]}
 
         onEndReached={() => {
           if (!onEndReachedCalledDuringMomentum.current) {
@@ -611,19 +642,44 @@ const FeedScreen = () => {
       </View> */}
 
             {/* COMMUNITIES */}
-            <Text style={styles.discoverTitle}>
-              Discover Communities
-            </Text>
-
-            <View style={styles.communityGrid}>
-              {communityCards.map((item) => (
-                <Pressable key={item.id} style={styles.communityCard}>
-                  <Image source={{ uri: item.image }} style={styles.communityImage} />
-                  <View style={styles.communityOverlay} />
-                  <Text style={styles.communityLabel}>{item.label}</Text>
-                </Pressable>
-              ))}
+            <View style={styles.discoverHeaderRow}>
+              <Text style={styles.discoverTitle}>
+                Discover Communities
+              </Text>
+              <Pressable onPress={() => router.push('/communities' as any)}>
+                <Text style={styles.discoverSeeAll}>See All</Text>
+              </Pressable>
             </View>
+
+            {discoverCommunities.length > 0 ? (
+              <View style={styles.communityGrid}>
+                {discoverCommunities.map((item) => (
+                  <Pressable
+                    key={item.id}
+                    style={styles.communityCard}
+                    onPress={() => router.push(`/community/${item.id}` as any)}
+                  >
+                    {item.coverImageUrl || item.avatarUrl ? (
+                      <Image
+                        source={{ uri: resolveMediaUrl(item.coverImageUrl || item.avatarUrl) }}
+                        style={styles.communityImage}
+                      />
+                    ) : (
+                      <View style={[styles.communityImage, styles.communityImagePlaceholder]}>
+                        <Users color={colors.primary} size={26} strokeWidth={1.6} />
+                      </View>
+                    )}
+                    <View style={styles.communityOverlay} />
+                    <Text style={styles.communityLabel} numberOfLines={1}>{item.name}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : (
+              <Pressable style={styles.communityEmptyCard} onPress={() => router.push('/create-community' as any)}>
+                <Users color={colors.primary} size={22} strokeWidth={1.8} />
+                <Text style={styles.communityEmptyText}>Be the first to create a community</Text>
+              </Pressable>
+            )}
 
             {/* LOADING */}
             {loading && (
@@ -650,6 +706,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingBottom: 130,
   },
   topHeaderShadow: {
+    position: 'absolute',
+    // top is set dynamically inline (insets.top) — see the header's onLayout/style above.
+    left: 0,
+    right: 0,
+    zIndex: 20,
     marginHorizontal: 12,
     marginTop: 6,
     marginBottom: 18,
@@ -1222,6 +1283,39 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     fontWeight: '900',
     color: colors.neutral900,
     marginBottom: 16,
+  },
+  discoverHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  discoverSeeAll: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.primary,
+    marginBottom: 16,
+  },
+  communityImagePlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary + '14',
+  },
+  communityEmptyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.cardBg,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: colors.neutral200,
+    borderStyle: 'dashed',
+    padding: 16,
+  },
+  communityEmptyText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    flexShrink: 1,
   },
   communityGrid: {
     flexDirection: 'row',

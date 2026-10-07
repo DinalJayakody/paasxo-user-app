@@ -49,6 +49,10 @@ export interface UserProfile {
   // Account-level visibility. Undefined/false = public. When true, new
   // followers must be accepted via a follow request (see FriendsScreen).
   isPrivate?: boolean;
+  // WALK/RUN/CYCLING subset hidden from non-owner viewers of this user's
+  // profile Stats tab — see SettingsScreen's Stats Visibility toggles and
+  // ActivityService#getUserSummary (backend) which enforces it.
+  hiddenStatsActivityTypes?: string[];
   // 'USER' | 'VENDOR' | 'TRAINER' | 'ADMIN' — see AccountType.java. Checked
   // right after registration to route a pending VENDOR sign-up to
   // PostVerificationScreen's "under review" state instead of "welcome in".
@@ -95,9 +99,16 @@ export interface PostSummary {
   // picture" post (see backend SocialService.createProfilePictureUpdatePost);
   // 'TOURNAMENT_CREATED' for an open-tournament announcement (see
   // createTournamentAnnouncementPost, referenceId is the tournament id);
-  // absent/'NORMAL' for a regular post.
-  postType?: 'NORMAL' | 'PROFILE_PICTURE_UPDATE' | 'TOURNAMENT_CREATED';
+  // 'COMMUNITY_POST'/'COMMUNITY_*_SHARE' for a post living inside a
+  // Community (see communityApi.ts) — referenceId is the shared match/
+  // tournament/reel id for the SHARE variants; absent/'NORMAL' for a
+  // regular profile/feed post.
+  postType?: 'NORMAL' | 'PROFILE_PICTURE_UPDATE' | 'TOURNAMENT_CREATED'
+    | 'COMMUNITY_POST' | 'COMMUNITY_MATCH_SHARE' | 'COMMUNITY_TOURNAMENT_SHARE'
+    | 'COMMUNITY_SCORECARD_SHARE' | 'COMMUNITY_REEL_SHARE';
   referenceId?: string;
+  // Non-null only for a post living inside a Community's feed.
+  communityId?: string;
   visibility?: 'public' | 'friends' | 'private';
   // 'VIDEO' opens PostVideoPlayer (Reels-style fullscreen) instead of the
   // inline <Image>; absent/'IMAGE' renders as a normal photo post.
@@ -274,12 +285,118 @@ export interface MatchScoreState {
   status: MatchLiveStatus;
   teamAScore: number;
   teamBScore: number;
+  teamAName: string;
+  teamBName: string;
   state: Record<string, any>;
   timerRunning: boolean;
   timerStartedAt?: string | null;
   elapsedSeconds: number;
   updatedAt?: string | null;
   canScore: boolean;
+}
+
+// ─── Match-day team rosters & scoring events ───────────────────────────────
+// Mirrors com.pasxo.dto.booking.{MatchTeamPlayerResponse,MatchTeamsResponse,
+// MatchScoreEventResponse,MatchScorecardResponse} exactly.
+
+export interface MatchTeamPlayer {
+  // null for an "unassigned joined player" suggestion row — not yet a real
+  // roster entry, so there's nothing to reference by id/team yet.
+  id?: number | null;
+  teamLabel?: string | null;
+  playerFirebaseUid?: string | null;
+  displayName: string;
+  profileImageUrl?: string | null;
+}
+
+export interface MatchTeams {
+  teamAName: string;
+  teamBName: string;
+  teamA: MatchTeamPlayer[];
+  teamB: MatchTeamPlayer[];
+  unassignedJoinedPlayers: MatchTeamPlayer[];
+  canManage: boolean;
+}
+
+export type MatchEventType = 'GOAL' | 'ASSIST' | 'YELLOW_CARD' | 'RED_CARD' | 'SAVE' | 'POINT' | 'BALL';
+export type WicketType = 'BOWLED' | 'CAUGHT' | 'LBW' | 'RUN_OUT' | 'STUMPED' | 'HIT_WICKET' | 'OTHER';
+export type ExtraType = 'WIDE' | 'NO_BALL' | 'BYE' | 'LEG_BYE';
+
+export interface MatchScoreEvent {
+  id: number;
+  teamLabel: 'A' | 'B';
+  eventType: MatchEventType;
+  playerId?: number | null;
+  playerName?: string | null;
+  minute?: number | null;
+  inningsNumber?: number | null;
+  overNumber?: number | null;
+  ballInOver?: number | null;
+  runs?: number | null;
+  legalDelivery?: boolean | null;
+  isWicket?: boolean | null;
+  wicketType?: WicketType | null;
+  extraType?: ExtraType | null;
+  bowlerId?: number | null;
+  bowlerName?: string | null;
+  sequenceNumber: number;
+  createdAt: string;
+}
+
+export interface MatchPlayerTally {
+  playerId: number;
+  playerName: string;
+  teamLabel: string;
+  goals: number;
+  assists: number;
+  yellowCards: number;
+  redCards: number;
+  saves: number;
+  points: number;
+}
+
+export interface MatchBattingFigure {
+  playerId: number;
+  playerName: string;
+  runs: number;
+  ballsFaced: number;
+  fours: number;
+  sixes: number;
+  out: boolean;
+  howOut?: string | null;
+}
+
+export interface MatchBowlingFigure {
+  playerId: number;
+  playerName: string;
+  completedOvers: number;
+  ballsInCurrentOver: number;
+  runsConceded: number;
+  wickets: number;
+}
+
+export interface MatchInningsSummary {
+  inningsNumber: number;
+  battingTeamLabel: string;
+  runs: number;
+  wickets: number;
+  overs: number;
+  ballsInOver: number;
+  batting: MatchBattingFigure[];
+  bowling: MatchBowlingFigure[];
+}
+
+export interface MatchScorecard {
+  sport: string;
+  teamAName: string;
+  teamBName: string;
+  teamAScore: number;
+  teamBScore: number;
+  teamA: MatchTeamPlayer[];
+  teamB: MatchTeamPlayer[];
+  events: MatchScoreEvent[];
+  scorers?: MatchPlayerTally[];
+  innings?: MatchInningsSummary[];
 }
 
 export interface MatchDetails {
@@ -310,6 +427,12 @@ export interface MatchDetails {
   isPublicMatch?: boolean;
   /** Only set when isPublicMatch is true — the flat fee (LKR) a joiner pays on top of their venue-cost share. */
   publicMatchJoinFee?: number;
+  // True for a match held at a user-picked public space rather than a real
+  // booked venue — venue.name/location still carry the real custom name/
+  // coordinates (see BookingResponse.isPublicSpaceMatch's own doc comment).
+  // Used purely for presentation (e.g. a "Public Space" badge instead of a
+  // venue card) — payment/booking logic is identical either way.
+  isPublicSpaceMatch?: boolean;
   totalPrice?: number;
   currencySymbol?: string;
   rules?: string[];
@@ -330,13 +453,22 @@ export interface MatchDetails {
   isWithinCancellationWindow?: boolean;
   // Organizer + every paying joiner, mirrors backend BookingResponse.paidParticipants.
   paidParticipants?: number;
+  // Set only for a Team Match Challenge booking — see backend
+  // BookingResponse.organizerTeamId's doc comment. Both omitted for every
+  // ordinary match.
+  organizerTeamId?: string;
+  opponentTeamId?: string;
 }
 
 export interface CreateBookingPayload {
-  futsalId: number;
-  slotId: number;
-  slotIds: number[];
+  // Required for a normal venue booking; omitted entirely for a Public Match
+  // (isPublicSpaceMatch=true below) — the backend creates its own one-off
+  // venue/slot for those instead.
+  futsalId?: number;
+  slotId?: number;
+  slotIds?: number[];
   title?: string;
+  description?: string;
   sport?: string;
   maxPlayers?: number;
   minPlayers?: number;
@@ -350,6 +482,22 @@ export interface CreateBookingPayload {
    */
   isPublicMatch?: boolean;
   players?: string[];
+
+  // Public Match — a match held at a user-picked public space instead of a
+  // real booked venue, for a flat PAASXO fee (see PlatformProperties.
+  // publicSpaceMatchFee, currently LKR 300). When true, futsalId/slotId(s)
+  // above are ignored by the backend; the fields below are required instead.
+  // Distinct from isPublicMatch above (that's an add-on mode for an ordinary
+  // VENUE booking, unrelated to this).
+  isPublicSpaceMatch?: boolean;
+  publicSpaceName?: string;
+  publicSpaceLatitude?: number;
+  publicSpaceLongitude?: number;
+  /** "YYYY-MM-DD" — reuses the same `date` concept as a venue booking's slot date. */
+  date?: string;
+  /** "HH:mm" — only used when isPublicSpaceMatch is true. */
+  startTime?: string;
+  endTime?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -366,7 +514,11 @@ export type PaymentOrderType =
   | 'TRAINER_BOOKING'
   | 'SUBSCRIPTION'
   | 'ONE_TIME_CREATION'
-  | 'ANNOUNCEMENT';
+  | 'ANNOUNCEMENT'
+  // The challenged team's captain paying half of a Team Match Challenge's
+  // totalPrice to accept it — orderId is a TeamChallengeAcceptOrder id (see
+  // backend's doc comment on that entity). See TeamChallengePaymentListener.
+  | 'TEAM_CHALLENGE_ACCEPT';
 
 export type PaymentTransactionStatus =
   | 'INITIATED'
@@ -657,9 +809,36 @@ export interface CreateTeamPayload {
   sport: string;
   logoUrl?: string;
   logo?: { uri: string; name?: string; type?: string };
+  // Best-effort device GPS captured silently at creation time — see
+  // CreateTeamScreen. Used only for "nearby teams" in Team Match Challenges;
+  // both omitted if location permission was denied.
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface SendChallengePayload {
   challengerTeamId: string;
   message?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Team Match Challenges — real, bookable Team-vs-Team matches, distinct from
+// the purely social TeamChallenge/ChallengeStatus above. Mirrors
+// com.pasxo.dto.team.TeamMatchChallengeResponse / TeamMatchChallengeStatus.
+// ---------------------------------------------------------------------------
+
+export type TeamMatchChallengeStatus = 'PENDING_PAYMENT' | 'ACCEPTED' | 'DECLINED';
+
+export interface TeamMatchChallenge {
+  id: string;
+  bookingId: number;
+  organizerTeamId: string;
+  organizerTeamName?: string;
+  challengedTeamId: string;
+  challengedTeamName?: string;
+  status: TeamMatchChallengeStatus;
+  totalPrice: number;
+  amountDue: number;
+  createdAt: string;
+  respondedAt?: string;
 }

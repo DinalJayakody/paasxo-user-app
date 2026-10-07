@@ -1,5 +1,6 @@
 import React, { useState, useRef, useMemo, type ReactNode } from 'react';
 import {
+  Alert,
   Platform,
   Pressable,
   StyleSheet,
@@ -13,9 +14,11 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Home as HomeIcon, Search, Plus, Settings, Users, Trophy, Swords, X, Sparkles, Camera, Video } from 'lucide-react-native';
+import { Home as HomeIcon, Search, Plus, Settings, Users, Trophy, Swords, X, Sparkles, Camera, Video, MapPin, Shield } from 'lucide-react-native';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
+import { teamApi } from '../api/teamApi';
 
 // Content-only height (icons + labels) of the floating pill itself, excluding
 // the safe-area clearance that lifts it off the bottom edge. Matches the
@@ -72,8 +75,10 @@ export function BottomNavbar({ activeTab, showCreateButton = false }: BottomNavb
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors, resolvedTheme } = useTheme();
+  const { user } = useAuth();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [createMenuVisible, setCreateMenuVisible] = useState(false);
+  const [checkingTeams, setCheckingTeams] = useState(false);
 
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
@@ -184,6 +189,37 @@ export function BottomNavbar({ activeTab, showCreateButton = false }: BottomNavb
     router.push('/create-tournament' as any);
   };
 
+  const handlePublicMatchOption = () => {
+    closeMatchMenu();
+    router.push('/create-public-match' as any);
+  };
+
+  const handleChallengeTeamOption = async () => {
+    closeMatchMenu();
+    if (checkingTeams) return;
+    setCheckingTeams(true);
+    try {
+      const teams = await teamApi.getMyTeams();
+      const captained = teams.some((t) => t.captainFirebaseUid === user?.firebaseUid);
+      if (!captained) {
+        Alert.alert(
+          'Create a team first',
+          'You need to captain a team before you can challenge another team to a match.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Create a Team', onPress: () => router.push('/create-team' as any) },
+          ]
+        );
+        return;
+      }
+      router.push('/create-team-challenge-match' as any);
+    } catch {
+      Alert.alert('Something went wrong', 'Could not check your teams. Please try again.');
+    } finally {
+      setCheckingTeams(false);
+    }
+  };
+
   const handleCreatePostOption = () => {
     closeMatchMenu();
     router.push('/create-post' as any);
@@ -219,6 +255,26 @@ export function BottomNavbar({ activeTab, showCreateButton = false }: BottomNavb
       Icon: Sparkles,
       spin: true,
       onPress: handleTournamentMode,
+    },
+    {
+      key: 'public-match',
+      emoji: '📍',
+      title: 'Public Match',
+      subtitle: 'Play at a public space for a flat LKR 300 fee',
+      colors: [colors.success, colors.successDark] as [string, string],
+      Icon: MapPin,
+      spin: false,
+      onPress: handlePublicMatchOption,
+    },
+    {
+      key: 'challenge-team',
+      emoji: '🛡️',
+      title: 'Challenge Team',
+      subtitle: 'Book a venue and challenge another team',
+      colors: ['#7C3AED', '#4338CA'] as [string, string],
+      Icon: Shield,
+      spin: false,
+      onPress: handleChallengeTeamOption,
     },
   ];
 

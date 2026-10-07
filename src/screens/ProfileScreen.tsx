@@ -85,7 +85,7 @@ const SPORT_STATS: Record<string, { icon: any; value: string; label: string; col
   ],
 };
 
-const PROFILE_TABS = ['Moments', 'Stats', 'Reels', 'Tagged'] as const;
+const PROFILE_TABS = ['Moments', 'Stats', 'Teams', 'Reels', 'Tagged'] as const;
 type ProfileTab = (typeof PROFILE_TABS)[number];
 
 const AnimatedPressable = ({
@@ -138,7 +138,7 @@ export default function ProfileScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const navBarHeight = useBottomNavBarHeight();
   const router = useRouter();
-  const { openPostId, openReelId, tab } = useLocalSearchParams<{ openPostId?: string; openReelId?: string; tab?: string }>();
+  const { openPostId, openReelId, openComments, tab } = useLocalSearchParams<{ openPostId?: string; openReelId?: string; openComments?: string; tab?: string }>();
   const { user, loading: authLoading, updateUser } = useAuth();
   const { active: isPro } = useSubscription();
   const [selectedTab, setSelectedTab] = useState<ProfileTab>('Moments');
@@ -154,6 +154,10 @@ export default function ProfileScreen() {
   const [userPosts, setUserPosts] = useState<PostSummary[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  // Set alongside selectedPostId only by the notification deep link below,
+  // and cleared the moment the detail view closes — a one-shot flag, not a
+  // sticky "always open comments" mode for every post the user taps after.
+  const [autoOpenComments, setAutoOpenComments] = useState(false);
 
   // Saved tab - lazily loaded the first time it's opened (same pattern as
   // Friends' Suggested tab).
@@ -227,8 +231,9 @@ export default function ProfileScreen() {
       openedFromLinkRef.current = true;
       setSelectedTab('Moments');
       setSelectedPostId(openPostId);
+      setAutoOpenComments(openComments === '1');
     }
-  }, [openPostId, userPosts]);
+  }, [openPostId, openComments, userPosts]);
 
   const fetchReels = React.useCallback(async () => {
     if (!userId) return;
@@ -397,8 +402,6 @@ export default function ProfileScreen() {
         colors={colors}
       />
 
-      <TeamsSection uid={userId} colors={colors} showCreateButton />
-
       <View style={styles.statsSportBadge}>
         <Text style={styles.statsSportEmoji}>{sportEmoji}</Text>
         <Text style={[styles.statsSportLabel, { color: sportColor }]}>{sport} STATISTICS</Text>
@@ -433,6 +436,12 @@ export default function ProfileScreen() {
     </View>
   );
 
+  const renderTeamsTab = () => (
+    <View>
+      <TeamsSection uid={userId} colors={colors} showCreateButton />
+    </View>
+  );
+
   const renderMomentsTab = () => {
     if (postsLoading) {
       return (
@@ -455,8 +464,9 @@ export default function ProfileScreen() {
       <PostGrid
         posts={userPosts}
         selectedPostId={selectedPostId}
+        openComments={autoOpenComments}
         onSelectPost={(post) => setSelectedPostId(post.id)}
-        onCloseDetail={() => setSelectedPostId(null)}
+        onCloseDetail={() => { setSelectedPostId(null); setAutoOpenComments(false); }}
       />
     );
   };
@@ -578,6 +588,7 @@ export default function ProfileScreen() {
         {/* Tab content */}
         {selectedTab === 'Moments' && renderMomentsTab()}
         {selectedTab === 'Stats' && renderStatsTab()}
+        {selectedTab === 'Teams' && renderTeamsTab()}
         {selectedTab === 'Reels' && renderReelsTab()}
         {selectedTab === 'Tagged' && renderEmptyTab('Tags')}
       </ScrollView>

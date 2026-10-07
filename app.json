@@ -12,7 +12,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "buildNumber": "7",
+      "buildNumber": "9",
       "infoPlist": {
         "NSCameraUsageDescription": "Allow access to camera",
         "NSPhotoLibraryUsageDescription": "Allow access to photos",
@@ -66,6 +66,7 @@
     },
     "android": {
       "package": "com.paasxo.app",
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",

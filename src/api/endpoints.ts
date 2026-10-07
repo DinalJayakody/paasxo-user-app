@@ -104,6 +104,9 @@ export const ENDPOINTS = {
     FILTER: '/bookings/filter',
     CREATE: '/bookings',
     CANCEL: (id: string | number) => `/bookings/${id}/cancel`,
+    // A joined PLAYER (not the organizer) leaving a match — refunds their own paid
+    // share per the same refund-window policy as CANCEL. See BookingService.leaveMatch.
+    LEAVE: (id: string | number) => `/bookings/${id}/leave`,
     ADD_PLAYERS: (id: string | number) => `/bookings/${id}/players`,
     JOIN: (id: string | number) => `/bookings/${id}/join`,
     // Server decides free vs. paid — see BookingService.createJoinOrder. Free matches
@@ -123,6 +126,19 @@ export const ENDPOINTS = {
     END: (bookingId: string | number) => `/bookings/${bookingId}/score/end`,
     RESET: (bookingId: string | number) => `/bookings/${bookingId}/score/reset`,
     UPDATE_STATE: (bookingId: string | number) => `/bookings/${bookingId}/score/state`,
+    EVENTS: (bookingId: string | number) => `/bookings/${bookingId}/score/events`,
+    UNDO_LAST_EVENT: (bookingId: string | number) => `/bookings/${bookingId}/score/events/last`,
+    SCORECARD: (bookingId: string | number) => `/bookings/${bookingId}/score/scorecard`,
+  },
+
+  // Match-day team rosters — who's on Team A vs Team B for scoring purposes.
+  // Matches com.pasxo.controller.MatchTeamController exactly.
+  MATCH_TEAMS: {
+    GET: (bookingId: string | number) => `/bookings/${bookingId}/teams`,
+    ADD_PLAYER: (bookingId: string | number, teamLabel: 'A' | 'B') => `/bookings/${bookingId}/teams/${teamLabel}/players`,
+    REMOVE_PLAYER: (bookingId: string | number, playerId: string | number) => `/bookings/${bookingId}/teams/players/${playerId}`,
+    RENAME_TEAM: (bookingId: string | number, teamLabel: 'A' | 'B') => `/bookings/${bookingId}/teams/${teamLabel}/name`,
+    AUTO_SPLIT: (bookingId: string | number) => `/bookings/${bookingId}/teams/auto-split`,
   },
 
   // Matches com.pasxo.controller.FutsalController exactly. There is no
@@ -170,6 +186,7 @@ export const ENDPOINTS = {
 
   REELS: {
     CREATE: '/reels',
+    GET_BY_ID: (id: string) => `/reels/${id}`,
     GET_USER_REELS: (userId: string, page: number, size: number) =>
       `/reels/users/${userId}?page=${page}&size=${size}`,
     LIKE: (id: string) => `/reels/${id}/like`,
@@ -178,6 +195,28 @@ export const ENDPOINTS = {
 
   MEDIA: {
     AUDIO_TRACKS: '/media/audio-tracks',
+  },
+
+  PLACES: {
+    SEARCH: '/places/search',
+  },
+
+  COMMUNITIES: {
+    CREATE: '/communities',
+    SEARCH: '/communities/search',
+    DISCOVER: '/communities/discover',
+    MINE: '/communities/mine',
+    GET_BY_ID: (id: string) => `/communities/${id}`,
+    JOIN: (id: string) => `/communities/${id}/join`,
+    LEAVE: (id: string) => `/communities/${id}/leave`,
+    DELETE: (id: string) => `/communities/${id}`,
+    PENDING_REQUESTS: (id: string) => `/communities/${id}/requests`,
+    APPROVE_REQUEST: (id: string, requestId: string) => `/communities/${id}/requests/${requestId}/approve`,
+    DECLINE_REQUEST: (id: string, requestId: string) => `/communities/${id}/requests/${requestId}/decline`,
+    FEED: (id: string) => `/communities/${id}/feed`,
+    CREATE_POST: (id: string) => `/communities/${id}/posts`,
+    SHARE: (id: string) => `/communities/${id}/share`,
+    DELETE_POST: (id: string, postId: string) => `/communities/${id}/posts/${postId}`,
   },
 
   INVITATIONS: {
@@ -227,7 +266,10 @@ export const ENDPOINTS = {
     SESSIONS_FOR_TRAINER: (trainerFirebaseUid: string) => `/trainers/${trainerFirebaseUid}/sessions`,
     SESSION_DETAIL: (sessionId: string | number) => `/trainers/sessions/${sessionId}`,
     SESSION_SLOTS: (sessionId: string | number) => `/trainers/sessions/${sessionId}/slots`,
-    JOIN_SLOT: (slotId: string | number) => `/trainers/slots/${slotId}/join`,
+    // Mirrors BOOKING's own /bookings/{id}/join-order — server decides free vs. paid
+    // (JoinOrderResponse.joined) and never trusts a client-supplied price. Paid sessions
+    // return a paymentOrderId to pass straight into PAYMENTS.INITIATE('TRAINER_BOOKING', ...).
+    JOIN_ORDER: (slotId: string | number) => `/trainers/slots/${slotId}/join-order`,
     MY_BOOKINGS: '/trainers/bookings/my',
     CANCEL_BOOKING: (bookingId: string | number) => `/trainers/bookings/${bookingId}/cancel`,
   },
@@ -263,6 +305,8 @@ export const ENDPOINTS = {
       `/social/posts/${id}/comments`,
     ADD_COMMENT: (id: string | number) =>
       `/social/posts/${id}/comment`,
+    GET_POST_LIKERS: (id: string | number, query: string, page: number, size: number) =>
+      `/social/posts/${id}/likes?query=${encodeURIComponent(query)}&page=${page}&size=${size}`,
 
     FOLLOW: (id: string) => `/social/users/${id}/follow`,
     UNFOLLOW: (id: string) => `/social/users/${id}/unfollow`,
@@ -277,6 +321,7 @@ export const ENDPOINTS = {
     ACCEPT_REQUEST: (uid: string) => `/social/requests/${uid}/accept`,
     REJECT_REQUEST: (uid: string) => `/social/requests/${uid}/reject`,
     UPDATE_PRIVACY: '/social/users/me/privacy',
+    UPDATE_STATS_VISIBILITY: '/social/users/me/stats-visibility',
     UPDATE_LOCATION: '/social/users/me/location',
 
     // Required by App Store Review Guideline 1.2 (User Generated Content) -
@@ -304,6 +349,18 @@ export const ENDPOINTS = {
     CHALLENGE: (challengedTeamId: string) => `/teams/${challengedTeamId}/challenge`,
     CHALLENGES_FOR_TEAM: (id: string) => `/teams/${id}/challenges`,
     RESPOND_TO_CHALLENGE: (challengeId: string) => `/challenges/${challengeId}/respond`,
+  },
+
+  // Real, bookable Team-vs-Team matches — see com.pasxo.controller.TeamMatchController.
+  // Distinct from TEAMS.CHALLENGE above (the purely social, non-monetary challenge).
+  TEAM_MATCHES: {
+    CREATE: '/team-matches',
+    NEARBY_TEAMS: (bookingId: string | number, radiusKm?: number) =>
+      `/team-matches/${bookingId}/nearby-teams${radiusKm ? `?radiusKm=${radiusKm}` : ''}`,
+    CHALLENGE: (bookingId: string | number) => `/team-matches/${bookingId}/challenge`,
+    DECLINE_CHALLENGE: (challengeId: string) => `/team-matches/challenges/${challengeId}/decline`,
+    ACCEPT_ORDER: (challengeId: string) => `/team-matches/challenges/${challengeId}/accept-order`,
+    MY_PENDING_CHALLENGES: '/team-matches/challenges/mine',
   },
 };
 
