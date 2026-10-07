@@ -25,6 +25,10 @@ export interface BufferedSample {
   altitude: number | null;
   speed: number | null;
   timestamp: number;
+  // Horizontal accuracy in meters (smaller = better) — used to reject
+  // low-quality fixes before they pollute distance/speed, see
+  // useActivityTracking.ts's MAX_SAMPLE_ACCURACY_M.
+  accuracy: number | null;
 }
 
 TaskManager.defineTask(ACTIVITY_LOCATION_TASK, async ({ data, error }) => {
@@ -44,6 +48,7 @@ TaskManager.defineTask(ACTIVITY_LOCATION_TASK, async ({ data, error }) => {
       altitude: loc.coords.altitude,
       speed: loc.coords.speed,
       timestamp: loc.timestamp,
+      accuracy: loc.coords.accuracy,
     }));
     await AsyncStorage.setItem(BUFFER_KEY, JSON.stringify([...existing, ...additions]));
   } catch (e) {

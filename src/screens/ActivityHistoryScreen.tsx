@@ -231,7 +231,6 @@ export default function ActivityHistoryScreen() {
             (comparing a running PR against a cycling one makes no sense). */}
         {filter !== 'ALL' && filtered.length > 0 && (() => {
           const cfg = ACT_CFG[filter as ActivityType];
-          const isPaceBased = filter !== 'CYCLING';
           const pb = personalBests(filtered);
           return (
             <View style={styles.pbSection}>
@@ -240,11 +239,7 @@ export default function ActivityHistoryScreen() {
                 <Text style={styles.pbTitle}>{cfg.label} Personal Bests</Text>
               </View>
               <View style={styles.pbGrid}>
-                {isPaceBased ? (
-                  <PbTile label="Fastest km" value={pb.fastestKmSecPerKm != null ? `${formatPace(pb.fastestKmSecPerKm)}/km` : '—'} />
-                ) : (
-                  <PbTile label="Fastest km" value={pb.fastestKmSpeedKmh != null ? `${pb.fastestKmSpeedKmh.toFixed(1)} km/h` : '—'} />
-                )}
+                <PbTile label="Fastest km" value={pb.fastestKmSecPerKm != null ? `${formatPace(pb.fastestKmSecPerKm)}/km` : '—'} />
                 <PbTile label="Fastest 400m" value={pb.fastest400m != null ? formatDuration(pb.fastest400m) : '—'} />
                 <PbTile label="Longest Distance" value={pb.longestDistM > 0 ? formatDist(pb.longestDistM) : '—'} />
                 <PbTile label="Longest Duration" value={pb.longestDurationS > 0 ? formatDuration(pb.longestDurationS) : '—'} />
@@ -329,7 +324,7 @@ function ActivityCard({ activity, onPress }: { activity: StoredActivity; onPress
             <MiniStat icon={<Clock color={Colors.neutral400} size={12} />} value={formatTime(activity.durationSeconds)} />
             <MiniStat
               icon={<Zap color={Colors.neutral400} size={12} />}
-              value={activity.type !== 'CYCLING' ? `${formatPace(activity.avgPaceSecPerKm)} /km` : `${activity.avgSpeedKmh.toFixed(1)} km/h`}
+              value={`${formatPace(activity.avgPaceSecPerKm)} /km`}
             />
             {activity.stepCount != null && (
               <MiniStat icon={<Footprints color={Colors.neutral400} size={12} />} value={`${activity.stepCount} steps`} />

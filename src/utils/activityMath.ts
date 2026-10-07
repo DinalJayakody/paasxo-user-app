@@ -102,7 +102,7 @@ export class ElevationTracker {
 export interface LiveSplit {
   index: number; // 1-based
   durationSeconds: number;
-  paceSecPerKm: number | null; // null for CYCLING — see avgSpeedKmh instead
+  paceSecPerKm: number | null; // null only if the segment somehow took 0s
   avgSpeedKmh: number;
 }
 
@@ -111,13 +111,11 @@ export class SplitTracker {
   private lastSplitDistanceM = 0;
   private lastSplitElapsedS = 0;
 
-  constructor(private readonly isPaceBased: boolean) {}
-
   /** Reconstructs a tracker after an app-kill/resume with its completed
    * splits and baseline intact, so the next completed kilometer is measured
    * from where the session actually left off rather than from zero. */
-  static restore(isPaceBased: boolean, splits: LiveSplit[], lastSplitDistanceM: number, lastSplitElapsedS: number): SplitTracker {
-    const t = new SplitTracker(isPaceBased);
+  static restore(splits: LiveSplit[], lastSplitDistanceM: number, lastSplitElapsedS: number): SplitTracker {
+    const t = new SplitTracker();
     t.splits = [...splits];
     t.lastSplitDistanceM = lastSplitDistanceM;
     t.lastSplitElapsedS = lastSplitElapsedS;
@@ -132,9 +130,7 @@ export class SplitTracker {
 
     const segDistM = cumulativeDistanceM - this.lastSplitDistanceM;
     const segDurationS = cumulativeElapsedS - this.lastSplitElapsedS;
-    const paceSecPerKm = this.isPaceBased && segDurationS > 0
-      ? Math.round(segDurationS / (segDistM / 1000))
-      : null;
+    const paceSecPerKm = segDurationS > 0 ? Math.round(segDurationS / (segDistM / 1000)) : null;
     const avgSpeedKmh = segDurationS > 0 ? (segDistM / 1000) / (segDurationS / 3600) : 0;
 
     const split: LiveSplit = {
@@ -165,10 +161,11 @@ export function genLocalId(): string {
 }
 
 // ── Personal bests ─────────────────────────────────────────────────────────
-/** Best (fastest/lowest) single completed-km split — null for CYCLING or if
- * no full km was ever completed. Stored alongside the activity (see
- * activityApi.ts's StoredActivity.bestSplitPaceSecPerKm) so cross-activity
- * "fastest km ever" queries don't need to re-scan every activity's splits. */
+/** Best (fastest/lowest) single completed-km split, for every activity type
+ * including CYCLING — null only if no full km was ever completed. Stored
+ * alongside the activity (see activityApi.ts's StoredActivity.
+ * bestSplitPaceSecPerKm) so cross-activity "fastest km ever" queries don't
+ * need to re-scan every activity's splits. */
 export function bestSplitPaceSecPerKm(splits: LiveSplit[]): number | null {
   const paces = splits.map((s) => s.paceSecPerKm).filter((p): p is number => p != null);
   return paces.length ? Math.min(...paces) : null;
@@ -256,21 +253,42 @@ function metFor(type: MetActivityType, avgSpeedKmh: number): number {
 }
 
 /**
- * Calories = MET x weight(kg) x duration(hours) — the standard formula, using
- * the whole activity's average speed to pick the MET band rather than
- * segmenting per split (the same granularity most consumer trackers use: an
- * approximate estimate, not a lab-precise one). Returns null when weight is
- * unknown rather than guessing — see User.weightKg's doc comment on the
- * backend for why a number here is never fabricated.
+ * Calories = MET x weight(kg) x duration(hours) — the standard formula.
+ * When per-km splits are available, the MET band is picked per-split from
+ * that segment's own avg speed and the results summed, rather than applying
+ * one MET value to the whole duration — materially more accurate for a
+ * variable-pace activity (intervals, a walk that breaks into a run, etc.),
+ * since a single whole-activity average can land in the wrong MET band for
+ * both the fast and slow portions. Only the trailing partial segment (after
+ * the last full km, if any) falls back to the whole-activity average speed,
+ * since it has no split of its own yet. Falls back to that same whole-
+ * activity-average approach entirely when no split has completed (e.g. an
+ * activity shorter than 1km). Returns null when weight is unknown rather
+ * than guessing — see User.weightKg's doc comment on the backend for why a
+ * number here is never fabricated.
  */
 export function calcCalories(
   type: MetActivityType,
   avgSpeedKmh: number,
   durationSeconds: number,
-  weightKg: number | null | undefined
+  weightKg: number | null | undefined,
+  splits: LiveSplit[] = []
 ): number | null {
   if (!weightKg || weightKg <= 0 || durationSeconds <= 0) return null;
+
+  if (splits.length > 0) {
+    const splitSeconds = splits.reduce((sum, s) => sum + s.durationSeconds, 0);
+    let kcal = splits.reduce(
+      (sum, s) => sum + metFor(type, s.avgSpeedKmh) * weightKg * (s.durationSeconds / 3600),
+      0
+    );
+    const remainderSeconds = Math.max(0, durationSeconds - splitSeconds);
+    if (remainderSeconds > 0) {
+      kcal += metFor(type, avgSpeedKmh) * weightKg * (remainderSeconds / 3600);
+    }
+    return Math.round(kcal);
+  }
+
   const met = metFor(type, avgSpeedKmh);
-  const hours = durationSeconds / 3600;
-  return Math.round(met * weightKg * hours);
+  return Math.round(met * weightKg * (durationSeconds / 3600));
 }

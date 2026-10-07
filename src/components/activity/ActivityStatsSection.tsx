@@ -50,7 +50,6 @@ export function ActivityStatsSection({ summary, loading, loaded, colors }: Activ
       {ACT_TYPE_ORDER.map((type) => {
         const b = bests[type];
         if (!b) return null;
-        const isPaceBased = type !== 'CYCLING';
         return (
           <View key={type} style={styles.typeCard}>
             <Text style={styles.typeLabel}>{ACT_TYPE_LABEL[type]}</Text>
@@ -61,9 +60,7 @@ export function ActivityStatsSection({ summary, loading, loaded, colors }: Activ
               <MiniStat
                 styles={styles}
                 label="Best km"
-                value={isPaceBased
-                  ? (b.fastestSplitPaceSecPerKm != null ? `${formatPace(b.fastestSplitPaceSecPerKm)}/km` : '—')
-                  : (b.fastestSplitSpeedKmh != null ? `${b.fastestSplitSpeedKmh.toFixed(1)}km/h` : '—')}
+                value={b.fastestSplitPaceSecPerKm != null ? `${formatPace(b.fastestSplitPaceSecPerKm)}/km` : '—'}
               />
             </View>
           </View>

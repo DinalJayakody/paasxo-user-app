@@ -3,6 +3,7 @@ import axiosInstance from './axios';
 import { LiveSplit } from '../utils/activityMath';
 
 export type ActivityType = 'WALK' | 'RUN' | 'CYCLING';
+export type ActivityVisibility = 'public' | 'friends' | 'private';
 
 export interface RoutePoint {
   latitude: number;
@@ -21,9 +22,11 @@ export interface StoredActivity {
   endTime: string;
   durationSeconds: number;
   distanceMeters: number;
+  // Still computed/stored for every type — not shown in the app's UI
+  // anymore (pace is the only speed-like metric displayed, see avgPaceSecPerKm).
   avgSpeedKmh: number;
   maxSpeedKmh: number;
-  // Null for CYCLING — pace isn't a meaningful metric there (speed is shown instead).
+  // Computed for every activity type, including CYCLING.
   avgPaceSecPerKm: number | null;
   elevationGainMeters: number;
   elevationLossMeters: number;
@@ -43,6 +46,11 @@ export interface StoredActivity {
   startLongitude: number;
   endLatitude?: number;
   endLongitude?: number;
+  // Who can view this activity (its detail page/share link, and whether it
+  // contributes to a friend's view of your profile Stats) — composed with
+  // your account-level private-account+follow setting server-side, same as
+  // Post.visibility. Defaults to 'friends'.
+  visibility: ActivityVisibility;
 }
 
 // Present only when the activity belongs to someone other than the current
@@ -120,6 +128,7 @@ function fromActivityResponse(d: any): ActivityWithAuthor {
     startLongitude: d.startLongitude,
     endLatitude: d.endLatitude,
     endLongitude: d.endLongitude,
+    visibility: (d.visibility === 'public' || d.visibility === 'private') ? d.visibility : 'friends',
     authorDisplayName: d.authorDisplayName ?? undefined,
     authorProfileImageUrl: d.authorProfileImageUrl ?? undefined,
   };
@@ -221,6 +230,7 @@ export const activityApi = {
         startLongitude: activity.startLongitude,
         endLatitude: activity.endLatitude,
         endLongitude: activity.endLongitude,
+        visibility: activity.visibility,
         route: activity.routeCoordinates.map((p) => ({
           latitude: p.latitude,
           longitude: p.longitude,

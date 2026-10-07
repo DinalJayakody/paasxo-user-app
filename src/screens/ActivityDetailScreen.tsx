@@ -7,9 +7,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import MapView, { Polyline, Marker, PROVIDER_DEFAULT } from 'react-native-maps';
-import * as Sharing from 'expo-sharing';
 import {
-  ArrowLeft, Clock, Footprints, TrendingUp, TrendingDown, Wind, Zap,
+  ArrowLeft, Clock, Footprints, TrendingUp, TrendingDown, Camera,
   MapPin, Calendar, Trash2, Share2, Trophy, ListOrdered, Flame, BookImage, Send,
 } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
@@ -18,6 +17,7 @@ import { formatTime, formatDist, formatPace } from '../utils/activityMath';
 import { goBack } from '../utils/navigation';
 import { useAuth } from '../context/AuthContext';
 import { useActivityShareCard } from '../hooks/useActivityShareCard';
+import { SHARE_CARD_TEMPLATES } from '../components/activity/ActivityShareCard';
 import { storyApi } from '../api/storyApi';
 import { socialMediaApi } from '../api/socialMediaApi';
 import { extractApiError } from '../utils/apiError';
@@ -26,9 +26,9 @@ import { resolveAvatarUri } from '../utils/mediaUrl';
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 const ACT_CFG = {
-  WALK: { label: 'Walk', emoji: '🚶', isPaceBased: true, colors: ['#059669', '#047857'] as [string, string], accent: '#059669' },
-  RUN:  { label: 'Run',  emoji: '🏃', isPaceBased: true, colors: ['#DC2626', '#991B1B'] as [string, string], accent: '#DC2626' },
-  CYCLING: { label: 'Cycle', emoji: '🚴', isPaceBased: false, colors: ['#2563EB', '#1D4ED8'] as [string, string], accent: '#2563EB' },
+  WALK: { label: 'Walk', emoji: '🚶', colors: ['#059669', '#047857'] as [string, string], accent: '#059669' },
+  RUN:  { label: 'Run',  emoji: '🏃', colors: ['#DC2626', '#991B1B'] as [string, string], accent: '#DC2626' },
+  CYCLING: { label: 'Cycle', emoji: '🚴', colors: ['#2563EB', '#1D4ED8'] as [string, string], accent: '#2563EB' },
 };
 
 export default function ActivityDetailScreen() {
@@ -97,17 +97,34 @@ export default function ActivityDetailScreen() {
     return serverId;
   }, [activity]);
 
-  const { ShareCardPortal, buildShareCard } = useActivityShareCard(
+  const {
+    ShareCardPortal, SharePreview, buildShareCard,
+    templateId, setTemplateId, aspectRatio, setAspectRatio,
+    photoUri, pickPhoto, ensureMapSnapshot,
+  } = useActivityShareCard(
     activity,
     activity?.authorDisplayName || user?.displayName || 'A Paasxo user'
   );
+
+  // Proactively snapshots the route map so the design preview has a
+  // background ready as soon as the user scrolls to it, rather than only
+  // fetching it lazily the first time they tap a share action.
+  useEffect(() => {
+    if (activity) ensureMapSnapshot(mapRef);
+  }, [activity, ensureMapSnapshot]);
+
+  const handlePickPhotoForCard = useCallback(async () => {
+    const picked = await pickPhoto();
+    if (!picked) return;
+    if (templateId !== 'photo') setTemplateId('photo');
+  }, [pickPhoto, templateId, setTemplateId]);
 
   const handleShareToStory = useCallback(async () => {
     if (!activity || shareBusy) return;
     setShareBusy('story');
     try {
       const serverId = await ensureServerId();
-      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null, 'story');
+      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null, 'story', templateId);
       if (!cardUri) throw new Error('Could not generate the share image');
       await storyApi.createStory({ mediaUri: cardUri, mediaType: 'IMAGE', mimeType: 'image/jpeg', filterName: 'NORMAL' });
       Alert.alert('Shared to your Story!');
@@ -116,7 +133,7 @@ export default function ActivityDetailScreen() {
     } finally {
       setShareBusy(null);
     }
-  }, [activity, shareBusy, ensureServerId, buildShareCard]);
+  }, [activity, shareBusy, ensureServerId, buildShareCard, templateId]);
 
   const handleShareToPost = useCallback(async () => {
     if (!activity || shareBusy) return;
@@ -124,7 +141,7 @@ export default function ActivityDetailScreen() {
     try {
       const cfg = ACT_CFG[activity.type];
       const serverId = await ensureServerId();
-      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null);
+      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null, 'post', templateId);
       if (!cardUri) throw new Error('Could not generate the share image');
       const caption = `${cfg.emoji} ${formatDist(activity.distanceMeters)} ${cfg.label.toLowerCase()} in ${formatTime(activity.durationSeconds)} on Paasxo 💪`;
       await socialMediaApi.createPost({
@@ -141,7 +158,7 @@ export default function ActivityDetailScreen() {
     } finally {
       setShareBusy(null);
     }
-  }, [activity, shareBusy, ensureServerId, buildShareCard]);
+  }, [activity, shareBusy, ensureServerId, buildShareCard, templateId]);
 
   const handleShare = useCallback(async () => {
     if (!activity || shareBusy) return;
@@ -149,19 +166,27 @@ export default function ActivityDetailScreen() {
     try {
       const cfg = ACT_CFG[activity.type];
       const serverId = await ensureServerId();
-      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null);
-      if (cardUri && Platform.OS !== 'web' && (await Sharing.isAvailableAsync())) {
-        await Sharing.shareAsync(cardUri, { mimeType: 'image/jpeg', dialogTitle: 'Share your activity' });
-        return;
+      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null, 'post', templateId);
+      if (cardUri && Platform.OS !== 'web') {
+        try {
+          // Lazily required — see ActivityTrackerScreen's handleShareExternal
+          // for why: expo-sharing's native module isn't registered on every
+          // build, and a static top-level import crashes this whole screen
+          // at load time rather than just this one action.
+          const Sharing = require('expo-sharing') as typeof import('expo-sharing');
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(cardUri, { mimeType: 'image/jpeg', dialogTitle: 'Share your activity' });
+            return;
+          }
+        } catch {
+          // Native module unavailable — fall through to the plain-text share below.
+        }
       }
-      const speedOrPace = cfg.isPaceBased
-        ? `🏃 Pace: ${formatPace(activity.avgPaceSecPerKm)} /km\n`
-        : `⚡ Speed: ${activity.avgSpeedKmh.toFixed(1)} km/h (max ${activity.maxSpeedKmh.toFixed(1)})\n`;
       const message =
         `${cfg.emoji} ${cfg.label} — ${activity.title}\n\n` +
         `📍 Distance: ${formatDist(activity.distanceMeters)}\n` +
         `⏱️ Duration: ${formatTime(activity.durationSeconds)}\n` +
-        speedOrPace +
+        `🏃 Pace: ${formatPace(activity.avgPaceSecPerKm)} /km\n` +
         `⛰️ Elevation: ${activity.elevationGainMeters}m gain, ${activity.elevationLossMeters}m loss` +
         (activity.stepCount ? `\n👣 Steps: ${activity.stepCount}` : '') +
         (serverId ? `\n\n${activityShareUrl(serverId)}` : '');
@@ -171,7 +196,7 @@ export default function ActivityDetailScreen() {
     } finally {
       setShareBusy(null);
     }
-  }, [activity, shareBusy, ensureServerId, buildShareCard]);
+  }, [activity, shareBusy, ensureServerId, buildShareCard, templateId]);
 
   const handleDelete = () => {
     Alert.alert('Delete Activity', 'This cannot be undone.', [
@@ -306,14 +331,7 @@ export default function ActivityDetailScreen() {
         <Animated.View style={[styles.section, { opacity: statsAnim, transform: [{ translateY: statsAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }]}>
           <Text style={styles.sectionTitle}>Stats Breakdown</Text>
           <View style={styles.statsGrid}>
-            {cfg.isPaceBased ? (
-              <DetailTile icon={<Clock color={cfg.accent} size={18} />} label="Avg Pace" value={formatPace(activity.avgPaceSecPerKm)} unit="min/km" />
-            ) : (
-              <>
-                <DetailTile icon={<Zap color={cfg.accent} size={18} />} label="Avg Speed" value={`${activity.avgSpeedKmh.toFixed(1)}`} unit="km/h" />
-                <DetailTile icon={<Wind color="#8B5CF6" size={18} />} label="Max Speed" value={`${activity.maxSpeedKmh.toFixed(1)}`} unit="km/h" />
-              </>
-            )}
+            <DetailTile icon={<Clock color={cfg.accent} size={18} />} label="Avg Pace" value={formatPace(activity.avgPaceSecPerKm)} unit="min/km" />
             <DetailTile icon={<TrendingUp color="#10B981" size={18} />} label="Elev Gain" value={`${activity.elevationGainMeters}`} unit="m" />
             <DetailTile icon={<TrendingDown color="#F59E0B" size={18} />} label="Elev Loss" value={`${activity.elevationLossMeters}`} unit="m" />
             <DetailTile icon={<Footprints color="#F97316" size={18} />} label="Steps" value={activity.stepCount != null ? `${activity.stepCount}` : '—'} unit="steps" />
@@ -327,14 +345,14 @@ export default function ActivityDetailScreen() {
         {/* Per-km splits */}
         {activity.splits.length > 0 && (
           <Animated.View style={[styles.section, { opacity: statsAnim }]}>
-            <Text style={styles.sectionTitle}>{cfg.isPaceBased ? 'Pace per Kilometer' : 'Speed per Kilometer'}</Text>
+            <Text style={styles.sectionTitle}>Pace per Kilometer</Text>
             <View style={styles.locationCard}>
               {activity.splits.map((s) => (
                 <View key={s.index} style={styles.locationRow}>
                   <ListOrdered color={cfg.accent} size={14} />
                   <Text style={styles.locationLabel}>Km {s.index}</Text>
                   <Text style={styles.locationCoord}>
-                    {cfg.isPaceBased ? `${formatPace(s.paceSecPerKm)} /km` : `${s.avgSpeedKmh.toFixed(1)} km/h`}
+                    {formatPace(s.paceSecPerKm)} /km
                     {'  ·  '}{formatTime(s.durationSeconds)}
                   </Text>
                 </View>
@@ -367,6 +385,56 @@ export default function ActivityDetailScreen() {
             </View>
           </Animated.View>
         )}
+
+        {/* Share card design — live preview, updates instantly on every tap */}
+        <Animated.View style={[styles.section, { opacity: statsAnim }]}>
+          <Text style={styles.sectionTitle}>Card Design</Text>
+          <View style={styles.previewWrap}>{SharePreview}</View>
+
+          <View style={styles.aspectRow}>
+            {(['post', 'story'] as const).map((ar) => {
+              const active = aspectRatio === ar;
+              return (
+                <TouchableOpacity
+                  key={ar}
+                  onPress={() => setAspectRatio(ar)}
+                  activeOpacity={0.8}
+                  style={[styles.aspectPill, active && { backgroundColor: cfg.accent }]}
+                >
+                  <Text style={[styles.aspectPillText, active && { color: Colors.white }]}>
+                    {ar === 'post' ? 'Post (4:5)' : 'Story (9:16)'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={styles.templateRow}>
+            {SHARE_CARD_TEMPLATES.map((t) => {
+              const active = templateId === t.id;
+              return (
+                <TouchableOpacity
+                  key={t.id}
+                  onPress={() => setTemplateId(t.id)}
+                  activeOpacity={0.8}
+                  style={[styles.templatePill, active && { borderColor: cfg.accent, borderWidth: 2 }]}
+                >
+                  <LinearGradient colors={t.previewColors} style={styles.templateSwatch} />
+                  <Text style={[styles.templatePillText, active && { color: cfg.accent }]}>{t.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {templateId === 'photo' && (
+            <TouchableOpacity onPress={handlePickPhotoForCard} activeOpacity={0.8} style={styles.takePhotoBtn}>
+              <Camera color={cfg.accent} size={16} strokeWidth={2.25} />
+              <Text style={[styles.takePhotoBtnText, { color: cfg.accent }]}>
+                {photoUri ? 'Retake Photo' : 'Take Photo'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </Animated.View>
 
         {/* Share to Paasxo — Story / Post (external share is the header icon) */}
         <View style={[styles.section, styles.shareRow]}>
@@ -491,4 +559,24 @@ const styles = StyleSheet.create({
   },
   shareRowBtnBusy: { opacity: 0.7 },
   shareRowBtnText: { fontSize: 14, fontWeight: '800' },
+  templateRow: { flexDirection: 'row', gap: 10 },
+  templatePill: {
+    flex: 1, alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 8,
+    borderRadius: 14, backgroundColor: '#1E293B', borderWidth: 1.5, borderColor: '#334155',
+  },
+  templateSwatch: { width: '100%', height: 36, borderRadius: 8 },
+  templatePillText: { fontSize: 12, fontWeight: '700', color: Colors.neutral400 },
+  previewWrap: { alignItems: 'center', marginBottom: 14 },
+  aspectRow: { flexDirection: 'row', gap: 8, marginBottom: 14, justifyContent: 'center' },
+  aspectPill: {
+    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: '#1E293B', borderWidth: 1.5, borderColor: '#334155',
+  },
+  aspectPillText: { fontSize: 12.5, fontWeight: '700', color: Colors.neutral400 },
+  takePhotoBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    marginTop: 10, paddingVertical: 12, borderRadius: 14,
+    backgroundColor: '#1E293B', borderWidth: 1.5, borderColor: '#334155',
+  },
+  takePhotoBtnText: { fontSize: 14, fontWeight: '800' },
 });

@@ -16,20 +16,22 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
-import * as Sharing from 'expo-sharing';
 import MapView, { Polyline, Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import {
   ArrowLeft, Play, Pause, Square, CheckCircle,
   Navigation, Zap, TrendingUp, Wind,
   ChevronRight, Trophy, Share2, Trash2, MapPin,
   Footprints, ListOrdered, BookImage, Send,
+  Globe, Users, Lock, Camera,
 } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
-import { activityStorage, activityApi, StoredActivity, ActivityType, activityShareUrl } from '../api/activityApi';
+import { activityStorage, activityApi, StoredActivity, ActivityType, ActivityVisibility, activityShareUrl } from '../api/activityApi';
 import { goBack } from '../utils/navigation';
 import { useActivityTracking } from '../hooks/useActivityTracking';
 import { useActivityShareCard } from '../hooks/useActivityShareCard';
+import { SHARE_CARD_TEMPLATES } from '../components/activity/ActivityShareCard';
 import { PersistedTrackingSession, loadTrackingSession, clearTrackingSession } from '../lib/activeTrackingSession';
+import { subscribeActivityControl, consumePendingActivityControl } from '../lib/activityControlBus';
 import { storyApi } from '../api/storyApi';
 import { socialMediaApi } from '../api/socialMediaApi';
 import { extractApiError } from '../utils/apiError';
@@ -46,14 +48,14 @@ type Phase = 'SELECT' | 'COUNTDOWN' | 'ACTIVE' | 'PAUSED' | 'SUMMARY';
 type GpsStatus = 'CHECKING' | 'READY' | 'ERROR';
 
 // ── Activity configs ───────────────────────────────────────────────────────────
-// Pace (min/km) is the only speed-like metric shown for WALK/RUN — no km/h
-// anywhere for those two. CYCLING keeps km/h speed, since pace isn't a
-// meaningful metric for cycling (same convention Strava/most fitness apps use).
+// Pace (min/km) is the only speed-like metric shown anywhere in the activity
+// UI — km/h is never displayed, for any activity type, including CYCLING.
+// avgSpeedKmh/maxSpeedKmh are still computed/stored (the calorie MET lookup
+// needs them), just never rendered.
 const ACT = {
   WALK: {
     label: 'Walk',
     emoji: '🚶',
-    isPaceBased: true,
     colors: ['#059669', '#047857'] as [string, string],
     accentColor: '#059669',
     guideText: 'Perfect for a relaxed outdoor stroll. Every step counts!',
@@ -61,7 +63,6 @@ const ACT = {
   RUN: {
     label: 'Run',
     emoji: '🏃',
-    isPaceBased: true,
     colors: ['#DC2626', '#991B1B'] as [string, string],
     accentColor: '#DC2626',
     guideText: 'Push your limits. Stay hydrated and breathe steady!',
@@ -69,7 +70,6 @@ const ACT = {
   CYCLING: {
     label: 'Cycle',
     emoji: '🚴',
-    isPaceBased: false,
     colors: ['#2563EB', '#1D4ED8'] as [string, string],
     accentColor: '#2563EB',
     guideText: 'Cover more ground on two wheels. Enjoy the ride!',
@@ -428,32 +428,32 @@ export default function ActivityTrackerScreen() {
     } finally {
       setStarting(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // `tracking` (hence tracking.start) must be a real dependency, not
+    // omitted — see the doc comment below.
+  }, [tracking]);
 
   // ── Pause / Resume ────────────────────────────────────────────────────────
+  // beginTracking/handlePause/handleResume all depend on `tracking` itself
+  // (not just activity-type-ish pieces of it) because `tracking` is a brand
+  // new object every render (useActivityTracking(actType) isn't memoized) —
+  // an empty dep array here would freeze these callbacks on whatever
+  // `tracking` existed at the component's very first render (bound to
+  // actType's default), permanently ignoring every later activity-type
+  // selection. That exact bug was shipped once already: the live
+  // notification and the saved activity both kept reporting "Run" no matter
+  // what the user actually picked, because beginTracking() was calling a
+  // start() still closed over the default type from mount.
   const handlePause = useCallback(async () => {
     await tracking.pause();
     setPhase('PAUSED');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [tracking]);
 
   const handleResume = useCallback(async () => {
     await tracking.resume();
     setPhase('ACTIVE');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ── Stop & finish ─────────────────────────────────────────────────────────
-  const handleStop = useCallback(() => {
-    Alert.alert('Finish Activity?', 'This will end your current session.', [
-      { text: 'Keep Going', style: 'cancel' },
-      { text: 'Finish', style: 'destructive', onPress: finishActivity },
-    ]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [tracking]);
 
   const finishActivity = useCallback(async () => {
     const result = await tracking.stop();
@@ -462,7 +462,7 @@ export default function ActivityTrackerScreen() {
     const bestPace = bestSplitPaceSecPerKm(result.splits);
     const bestSpeed = bestSplitSpeedKmh(result.splits);
     const best400m = fastest400mSeconds(result.route);
-    const calories = calcCalories(actType as MetActivityType, result.avgSpeedKmh, result.durationSeconds, user?.weightKg);
+    const calories = calcCalories(actType as MetActivityType, result.avgSpeedKmh, result.durationSeconds, user?.weightKg, result.splits);
 
     const activity: StoredActivity = {
       localId: genLocalId(),
@@ -488,6 +488,9 @@ export default function ActivityTrackerScreen() {
       startLongitude: result.startLongitude,
       endLatitude: result.endLatitude,
       endLongitude: result.endLongitude,
+      // Same default the activity-sharing flow already uses for the Post it
+      // creates — changeable on the summary screen before saving.
+      visibility: 'friends',
     };
 
     // Compare against every PRIOR activity of the same type (local history —
@@ -496,16 +499,10 @@ export default function ActivityTrackerScreen() {
     // activity just finished (it isn't saved yet at this point).
     const priorSameType = (await activityStorage.getAll()).filter((a) => a.type === actType);
     const records: string[] = [];
-    const isPaceBased = actType !== 'CYCLING';
-    if (isPaceBased && bestPace != null) {
+    if (bestPace != null) {
       const prevBest = priorSameType.reduce<number | null>((min, a) =>
         a.bestSplitPaceSecPerKm != null && (min == null || a.bestSplitPaceSecPerKm < min) ? a.bestSplitPaceSecPerKm : min, null);
       if (prevBest == null || bestPace < prevBest) records.push(`⚡ New fastest km: ${formatPace(bestPace)} /km`);
-    }
-    if (!isPaceBased && bestSpeed != null) {
-      const prevBest = priorSameType.reduce<number | null>((max, a) =>
-        a.bestSplitSpeedKmh != null && (max == null || a.bestSplitSpeedKmh > max) ? a.bestSplitSpeedKmh : max, null);
-      if (prevBest == null || bestSpeed > prevBest) records.push(`⚡ New fastest km: ${bestSpeed.toFixed(1)} km/h`);
     }
     if (best400m != null) {
       const prevBest = priorSameType.reduce<number | null>((min, a) =>
@@ -539,6 +536,71 @@ export default function ActivityTrackerScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actType, user?.weightKg]);
+
+  // ── Stop & finish ─────────────────────────────────────────────────────────
+  // Depends on finishActivity (not []) for the same reason beginTracking
+  // depends on tracking above — an empty array would permanently call
+  // whichever finishActivity existed at mount, saving every activity as
+  // whatever actType happened to default to, regardless of what was
+  // actually selected and tracked.
+  const handleStop = useCallback(() => {
+    Alert.alert('Finish Activity?', 'This will end your current session.', [
+      { text: 'Keep Going', style: 'cancel' },
+      { text: 'Finish', style: 'destructive', onPress: finishActivity },
+    ]);
+  }, [finishActivity]);
+
+  // ── Lock-screen/notification control ─────────────────────────────────────
+  // The Pause/Resume/Stop buttons on the live activity notification work
+  // without unlocking the phone — see activityControlBus.ts/activityNotification.ts.
+  // Pause/Resume apply immediately; Stop still routes through the same
+  // confirm dialog as the in-app Stop button (the notification action is
+  // configured to bring the app to the foreground specifically so that
+  // dialog is visible).
+  //
+  // handlePause/handleResume/handleStop all get a fresh identity on every
+  // render now (they depend on `tracking`/`finishActivity`, which are
+  // themselves fresh every render while a session is live — see those
+  // definitions above) — subscribing to the control bus directly off those
+  // deps would unsubscribe/resubscribe on every single stats tick (every
+  // ~2s). Routing calls through a ref instead means the two effects below
+  // only need to resubscribe when `phase` itself actually changes, while
+  // still always invoking whichever handler is current.
+  const handlePauseRef = useRef(handlePause);
+  const handleResumeRef = useRef(handleResume);
+  const handleStopRef = useRef(handleStop);
+  handlePauseRef.current = handlePause;
+  handleResumeRef.current = handleResume;
+  handleStopRef.current = handleStop;
+
+  useEffect(() => {
+    if (phase !== 'ACTIVE' && phase !== 'PAUSED') return;
+    return subscribeActivityControl((action) => {
+      if (action === 'PAUSE' && phase === 'ACTIVE') handlePauseRef.current();
+      else if (action === 'RESUME' && phase === 'PAUSED') handleResumeRef.current();
+      else if (action === 'STOP') handleStopRef.current();
+    });
+  }, [phase]);
+
+  // Picks up a control tap that arrived while this screen wasn't mounted
+  // yet (e.g. the app was fully backgrounded) — subscribeActivityControl
+  // above only catches one dispatched while it's actively subscribed.
+  useEffect(() => {
+    if (phase !== 'ACTIVE' && phase !== 'PAUSED') return;
+    (async () => {
+      const pending = await consumePendingActivityControl();
+      if (pending === 'PAUSE' && phase === 'ACTIVE') handlePauseRef.current();
+      else if (pending === 'RESUME' && phase === 'PAUSED') handleResumeRef.current();
+      else if (pending === 'STOP') handleStopRef.current();
+    })();
+  }, [phase]);
+
+  // Who can view this activity once saved (its detail page/share link, and
+  // whether it counts toward a friend's view of your profile Stats) — picked
+  // on the summary screen before Save, same tri-state Posts already use.
+  const handleSetVisibility = useCallback((visibility: ActivityVisibility) => {
+    setCompletedActivity((prev) => (prev ? { ...prev, visibility } : prev));
+  }, []);
 
   // ── Save activity ──────────────────────────────────────────────────────────
   // Saves locally + kicks off the server sync but doesn't block "Saved!" on
@@ -574,14 +636,32 @@ export default function ActivityTrackerScreen() {
     return serverId;
   }, [completedActivity, savedServerId]);
 
-  const { ShareCardPortal, buildShareCard } = useActivityShareCard(completedActivity, user?.displayName || 'A Paasxo user', newRecords);
+  const {
+    ShareCardPortal, SharePreview, buildShareCard,
+    templateId, setTemplateId, aspectRatio, setAspectRatio,
+    photoUri, pickPhoto, ensureMapSnapshot,
+  } = useActivityShareCard(completedActivity, user?.displayName || 'A Paasxo user', newRecords);
+
+  // Proactively snapshots the route map as soon as there's something to
+  // share, so the design preview below has a background ready the instant
+  // the user scrolls to it instead of only fetching it lazily on first
+  // share tap. mapRef is already the live MapView showing the fitted route.
+  useEffect(() => {
+    if (phase === 'SUMMARY') ensureMapSnapshot(mapRef);
+  }, [phase, ensureMapSnapshot]);
+
+  const handlePickPhotoForCard = useCallback(async () => {
+    const picked = await pickPhoto();
+    if (!picked) return;
+    if (templateId !== 'photo') setTemplateId('photo');
+  }, [pickPhoto, templateId, setTemplateId]);
 
   const handleShareToStory = useCallback(async () => {
     if (!completedActivity || shareBusy) return;
     setShareBusy('story');
     try {
       const serverId = await ensureSavedAndSynced();
-      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null, 'story');
+      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null, 'story', templateId);
       if (!cardUri) throw new Error('Could not generate the share image');
       await storyApi.createStory({ mediaUri: cardUri, mediaType: 'IMAGE', mimeType: 'image/jpeg', filterName: 'NORMAL' });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -591,14 +671,14 @@ export default function ActivityTrackerScreen() {
     } finally {
       setShareBusy(null);
     }
-  }, [completedActivity, shareBusy, ensureSavedAndSynced, buildShareCard]);
+  }, [completedActivity, shareBusy, ensureSavedAndSynced, buildShareCard, templateId]);
 
   const handleShareToPost = useCallback(async () => {
     if (!completedActivity || shareBusy) return;
     setShareBusy('post');
     try {
       const serverId = await ensureSavedAndSynced();
-      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null);
+      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null, 'post', templateId);
       if (!cardUri) throw new Error('Could not generate the share image');
       const caption = `${ACT[actType].emoji} ${formatDist(completedActivity.distanceMeters)}${distUnit(completedActivity.distanceMeters)} ${ACT[actType].label.toLowerCase()} in ${formatTime(completedActivity.durationSeconds)} on Paasxo 💪`;
       await socialMediaApi.createPost({
@@ -618,7 +698,7 @@ export default function ActivityTrackerScreen() {
     } finally {
       setShareBusy(null);
     }
-  }, [completedActivity, actType, shareBusy, ensureSavedAndSynced, buildShareCard]);
+  }, [completedActivity, actType, shareBusy, ensureSavedAndSynced, buildShareCard, templateId]);
 
   // Shares outside Paasxo (WhatsApp, Messages, etc). expo-sharing is used
   // rather than RN's built-in Share so the image attaches reliably on
@@ -633,22 +713,30 @@ export default function ActivityTrackerScreen() {
     setShareBusy('external');
     try {
       const serverId = await ensureSavedAndSynced();
-      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null);
-      if (cardUri && (await Sharing.isAvailableAsync())) {
-        await Sharing.shareAsync(cardUri, { mimeType: 'image/jpeg', dialogTitle: 'Share your activity' });
-        return;
+      const cardUri = await buildShareCard(mapRef, serverId ? activityShareUrl(serverId) : null, 'post', templateId);
+      if (cardUri) {
+        try {
+          // Lazily required: expo-sharing's native module isn't registered on
+          // every build (e.g. simulators without it linked), and a static
+          // top-level import throws synchronously at module-load time,
+          // crashing this whole screen before it can render.
+          const Sharing = require('expo-sharing') as typeof import('expo-sharing');
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(cardUri, { mimeType: 'image/jpeg', dialogTitle: 'Share your activity' });
+            return;
+          }
+        } catch {
+          // Native module unavailable — fall through to the plain-text share below.
+        }
       }
       // Fallback (web, or a device without a share sheet available) — plain
       // text share, same as before this feature existed.
-      const { durationSeconds, distanceMeters, maxSpeedKmh: maxSp, avgSpeedKmh, avgPaceSecPerKm, elevationGainMeters, elevationLossMeters, stepCount } = completedActivity;
-      const speedOrPace = actType !== 'CYCLING'
-        ? `🏃 Pace: ${formatPace(avgPaceSecPerKm)} /km\n`
-        : `⚡ Speed: ${avgSpeedKmh.toFixed(1)} km/h (max ${maxSp.toFixed(1)})\n`;
+      const { durationSeconds, distanceMeters, avgPaceSecPerKm, elevationGainMeters, elevationLossMeters, stepCount } = completedActivity;
       const message =
         `${ACT[actType].emoji} ${ACT[actType].label} complete on Paasxo!\n\n` +
         `📍 Distance: ${formatDist(distanceMeters)} ${distUnit(distanceMeters)}\n` +
         `⏱️ Duration: ${formatTime(durationSeconds)}\n` +
-        speedOrPace +
+        `🏃 Pace: ${formatPace(avgPaceSecPerKm)} /km\n` +
         `⛰️ Elevation: ${elevationGainMeters}m gain, ${elevationLossMeters}m loss` +
         (stepCount ? `\n👣 Steps: ${stepCount}` : '') +
         (serverId ? `\n\n${activityShareUrl(serverId)}` : '');
@@ -658,7 +746,7 @@ export default function ActivityTrackerScreen() {
     } finally {
       setShareBusy(null);
     }
-  }, [completedActivity, actType, shareBusy, ensureSavedAndSynced, buildShareCard]);
+  }, [completedActivity, actType, shareBusy, ensureSavedAndSynced, buildShareCard, templateId]);
 
   const handleDiscard = useCallback(() => {
     Alert.alert('Discard Activity?', 'This activity will not be saved.', [
@@ -797,12 +885,12 @@ export default function ActivityTrackerScreen() {
   );
 
   const renderActivePhase = (paused: boolean) => {
-    const avgLabel = cfg.isPaceBased ? 'Avg Pace' : 'Avg Speed';
-    const avgValue = cfg.isPaceBased ? formatPace(stats.currentPaceSecPerKm) : stats.avgSpeedKmh.toFixed(1);
-    const avgUnit = cfg.isPaceBased ? 'min/km' : 'km/h';
-    const currentLabel = cfg.isPaceBased ? 'Pace' : 'Speed';
-    const currentValue = cfg.isPaceBased ? formatPace(stats.currentPaceSecPerKm) : stats.currentSpeedKmh.toFixed(1);
-    const currentUnit = cfg.isPaceBased ? 'min/km' : 'km/h';
+    const avgLabel = 'Avg Pace';
+    const avgValue = formatPace(stats.currentPaceSecPerKm);
+    const avgUnit = 'min/km';
+    const currentLabel = 'Pace';
+    const currentValue = formatPace(stats.currentPaceSecPerKm);
+    const currentUnit = 'min/km';
 
     return (
       <View style={{ flex: 1, backgroundColor: '#0F172A' }}>
@@ -914,7 +1002,7 @@ export default function ActivityTrackerScreen() {
   const renderSummaryPhase = () => {
     if (!completedActivity) return null;
     const {
-      durationSeconds, distanceMeters, avgSpeedKmh, maxSpeedKmh: maxSp, avgPaceSecPerKm,
+      durationSeconds, distanceMeters, avgPaceSecPerKm,
       elevationGainMeters, elevationLossMeters, stepCount, splits, routeCoordinates, calories,
     } = completedActivity;
     const bestPace = completedActivity.bestSplitPaceSecPerKm;
@@ -1017,17 +1105,8 @@ export default function ActivityTrackerScreen() {
 
           {/* Secondary stats grid */}
           <View style={styles.secondaryGrid}>
-            {cfg.isPaceBased ? (
-              <>
-                <SummaryTile label="Avg Pace" value={formatPace(avgPaceSecPerKm)} unit="min/km" color="#F59E0B" />
-                <SummaryTile label="Best Split" value={formatPace(bestPace)} unit="min/km" color="#3B82F6" />
-              </>
-            ) : (
-              <>
-                <SummaryTile label="Avg Speed" value={`${avgSpeedKmh.toFixed(1)}`} unit="km/h" color="#3B82F6" />
-                <SummaryTile label="Max Speed" value={`${maxSp.toFixed(1)}`} unit="km/h" color="#8B5CF6" />
-              </>
-            )}
+            <SummaryTile label="Avg Pace" value={formatPace(avgPaceSecPerKm)} unit="min/km" color="#F59E0B" />
+            <SummaryTile label="Best Split" value={formatPace(bestPace)} unit="min/km" color="#3B82F6" />
             <SummaryTile label="Elevation" value={`+${elevationGainMeters}`} unit={`m · -${elevationLossMeters}m`} color="#10B981" />
             <SummaryTile label="Steps" value={stepCount != null ? `${stepCount}` : '—'} unit="steps" color="#F97316" />
             <SummaryTile label="Splits" value={`${splits.length}`} unit="recorded" color="#6366F1" />
@@ -1039,21 +1118,88 @@ export default function ActivityTrackerScreen() {
             <View style={styles.splitsSection}>
               <View style={styles.splitsHeader}>
                 <ListOrdered color={cfg.accentColor} size={16} />
-                <Text style={styles.splitsTitle}>
-                  {cfg.isPaceBased ? 'Pace per Kilometer' : 'Speed per Kilometer'}
-                </Text>
+                <Text style={styles.splitsTitle}>Pace per Kilometer</Text>
               </View>
               {splits.map((s) => (
                 <View key={s.index} style={styles.splitRow}>
                   <Text style={styles.splitIndex}>Km {s.index}</Text>
-                  <Text style={styles.splitValue}>
-                    {cfg.isPaceBased ? `${formatPace(s.paceSecPerKm)} /km` : `${s.avgSpeedKmh.toFixed(1)} km/h`}
-                  </Text>
+                  <Text style={styles.splitValue}>{formatPace(s.paceSecPerKm)} /km</Text>
                   <Text style={styles.splitDuration}>{formatTime(s.durationSeconds)}</Text>
                 </View>
               ))}
             </View>
           )}
+
+          {/* Share card design — live preview, updates instantly on every tap */}
+          <Text style={styles.visibilityLabel}>Card design</Text>
+          <View style={styles.previewWrap}>{SharePreview}</View>
+
+          <View style={styles.aspectRow}>
+            {(['post', 'story'] as const).map((ar) => {
+              const active = aspectRatio === ar;
+              return (
+                <TouchableOpacity
+                  key={ar}
+                  onPress={() => setAspectRatio(ar)}
+                  activeOpacity={0.8}
+                  style={[styles.aspectPill, active && { backgroundColor: cfg.accentColor }]}
+                >
+                  <Text style={[styles.aspectPillText, active && { color: Colors.white }]}>
+                    {ar === 'post' ? 'Post (4:5)' : 'Story (9:16)'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={styles.templateRow}>
+            {SHARE_CARD_TEMPLATES.map((t) => {
+              const active = templateId === t.id;
+              return (
+                <TouchableOpacity
+                  key={t.id}
+                  onPress={() => setTemplateId(t.id)}
+                  activeOpacity={0.8}
+                  style={[styles.templatePill, active && { borderColor: cfg.accentColor, borderWidth: 2 }]}
+                >
+                  <LinearGradient colors={t.previewColors} style={styles.templateSwatch} />
+                  <Text style={[styles.templatePillText, active && { color: cfg.accentColor }]}>{t.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {templateId === 'photo' && (
+            <TouchableOpacity onPress={handlePickPhotoForCard} activeOpacity={0.8} style={styles.takePhotoBtn}>
+              <Camera color={cfg.accentColor} size={16} strokeWidth={2.25} />
+              <Text style={[styles.takePhotoBtnText, { color: cfg.accentColor }]}>
+                {photoUri ? 'Retake Photo' : 'Take Photo'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Who can see this activity */}
+          <Text style={styles.visibilityLabel}>Who can see this activity?</Text>
+          <View style={styles.visibilityRow}>
+            {([
+              { key: 'public' as const, label: 'Public', Icon: Globe },
+              { key: 'friends' as const, label: 'Friends', Icon: Users },
+              { key: 'private' as const, label: 'Only Me', Icon: Lock },
+            ]).map(({ key, label, Icon }) => {
+              const active = completedActivity.visibility === key;
+              return (
+                <TouchableOpacity
+                  key={key}
+                  onPress={() => handleSetVisibility(key)}
+                  activeOpacity={0.8}
+                  style={[styles.visibilityPill, active && { backgroundColor: cfg.accentColor, borderColor: cfg.accentColor }]}
+                >
+                  <Icon color={active ? Colors.white : Colors.neutral400} size={14} strokeWidth={2.25} />
+                  <Text style={[styles.visibilityPillText, active && { color: Colors.white }]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
           {/* Actions */}
           <TouchableOpacity onPress={handleSave} disabled={saving} activeOpacity={0.85} style={{ marginTop: 12 }}>
@@ -1367,6 +1513,34 @@ const styles = StyleSheet.create({
     gap: 10, borderRadius: 18, paddingVertical: 18,
   },
   saveBtnText: { fontSize: 17, fontWeight: '900', color: Colors.white },
+  visibilityLabel: { fontSize: 13, fontWeight: '700', color: Colors.neutral400, marginTop: 18, marginBottom: 8 },
+  visibilityRow: { flexDirection: 'row', gap: 8 },
+  templateRow: { flexDirection: 'row', gap: 10 },
+  templatePill: {
+    flex: 1, alignItems: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 8,
+    borderRadius: 14, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.15)',
+  },
+  templateSwatch: { width: '100%', height: 36, borderRadius: 8 },
+  templatePillText: { fontSize: 12, fontWeight: '700', color: Colors.neutral400 },
+  previewWrap: { alignItems: 'center', marginBottom: 14 },
+  aspectRow: { flexDirection: 'row', gap: 8, marginBottom: 14, justifyContent: 'center' },
+  aspectPill: {
+    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.15)',
+  },
+  aspectPillText: { fontSize: 12.5, fontWeight: '700', color: Colors.neutral400 },
+  takePhotoBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    marginTop: 10, paddingVertical: 12, borderRadius: 14,
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.15)',
+  },
+  takePhotoBtnText: { fontSize: 14, fontWeight: '800' },
+  visibilityPill: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 10,
+    borderRadius: 14, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.15)',
+  },
+  visibilityPillText: { fontSize: 12.5, fontWeight: '700', color: Colors.neutral400 },
   shareRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
   shareRowBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',

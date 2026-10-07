@@ -17,12 +17,22 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import * as Location from 'expo-location';
 import { Pedometer } from 'expo-sensors';
+// Barometer is deliberately NOT a static import here — unlike Pedometer,
+// requiring its native binding throws synchronously the instant the module
+// is imported if the running build doesn't have it registered (e.g. Expo
+// Go, or a build predating it). A top-level throw there would crash this
+// whole file's module graph before any screen using it could even render —
+// which is exactly what surfaced as the /activity-tracker route itself
+// failing to load. Resolved lazily instead, inside startBarometer's own
+// try/catch, so a missing/unavailable barometer can only ever disable that
+// one optional feature (falls back to GPS-altitude elevation) and never
+// take the screen down with it.
 import {
   ACTIVITY_LOCATION_TASK, drainLocationBuffer, clearLocationBuffer, BufferedSample,
 } from '../lib/activityLocationTask';
 import { showActivityNotification, dismissActivityNotification } from '../lib/activityNotification';
 import {
-  haversineMeters, ElevationTracker, SplitTracker, LiveSplit, formatTime, formatDist, distUnit, calcPaceSecPerKm,
+  haversineMeters, ElevationTracker, SplitTracker, LiveSplit, formatTime, formatDist, distUnit, calcPaceSecPerKm, formatPace,
 } from '../utils/activityMath';
 import { ActivityType, RoutePoint } from '../api/activityApi';
 import {
@@ -61,7 +71,16 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 const DRAIN_INTERVAL_MS = 2000;
-const NOTIFICATION_UPDATE_INTERVAL_MS = 5000;
+// This is a LOCAL notification re-issued in place under a fixed identifier —
+// it never touches the backend/network, so the cost here is purely "how
+// often does the OS redraw one notification," not an API/server cost. Even
+// so, redrawing every few seconds is unnecessary churn for something only
+// glanced at by pulling down the shade, and on some OS/battery-saver
+// combinations very frequent local-notification updates get silently
+// throttled. 30s keeps it feeling live without hammering it; a completed
+// km split (see processSample below) also forces an immediate update
+// in between, so a real milestone is never stale for up to 30s.
+const NOTIFICATION_UPDATE_INTERVAL_MS = 30000;
 // Checkpointing the full session (route included) on every 2s drain would be
 // a lot of AsyncStorage churn for a long session's growing route array —
 // every 3rd drain (~6s) bounds that while still keeping an app-kill's worst
@@ -72,6 +91,9 @@ const CHECKPOINT_EVERY_N_DRAINS = 3;
 // plausible (a GPS glitch), rather than folding either into distance.
 const MIN_SAMPLE_DISTANCE_M = 1;
 const MAX_SAMPLE_DISTANCE_M = 200;
+// A horizontal accuracy worse than this (meters) is treated as an unreliable
+// fix and dropped outright — see processSample's doc comment.
+const MAX_SAMPLE_ACCURACY_M = 20;
 
 export type TrackingPhase = 'IDLE' | 'ACTIVE' | 'PAUSED';
 
@@ -149,7 +171,7 @@ export function useActivityTracking(activityType: ActivityType) {
   const distanceRef = useRef(0);
   const maxSpeedRef = useRef(0);
   const elevationRef = useRef(new ElevationTracker());
-  const splitTrackerRef = useRef(new SplitTracker(activityType !== 'CYCLING'));
+  const splitTrackerRef = useRef(new SplitTracker());
   const startTimeRef = useRef<Date | null>(null);
   const elapsedRef = useRef(0);
   const lastProcessedTimestampRef = useRef(0);
@@ -160,6 +182,18 @@ export function useActivityTracking(activityType: ActivityType) {
   // not silently overwrite it the moment the first new pedometer tick lands.
   const stepCountBaseRef = useRef(0);
   const currentLocationRef = useRef<{ latitude: number; longitude: number } | null>(null);
+
+  // Elevation is normally fed from GPS altitude (noisy, ±10-30m even
+  // standing still). When the device has a barometer, that's a far more
+  // precise source for RELATIVE altitude change (the same approach Strava/
+  // Garmin/Apple use) — once a first barometer reading confirms it's
+  // available, GPS altitude samples are ignored for the rest of the session
+  // so the two sources never mix into one noisy signal. baselinePressureRef
+  // is only used on Android, where the sensor reports raw pressure (hPa)
+  // rather than iOS's already-relative `relativeAltitude`.
+  const useBarometerRef = useRef(false);
+  const baselinePressureRef = useRef<number | null>(null);
+  const barometerSubRef = useRef<{ remove: () => void } | null>(null);
 
   const drainIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const tickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -179,6 +213,16 @@ export function useActivityTracking(activityType: ActivityType) {
     if (sample.timestamp <= lastProcessedTimestampRef.current) return;
     lastProcessedTimestampRef.current = sample.timestamp;
 
+    // A low-accuracy fix (e.g. indoors, under tree cover, or a cold-start
+    // reading) can jump several meters from the true position even while
+    // standing still — accepted into distance, that reads as "unrealistic"
+    // movement/calories with nothing to show for it. Dropped entirely
+    // (not just excluded from distance) so it also can't kink the drawn
+    // route or jump the live location dot. A null accuracy (not reported on
+    // every platform) is treated permissively, same as this app's existing
+    // "never fabricate/assume the worst" stance on missing GPS fields.
+    if (sample.accuracy != null && sample.accuracy > MAX_SAMPLE_ACCURACY_M) return;
+
     const prev = routeRef.current[routeRef.current.length - 1];
     if (prev) {
       const d = haversineMeters(prev.latitude, prev.longitude, sample.latitude, sample.longitude);
@@ -186,7 +230,9 @@ export function useActivityTracking(activityType: ActivityType) {
         distanceRef.current += d;
       }
     }
-    elevationRef.current.addSample(sample.altitude);
+    // Ignored once the barometer has taken over (see useBarometerRef above) —
+    // GPS altitude is only the fallback source for devices without one.
+    if (!useBarometerRef.current) elevationRef.current.addSample(sample.altitude);
 
     const speedKmh = sample.speed != null && sample.speed >= 0 ? sample.speed * 3.6 : 0;
     if (speedKmh > maxSpeedRef.current) maxSpeedRef.current = speedKmh;
@@ -202,6 +248,12 @@ export function useActivityTracking(activityType: ActivityType) {
     currentLocationRef.current = { latitude: sample.latitude, longitude: sample.longitude };
 
     const newSplit = splitTrackerRef.current.update(distanceRef.current, elapsedRef.current);
+    // A completed km is a real milestone worth surfacing right away, rather
+    // than waiting for the next 30s interval tick (see
+    // NOTIFICATION_UPDATE_INTERVAL_MS) — this is the only thing that forces
+    // an update in between ticks, so the notification still only redraws a
+    // few times per km, not continuously.
+    if (newSplit) updateNotification(false);
 
     setStats((s) => ({
       ...s,
@@ -256,15 +308,25 @@ export function useActivityTracking(activityType: ActivityType) {
     }
   }, [processSample, checkpoint]);
 
+  // Reads sessionActivityTypeRef (set at start()/resumeFromSession() time)
+  // rather than closing over the `activityType` hook param directly — this
+  // callback is itself captured once, permanently, inside processSample's
+  // empty-deps closure (see the newSplit branch below), so it must stay
+  // correct no matter how many renders happen after that first capture;
+  // a plain closure over `activityType` would go stale if the user switches
+  // activity type on the picker after this hook's very first render.
   const updateNotification = useCallback((paused: boolean) => {
     const distText = `${formatDist(distanceRef.current)}${distUnit(distanceRef.current)}`;
     const timeText = formatTime(elapsedRef.current);
-    const label = ACTIVITY_TYPE_LABEL[activityType];
+    const paceText = formatPace(calcPaceSecPerKm(distanceRef.current, elapsedRef.current));
+    const label = ACTIVITY_TYPE_LABEL[sessionActivityTypeRef.current];
+    const stepsText = stepCountRef.current != null ? `  👣 ${stepCountRef.current}` : '';
     showActivityNotification(
       `${label} — ${paused ? 'Paused' : 'Tracking'}`,
-      `${timeText} · ${distText}`
+      `⏱ ${timeText}   📍 ${distText}   🏃 ${paceText}/km${stepsText}`,
+      paused
     );
-  }, [activityType]);
+  }, []);
 
   const startTimers = useCallback(() => {
     drainIntervalRef.current = setInterval(drainAndProcess, DRAIN_INTERVAL_MS);
@@ -291,12 +353,46 @@ export function useActivityTracking(activityType: ActivityType) {
     }
   }, []);
 
+  const startBarometer = useCallback(async () => {
+    if (barometerSubRef.current) return;
+    try {
+      // Lazily resolved — see the import comment above for why this can't
+      // be a static top-level import. require() with a literal module name
+      // still bundles normally in Metro; the only difference is WHEN it
+      // runs, which is what keeps a throw here contained to this try/catch.
+      const { Barometer } = require('expo-sensors') as typeof import('expo-sensors');
+      const available = await Barometer.isAvailableAsync();
+      if (!available) return;
+      Barometer.setUpdateInterval(1000); // barometer noise is low enough that 1Hz is plenty, and lighter on battery than GPS-rate polling
+      barometerSubRef.current = Barometer.addListener((data) => {
+        let altitude: number | null = null;
+        if (data.relativeAltitude != null) {
+          altitude = data.relativeAltitude; // iOS CMAltimeter — already relative to the first reading
+        } else if (data.pressure > 0) {
+          // Android reports raw pressure (hPa) only — derive relative altitude
+          // via the standard barometric formula against this session's first
+          // reading as the reference pressure.
+          if (baselinePressureRef.current == null) baselinePressureRef.current = data.pressure;
+          altitude = 44330 * (1 - Math.pow(data.pressure / baselinePressureRef.current, 1 / 5.255));
+        }
+        if (altitude != null) {
+          useBarometerRef.current = true;
+          elevationRef.current.addSample(altitude);
+        }
+      });
+    } catch {
+      // Unavailable/denied on this device — elevation stays on GPS altitude.
+    }
+  }, []);
+
   const stopLocationAndTimers = useCallback(async () => {
     if (drainIntervalRef.current) { clearInterval(drainIntervalRef.current); drainIntervalRef.current = null; }
     if (tickIntervalRef.current) { clearInterval(tickIntervalRef.current); tickIntervalRef.current = null; }
     if (notifyIntervalRef.current) { clearInterval(notifyIntervalRef.current); notifyIntervalRef.current = null; }
     pedometerSubRef.current?.remove();
     pedometerSubRef.current = null;
+    barometerSubRef.current?.remove();
+    barometerSubRef.current = null;
     try {
       const running = await Location.hasStartedLocationUpdatesAsync(ACTIVITY_LOCATION_TASK);
       if (running) await Location.stopLocationUpdatesAsync(ACTIVITY_LOCATION_TASK);
@@ -328,7 +424,9 @@ export function useActivityTracking(activityType: ActivityType) {
     distanceRef.current = 0;
     maxSpeedRef.current = 0;
     elevationRef.current = new ElevationTracker();
-    splitTrackerRef.current = new SplitTracker(activityType !== 'CYCLING');
+    splitTrackerRef.current = new SplitTracker();
+    useBarometerRef.current = false;
+    baselinePressureRef.current = null;
     elapsedRef.current = 0;
     lastProcessedTimestampRef.current = 0;
     stepCountRef.current = null;
@@ -369,11 +467,12 @@ export function useActivityTracking(activityType: ActivityType) {
     startTimers();
     updateNotification(false);
     await startPedometer();
+    await startBarometer();
     await checkpoint('ACTIVE'); // covers a kill in the first few seconds, before the first periodic checkpoint
 
     setPhase('ACTIVE');
     return { started: true, backgroundGranted };
-  }, [activityType, startTimers, updateNotification, startPedometer, checkpoint]);
+  }, [activityType, startTimers, updateNotification, startPedometer, startBarometer, checkpoint]);
 
   const pause = useCallback(async () => {
     await drainAndProcess(); // capture anything buffered right up to the pause moment
@@ -387,9 +486,10 @@ export function useActivityTracking(activityType: ActivityType) {
     await Location.startLocationUpdatesAsync(ACTIVITY_LOCATION_TASK, locationTaskOptions);
     startTimers();
     await startPedometer();
+    await startBarometer();
     setPhase('ACTIVE');
     updateNotification(false);
-  }, [startTimers, startPedometer, updateNotification]);
+  }, [startTimers, startPedometer, startBarometer, updateNotification]);
 
   const stop = useCallback(async (): Promise<FinishedActivityData> => {
     await drainAndProcess();
@@ -415,7 +515,7 @@ export function useActivityTracking(activityType: ActivityType) {
         ? parseFloat(((distanceMeters / 1000) / (durationSeconds / 3600)).toFixed(2))
         : 0,
       maxSpeedKmh: parseFloat(maxSpeedRef.current.toFixed(2)),
-      avgPaceSecPerKm: activityType !== 'CYCLING' ? calcPaceSecPerKm(distanceMeters, durationSeconds) : null,
+      avgPaceSecPerKm: calcPaceSecPerKm(distanceMeters, durationSeconds),
       elevationGainMeters: Math.round(elevationRef.current.gainMeters),
       elevationLossMeters: Math.round(elevationRef.current.lossMeters),
       stepCount: stepCountRef.current,
@@ -446,8 +546,13 @@ export function useActivityTracking(activityType: ActivityType) {
     maxSpeedRef.current = session.maxSpeedKmh;
     elevationRef.current = ElevationTracker.restore(session.elevationGainMeters, session.elevationLossMeters);
     splitTrackerRef.current = SplitTracker.restore(
-      session.activityType !== 'CYCLING', session.splits, session.lastSplitDistanceM, session.lastSplitElapsedS
+      session.splits, session.lastSplitDistanceM, session.lastSplitElapsedS
     );
+    // Whether the barometer was driving elevation before the kill isn't
+    // persisted — restart the detection fresh, same one-sample-discontinuity
+    // tradeoff ElevationTracker.restore's own doc comment already accepts.
+    useBarometerRef.current = false;
+    baselinePressureRef.current = null;
     lastProcessedTimestampRef.current = session.lastProcessedTimestamp;
     stepCountRef.current = session.stepCount;
     stepCountBaseRef.current = session.stepCount ?? 0;
@@ -500,9 +605,10 @@ export function useActivityTracking(activityType: ActivityType) {
     startTimers();
     updateNotification(false);
     await startPedometer();
+    await startBarometer();
     setPhase('ACTIVE');
     await checkpoint('ACTIVE');
-  }, [startTimers, updateNotification, startPedometer, checkpoint]);
+  }, [startTimers, updateNotification, startPedometer, startBarometer, checkpoint]);
 
   // Drain immediately on returning to the foreground while ACTIVE, so the UI
   // catches up on anything collected while backgrounded instead of waiting
