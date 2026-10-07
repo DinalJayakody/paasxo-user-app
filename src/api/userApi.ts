@@ -68,6 +68,14 @@ export const userApi = {
     return data;
   },
 
+  // Which WALK/RUN/CYCLING stats to hide from non-owner viewers of this
+  // user's profile Stats tab — see ActivityService#getUserSummary on the
+  // backend, which is what actually enforces this.
+  updateStatsVisibility: async (hiddenActivityTypes: string[]) => {
+    const { data } = await axiosInstance.patch(ENDPOINTS.SOCIAL.UPDATE_STATS_VISIBILITY, { hiddenActivityTypes });
+    return data;
+  },
+
   updateLocation: async (latitude: number, longitude: number) => {
     const { data } = await axiosInstance.patch(ENDPOINTS.SOCIAL.UPDATE_LOCATION, { latitude, longitude });
     return data;

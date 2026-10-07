@@ -16,6 +16,14 @@ const THEME_OPTIONS: { value: ThemeMode; label: string }[] = [
   { value: 'dark', label: 'Dark' },
 ];
 
+// Matches ActivityType on the backend/activity feature exactly (WALK/RUN/
+// CYCLING) — see User.hiddenStatsActivityTypes.
+const STAT_VISIBILITY_TYPES: { value: string; label: string }[] = [
+  { value: 'RUN', label: 'Running' },
+  { value: 'WALK', label: 'Walking' },
+  { value: 'CYCLING', label: 'Cycling' },
+];
+
 export default function SettingsScreen() {
   const router = useRouter();
   const { user, signOut, deleteAccount } = useAuth();
@@ -25,10 +33,15 @@ export default function SettingsScreen() {
   const [isPrivate, setIsPrivate] = useState(!!user?.isPrivate);
   const [savingPrivacy, setSavingPrivacy] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [hiddenStatTypes, setHiddenStatTypes] = useState<Set<string>>(new Set(user?.hiddenStatsActivityTypes ?? []));
+  const [savingStatType, setSavingStatType] = useState<string | null>(null);
 
   useEffect(() => {
     userApi.getProfile()
-      .then((profile) => setIsPrivate(!!profile?.isPrivate))
+      .then((profile) => {
+        setIsPrivate(!!profile?.isPrivate);
+        setHiddenStatTypes(new Set(profile?.hiddenStatsActivityTypes ?? []));
+      })
       .catch(() => {});
   }, []);
 
@@ -42,6 +55,25 @@ export default function SettingsScreen() {
       Alert.alert('Something went wrong', 'Could not update your privacy setting. Please try again.');
     } finally {
       setSavingPrivacy(false);
+    }
+  };
+
+  // "Visible" (switch ON) is the inverse of "hidden" (what's actually stored)
+  // — the toggle reads naturally as "show this on my profile" rather than
+  // "hide this," so the ON/OFF sense needs flipping at this one boundary.
+  const handleToggleStatVisible = async (type: string, visible: boolean) => {
+    const next = new Set(hiddenStatTypes);
+    if (visible) next.delete(type); else next.add(type);
+    const prev = hiddenStatTypes;
+    setHiddenStatTypes(next);
+    setSavingStatType(type);
+    try {
+      await userApi.updateStatsVisibility(Array.from(next));
+    } catch {
+      setHiddenStatTypes(prev);
+      Alert.alert('Something went wrong', 'Could not update your stats visibility. Please try again.');
+    } finally {
+      setSavingStatType(null);
     }
   };
 
@@ -127,6 +159,9 @@ export default function SettingsScreen() {
           <Pressable onPress={() => router.push('/saved-posts')} style={styles.row}>
             <Text style={styles.rowText}>Saved posts</Text>
           </Pressable>
+          <Pressable onPress={() => router.push('/joined-matches')} style={styles.row}>
+            <Text style={styles.rowText}>Joined matches</Text>
+          </Pressable>
         </View>
 
         <View style={styles.card}>
@@ -173,6 +208,30 @@ export default function SettingsScreen() {
           <Pressable onPress={() => router.push('/blocked-accounts')} style={[styles.row, styles.privacyRowDivider]}>
             <Text style={styles.rowText}>Blocked Accounts</Text>
           </Pressable>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Stats Visibility</Text>
+          <Text style={[styles.privacySubtext, { paddingHorizontal: 16, paddingTop: 2, paddingBottom: 10 }]}>
+            Choose which activity stats show on your public profile. This only affects what others see — you always see your own full stats.
+          </Text>
+          {STAT_VISIBILITY_TYPES.map((t, idx) => (
+            <View key={t.value} style={[styles.privacyRow, idx > 0 && styles.privacyRowDivider]}>
+              <View style={styles.privacyTextWrap}>
+                <Text style={styles.rowText}>{t.label}</Text>
+              </View>
+              {savingStatType === t.value ? (
+                <ActivityIndicator color={colors.logoBlue || colors.primary} />
+              ) : (
+                <Switch
+                  value={!hiddenStatTypes.has(t.value)}
+                  onValueChange={(v) => handleToggleStatVisible(t.value, v)}
+                  trackColor={{ false: colors.neutral200, true: colors.logoBlue || colors.primary }}
+                  thumbColor={colors.white}
+                />
+              )}
+            </View>
+          ))}
         </View>
 
         <View style={styles.card}>
