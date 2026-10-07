@@ -47,8 +47,11 @@ export const trainerApi = {
     return data;
   },
 
-  joinSlot: async (slotId: string | number) => {
-    const { data } = await axiosInstance.post(ENDPOINTS.TRAINER.JOIN_SLOT(slotId));
+  // POST /trainers/slots/{slotId}/join-order — server decides free vs. paid
+  // (JoinOrderResponse.joined), never the client. Paid sessions return
+  // paymentOrderId for paymentApi.initiateCheckout('TRAINER_BOOKING', paymentOrderId).
+  createJoinOrder: async (slotId: string | number): Promise<TrainerJoinOrderResponse> => {
+    const { data } = await axiosInstance.post(ENDPOINTS.TRAINER.JOIN_ORDER(slotId));
     return data;
   },
 
@@ -62,3 +65,10 @@ export const trainerApi = {
     return data;
   },
 };
+
+export interface TrainerJoinOrderResponse {
+  joined: boolean;
+  paymentOrderId?: number;
+  amountDue?: number;
+  message: string;
+}

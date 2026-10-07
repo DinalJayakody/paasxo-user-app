@@ -109,7 +109,11 @@ export default function TrainerProfileScreen({ trainerId }: Props) {
           )}
           <View style={styles.heroScrim} />
           <TouchableOpacity style={styles.backFab} onPress={() => goBack(router)} hitSlop={10}>
-            <ArrowLeft color={colors.text} size={20} strokeWidth={2.5} />
+            {/* Fixed dark ink, not colors.text — backFab's white circle below is
+                a deliberately fixed backdrop (always white over a photo/gradient
+                hero, in both themes), so the icon must stay fixed-dark too or it
+                turns near-invisible in dark mode where colors.text is near-white. */}
+            <ArrowLeft color="#0F172A" size={20} strokeWidth={2.5} />
           </TouchableOpacity>
           <View style={styles.heroMascotWrap}>
             <TrainerHeroMascot size={84} />

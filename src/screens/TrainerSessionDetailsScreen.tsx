@@ -13,7 +13,7 @@ import {
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { trainerApi } from '../api/trainerApi';
-import { TrainerBooking, TrainerSession, TrainerSessionSlot } from '../types/api';
+import { TrainerSession, TrainerSessionSlot } from '../types/api';
 import { resolveMediaUrl } from '../utils/mediaUrl';
 import { extractApiError } from '../utils/apiError';
 import { useSubscription } from '../hooks/useSubscription';
@@ -103,6 +103,7 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
     useCallback(() => {
       refreshSubscription();
       load();
+      setJoining(false); // reset the double-tap guard if the user backed out of checkout
     }, [refreshSubscription, load])
   );
 
@@ -141,32 +142,29 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
     }
     const slot = slots.find((s) => s.id === selectedSlotId);
     if (!slot) return;
-    // No real payment gateway for trainer sessions yet — join directly, same
-    // dummy-checkout convention used by BOOKING/MATCH_JOIN when
-    // payment.dummy-mode is on: the booking is created immediately rather
-    // than routing through a checkout screen first.
+    // Real PayHere checkout now — see TrainerCheckoutScreen, which itself
+    // calls createJoinOrder (server decides free vs. paid) and only ever
+    // creates the booking once payment actually clears. setJoining here is
+    // just a double-tap guard around the navigation itself, not a network
+    // wait — cleared on refocus (e.g. the user backs out of checkout).
     setJoining(true);
-    try {
-      const booking: TrainerBooking = await trainerApi.joinSlot(slot.id);
-      router.push({
-        pathname: '/trainer-booking-confirmed/[bookingId]',
-        params: {
-          bookingId: String(booking.id),
-          sessionTitle: booking.sessionTitle ?? session.title,
-          trainerDisplayName: booking.trainerDisplayName ?? session.trainerDisplayName ?? '',
-          slotDate: booking.slotDate ?? slot.slotDate,
-          startTime: booking.startTime ?? slot.startTime,
-          endTime: booking.endTime ?? slot.endTime,
-          location: session.location ?? '',
-          isOnline: session.isOnline ? '1' : '0',
-          pricePaid: String(booking.pricePaid ?? session.price),
-        },
-      } as any);
-    } catch (err) {
-      Alert.alert('Could Not Join', extractApiError(err, 'Could not join this session. Please try again.'));
-    } finally {
-      setJoining(false);
-    }
+    router.push({
+      pathname: '/trainer-checkout/[slotId]',
+      params: {
+        slotId: String(slot.id),
+        sessionId: String(session.id),
+        sessionTitle: session.title,
+        trainerDisplayName: session.trainerDisplayName ?? '',
+        category: session.category,
+        imageUrl: session.imageUrl ?? '',
+        slotDate: slot.slotDate,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        location: session.location ?? '',
+        isOnline: session.isOnline ? '1' : '0',
+        price: String(session.price ?? 0),
+      },
+    } as any);
   };
 
   if (loading || !session) {
@@ -201,7 +199,11 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
           )}
           <View style={styles.heroScrim} />
           <TouchableOpacity style={styles.backFab} onPress={() => goBack(router)} hitSlop={10}>
-            <ArrowLeft color={colors.text} size={20} strokeWidth={2.5} />
+            {/* Fixed dark ink, not colors.text — backFab's white circle below is
+                a deliberately fixed backdrop (always white over a photo/gradient
+                hero, in both themes), so the icon must stay fixed-dark too or it
+                turns near-invisible in dark mode where colors.text is near-white. */}
+            <ArrowLeft color="#0F172A" size={20} strokeWidth={2.5} />
           </TouchableOpacity>
           <View style={styles.heroOverlay}>
             <View style={styles.categoryPill}>

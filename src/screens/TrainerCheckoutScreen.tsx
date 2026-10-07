@@ -1,30 +1,34 @@
 import React, { useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View,
+  ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-  ArrowLeft, Calendar, Check, Clock, CreditCard, Lock, MapPin, ShieldCheck, Smartphone, Video,
+  ArrowLeft, Calendar, Check, Clock, Lock, MapPin, ShieldCheck, Video,
 } from 'lucide-react-native';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { trainerApi } from '../api/trainerApi';
-import { TrainerBooking, TrainerCategory } from '../types/api';
+import { paymentApi } from '../api/paymentApi';
+import { TrainerBooking, TrainerCategory, CheckoutInitiationResponse } from '../types/api';
 import { resolveMediaUrl } from '../utils/mediaUrl';
 import { extractApiError } from '../utils/apiError';
 import { SessionGuidelines } from '../components/SessionGuidelines';
+import { PayHereCheckoutWebView } from '../components/PayHereCheckoutWebView';
 import ScreenGlow from '../components/ScreenGlow';
 import { goBack } from '../utils/navigation';
 
-type PaymentMethod = 'saved-card' | 'apple-pay' | 'new-card';
+// Same rationale as JoinCheckoutScreen: onCompleted from the WebView only means
+// the checkout UI finished, never proof of payment — poll for the signed
+// webhook to actually land before treating the session as booked.
+const STATUS_POLL_ATTEMPTS = 10;
+const STATUS_POLL_INTERVAL_MS = 1500;
 
-const PAYMENT_OPTIONS: { id: PaymentMethod; label: string; subtitle?: string; icon: any }[] = [
-  { id: 'saved-card', label: 'Saved Card', subtitle: 'Visa •••• 4242', icon: CreditCard },
-  { id: 'apple-pay', label: 'Apple Pay', icon: Smartphone },
-  { id: 'new-card', label: 'New Credit/Debit Card', icon: CreditCard },
-];
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function timeLabel(t: string) {
   return t?.slice(0, 5) ?? '';
@@ -58,40 +62,113 @@ export default function TrainerCheckoutScreen(props: TrainerCheckoutProps) {
   } = props;
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('saved-card');
   const [agreed, setAgreed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // The TrainerJoinOrder id — paymentApi.getStatus is keyed by (orderType,
+  // orderId), i.e. this, NOT checkoutData.transactionId (a different
+  // PaymentTransaction id entirely). Tracked separately so the WebView's
+  // onCompleted callback (which only knows about checkoutData) can still
+  // poll the right order.
+  const [paymentOrderId, setPaymentOrderId] = useState<number | null>(null);
+  const [checkoutData, setCheckoutData] = useState<CheckoutInitiationResponse | null>(null);
+  const [webViewVisible, setWebViewVisible] = useState(false);
 
   const amount = Number(price) || 0;
 
+  // Best-effort: the booking itself is created asynchronously (by the PayHere
+  // webhook, after this poll already sees CHARGED), so there's a narrow race
+  // where it hasn't landed yet on the very first lookup. Falls back to the
+  // session's own page — still shows the new booking once it does land —
+  // rather than retry-looping for a nicer confirmation screen that isn't
+  // worth the extra complexity.
+  const navigateToConfirmation = async () => {
+    try {
+      const bookings: TrainerBooking[] = await trainerApi.getMyBookings();
+      const match = bookings.find((b) => String(b.slotId) === String(slotId));
+      if (match) {
+        router.replace({
+          pathname: '/trainer-booking-confirmed/[bookingId]',
+          params: {
+            bookingId: String(match.id),
+            sessionTitle: match.sessionTitle ?? sessionTitle,
+            trainerDisplayName: match.trainerDisplayName ?? trainerDisplayName,
+            slotDate: match.slotDate ?? slotDate,
+            startTime: match.startTime ?? startTime,
+            endTime: match.endTime ?? endTime,
+            location,
+            isOnline: isOnline ? '1' : '0',
+            pricePaid: String(match.pricePaid ?? amount),
+          },
+        } as any);
+        return;
+      }
+    } catch {
+      // fall through to the session-page fallback below
+    }
+    router.replace(`/trainer-session/${props.sessionId}` as any);
+  };
+
+  const handleCheckoutCompleted = async (orderId: number) => {
+    setWebViewVisible(false);
+    setSubmitting(true);
+    try {
+      for (let attempt = 0; attempt < STATUS_POLL_ATTEMPTS; attempt++) {
+        const status = await paymentApi.getStatus('TRAINER_BOOKING', orderId);
+        if (status.status === 'CHARGED' || status.status === 'CONFIRMED') {
+          await navigateToConfirmation();
+          return;
+        }
+        if (status.status === 'FAILED' || status.status === 'EXPIRED') {
+          Alert.alert('Payment Failed', 'Your payment could not be confirmed. Please try again.');
+          return;
+        }
+        await sleep(STATUS_POLL_INTERVAL_MS);
+      }
+      Alert.alert(
+        'Still Processing',
+        "We're still confirming your payment. Check \"My Bookings\" shortly — it'll update automatically once confirmed."
+      );
+    } catch (err) {
+      Alert.alert('Payment Failed', extractApiError(err, 'Could not confirm your payment status.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCheckoutDismissed = () => setWebViewVisible(false);
+
+  const handleCheckoutError = (message: string) => {
+    setWebViewVisible(false);
+    Alert.alert('Payment Failed', message || 'Something went wrong during payment. Please try again.');
+  };
+
   const handlePayAndJoin = async () => {
     if (!agreed) {
-      Alert.alert('One More Thing', 'Please confirm you\'ve read the session guidelines before paying.');
+      Alert.alert('One More Thing', "Please confirm you've read the session guidelines before paying.");
       return;
     }
     setSubmitting(true);
     try {
-      // Simulated payment — matches the convention used by JoinCheckoutScreen
-      // (no real payment gateway exists in this app yet). The booking is only
-      // created on the backend after this "payment" step succeeds.
-      await new Promise<void>((resolve) => setTimeout(resolve, 800));
-      const booking: TrainerBooking = await trainerApi.joinSlot(slotId);
-      router.replace({
-        pathname: '/trainer-booking-confirmed/[bookingId]',
-        params: {
-          bookingId: String(booking.id),
-          sessionTitle: booking.sessionTitle ?? sessionTitle,
-          trainerDisplayName: booking.trainerDisplayName ?? trainerDisplayName,
-          slotDate: booking.slotDate ?? slotDate,
-          startTime: booking.startTime ?? startTime,
-          endTime: booking.endTime ?? endTime,
-          location,
-          isOnline: isOnline ? '1' : '0',
-          pricePaid: String(booking.pricePaid ?? amount),
-        },
-      } as any);
+      const res = await trainerApi.createJoinOrder(slotId);
+      if (res.joined) {
+        // Free session — the backend already created the booking directly.
+        await navigateToConfirmation();
+        return;
+      }
+      if (res.paymentOrderId == null) {
+        throw new Error('Payment could not be started — please try again.');
+      }
+      setPaymentOrderId(res.paymentOrderId);
+      const initiation = await paymentApi.initiateCheckout('TRAINER_BOOKING', res.paymentOrderId);
+      if (initiation.dummyMode) {
+        // Backend has payment.dummy-mode on — PayHere bypassed, already CHARGED.
+        await handleCheckoutCompleted(res.paymentOrderId);
+        return;
+      }
+      setCheckoutData(initiation);
+      setWebViewVisible(true);
     } catch (err) {
-      Alert.alert('Payment Failed', extractApiError(err, 'Could not complete your booking. Please try again.'));
+      Alert.alert('Join Failed', extractApiError(err));
     } finally {
       setSubmitting(false);
     }
@@ -137,41 +214,41 @@ export default function TrainerCheckoutScreen(props: TrainerCheckoutProps) {
         {/* Payment breakdown */}
         <Text style={styles.sectionTitle}>Payment Breakdown</Text>
         <View style={styles.card}>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Session fee</Text>
-            <Text style={styles.summaryValue}>LKR {amount.toFixed(2)}</Text>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.summaryRow}>
-            <Text style={styles.totalLabel}>Total Due</Text>
-            <Text style={styles.totalValue}>LKR {amount.toFixed(2)}</Text>
-          </View>
+          {amount > 0 ? (
+            <>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Session fee</Text>
+                <Text style={styles.summaryValue}>LKR {amount.toFixed(2)}</Text>
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.summaryRow}>
+                <Text style={styles.totalLabel}>Total Due</Text>
+                <Text style={styles.totalValue}>LKR {amount.toFixed(2)}</Text>
+              </View>
+            </>
+          ) : (
+            <Text style={styles.summaryLabel}>Free to join</Text>
+          )}
         </View>
 
-        {/* Payment methods */}
-        <Text style={styles.sectionTitle}>Payment Method</Text>
-        {PAYMENT_OPTIONS.map((option) => {
-          const Icon = option.icon;
-          const selected = selectedMethod === option.id;
-          return (
-            <Pressable
-              key={option.id}
-              style={[styles.paymentOption, selected && styles.paymentOptionSelected]}
-              onPress={() => setSelectedMethod(option.id)}
-            >
+        {/* Payment method — the actual card/wallet choice happens on PayHere's own
+            hosted checkout page next, not here, so this is informational only. */}
+        {amount > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Payment Method</Text>
+            <View style={styles.paymentOption}>
               <View style={styles.paymentIconWrap}>
-                <Icon color={colors.text} size={20} strokeWidth={2} />
+                <Lock color={colors.text} size={18} strokeWidth={2} />
               </View>
-              <View style={styles.flex1}>
-                <Text style={styles.paymentLabel}>{option.label}</Text>
-                {option.subtitle && <Text style={styles.paymentSubtitle}>{option.subtitle}</Text>}
+              <View style={styles.paymentOptionBody}>
+                <Text style={styles.paymentLabel}>Choose on the next screen</Text>
+                <Text style={styles.paymentSubtitle}>
+                  Card, mobile wallet or bank — securely handled by PayHere. Paasxo never sees or stores your card number.
+                </Text>
               </View>
-              <View style={[styles.radio, selected && styles.radioSelected]}>
-                {selected && <View style={styles.radioDot} />}
-              </View>
-            </Pressable>
-          );
-        })}
+            </View>
+          </>
+        )}
 
         {/* Session guidelines + required acknowledgment */}
         <Text style={styles.sectionTitle}>Before You Join</Text>
@@ -205,7 +282,9 @@ export default function TrainerCheckoutScreen(props: TrainerCheckoutProps) {
             ? <ActivityIndicator color={colors.white} />
             : <>
                 <ShieldCheck color={colors.white} size={18} strokeWidth={2.2} />
-                <Text style={styles.payButtonText}>Pay & Join  LKR {amount.toFixed(2)}</Text>
+                <Text style={styles.payButtonText}>
+                  {amount > 0 ? `Pay & Join  LKR ${amount.toFixed(2)}` : 'Join Session'}
+                </Text>
               </>
           }
         </Pressable>
@@ -213,6 +292,15 @@ export default function TrainerCheckoutScreen(props: TrainerCheckoutProps) {
           By confirming, you agree to the Paasxo Terms of Service and Privacy Policy.
         </Text>
       </View>
+
+      <PayHereCheckoutWebView
+        visible={webViewVisible}
+        checkout={checkoutData}
+        onCompleted={() => paymentOrderId != null && handleCheckoutCompleted(paymentOrderId)}
+        onDismissed={handleCheckoutDismissed}
+        onError={handleCheckoutError}
+        onClose={handleCheckoutDismissed}
+      />
     </SafeAreaView>
   );
 }
@@ -252,16 +340,13 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.cardBg, borderRadius: 14,
     padding: 14, marginBottom: 12, borderWidth: 1.5, borderColor: 'transparent',
   },
-  paymentOptionSelected: { borderColor: colors.trainer },
   paymentIconWrap: {
     width: 38, height: 38, borderRadius: 10, backgroundColor: colors.neutral100,
     alignItems: 'center', justifyContent: 'center',
   },
+  paymentOptionBody: { flex: 1 },
   paymentLabel: { fontSize: 14, fontWeight: '700', color: colors.text },
   paymentSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: colors.neutral300, alignItems: 'center', justifyContent: 'center' },
-  radioSelected: { borderColor: colors.trainer },
-  radioDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.trainer },
 
   agreeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 16, paddingRight: 4 },
   checkbox: {
