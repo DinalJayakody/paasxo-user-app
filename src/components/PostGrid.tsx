@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, ViewToken } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Heart, MessageCircle, Play, X } from 'lucide-react-native';
 import { Colors, ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
@@ -19,6 +19,10 @@ interface PostGridProps {
   selectedPostId: string | null;
   onSelectPost: (post: PostSummary) => void;
   onCloseDetail: () => void;
+  // One-shot deep link (e.g. a "commented on your photo" notification) —
+  // opens straight into the comment sheet for whichever post selectedPostId
+  // names, instead of just the post itself.
+  openComments?: boolean;
 }
 
 function GridTile({ post, onPress, styles }: { post: PostSummary; onPress: () => void; styles: ReturnType<typeof createStyles> }) {
@@ -54,7 +58,84 @@ function GridTile({ post, onPress, styles }: { post: PostSummary; onPress: () =>
   );
 }
 
-export function PostGrid({ posts, selectedPostId, onSelectPost, onCloseDetail }: PostGridProps) {
+// Split out of PostGrid so useSafeAreaInsets() runs as a genuine descendant
+// of the SafeAreaProvider nested below (a hook call needs to be inside the
+// provider's own render tree to read its value — calling it directly in
+// PostGrid, the component that also renders that provider, would still read
+// the OUTER app-level provider instead). Insets are applied as explicit
+// padding rather than via <SafeAreaView>, matching FullScreenImageViewer —
+// the one component in this app already proven to position correctly inside
+// a Modal on both iOS and Android — instead of trusting SafeAreaView's own
+// automatic behavior in this same situation, which is what still left the
+// close button under the status bar/notch after the first attempt at this.
+function PostDetailModal({
+  posts,
+  selectedIndex,
+  visible,
+  activeIndex,
+  screenWidth,
+  openComments,
+  selectedPostId,
+  listRef,
+  onViewableItemsChanged,
+  onCloseDetail,
+  styles,
+  colors,
+}: {
+  posts: PostSummary[];
+  selectedIndex: number;
+  visible: boolean;
+  activeIndex: number;
+  screenWidth: number;
+  openComments?: boolean;
+  selectedPostId: string | null;
+  listRef: React.RefObject<FlatList<PostSummary> | null>;
+  onViewableItemsChanged: (info: { viewableItems: ViewToken[] }) => void;
+  onCloseDetail: () => void;
+  styles: ReturnType<typeof createStyles>;
+  colors: ThemeColors;
+}) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={[styles.modalSafe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <View style={styles.modalHeader}>
+        <Pressable onPress={onCloseDetail} style={styles.modalBackBtn} hitSlop={8}>
+          <X color={colors.text} size={20} strokeWidth={2.5} />
+        </Pressable>
+        <Text style={styles.modalHeaderTitle}>
+          {posts.length > 1 ? `${activeIndex + 1} of ${posts.length}` : 'Post'}
+        </Text>
+        <View style={{ width: 36 }} />
+      </View>
+      {visible && (
+        <FlatList
+          ref={listRef}
+          data={posts}
+          keyExtractor={(p) => p.id}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          initialScrollIndex={selectedIndex}
+          getItemLayout={(_, index) => ({ length: screenWidth, offset: screenWidth * index, index })}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
+          onScrollToIndexFailed={({ index }) => {
+            setTimeout(() => listRef.current?.scrollToIndex({ index, animated: false }), 50);
+          }}
+          renderItem={({ item }) => (
+            <View style={{ width: screenWidth }}>
+              <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+                <PostCard post={item} autoOpenComments={!!openComments && item.id === selectedPostId} />
+              </ScrollView>
+            </View>
+          )}
+        />
+      )}
+    </View>
+  );
+}
+
+export function PostGrid({ posts, selectedPostId, onSelectPost, onCloseDetail, openComments }: PostGridProps) {
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const { width: screenWidth } = useWindowDimensions();
@@ -91,42 +172,36 @@ export function PostGrid({ posts, selectedPostId, onSelectPost, onCloseDetail }:
         ))}
       </View>
 
-      <Modal visible={visible} animationType="fade" presentationStyle="fullScreen" onRequestClose={onCloseDetail}>
-        <SafeAreaView style={styles.modalSafe} edges={['top', 'bottom']}>
-          <View style={styles.modalHeader}>
-            <Pressable onPress={onCloseDetail} style={styles.modalBackBtn}>
-              <X color={colors.text} size={20} strokeWidth={2.5} />
-            </Pressable>
-            <Text style={styles.modalHeaderTitle}>
-              {posts.length > 1 ? `${activeIndex + 1} of ${posts.length}` : 'Post'}
-            </Text>
-            <View style={{ width: 36 }} />
-          </View>
-          {visible && (
-            <FlatList
-              ref={listRef}
-              data={posts}
-              keyExtractor={(p) => p.id}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              initialScrollIndex={selectedIndex}
-              getItemLayout={(_, index) => ({ length: screenWidth, offset: screenWidth * index, index })}
-              onViewableItemsChanged={onViewableItemsChanged}
-              viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
-              onScrollToIndexFailed={({ index }) => {
-                setTimeout(() => listRef.current?.scrollToIndex({ index, animated: false }), 50);
-              }}
-              renderItem={({ item }) => (
-                <View style={{ width: screenWidth }}>
-                  <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
-                    <PostCard post={item} />
-                  </ScrollView>
-                </View>
-              )}
-            />
-          )}
-        </SafeAreaView>
+      {/* RN's Modal renders into its own native root (a separate window on
+          iOS, a Dialog on Android) - it doesn't reliably inherit insets from
+          the app's top-level SafeAreaProvider, which is what was pushing the
+          close button up under the status bar/notch/camera cutout. `transparent`
+          + `statusBarTranslucent` + a nested SafeAreaProvider is the exact
+          combination FullScreenImageViewer uses — the one place in this app
+          already confirmed to get this right on both platforms; an opaque
+          (non-transparent) Modal was left measuring the wrong window and is
+          what made the first attempt at this fix not actually work. The
+          screen still reads as a solid opaque page since PostDetailModal's
+          own root View paints a solid background — `transparent` only
+          changes how the OS treats the Modal's window, not what's visible
+          once our own content has painted over it. */}
+      <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onCloseDetail}>
+        <SafeAreaProvider>
+          <PostDetailModal
+            posts={posts}
+            selectedIndex={selectedIndex}
+            visible={visible}
+            activeIndex={activeIndex}
+            screenWidth={screenWidth}
+            openComments={openComments}
+            selectedPostId={selectedPostId}
+            listRef={listRef}
+            onViewableItemsChanged={onViewableItemsChanged}
+            onCloseDetail={onCloseDetail}
+            styles={styles}
+            colors={colors}
+          />
+        </SafeAreaProvider>
       </Modal>
     </>
   );

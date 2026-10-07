@@ -120,6 +120,11 @@ getSavedPosts: async (page: number = 0, size: number = 10) => {
   return normalizePage(response.data);
 },
 
+getPostLikers: async (postId: string | number, query: string = '', page: number = 0, size: number = 20) => {
+  const response = await axiosInstance.get(ENDPOINTS.SOCIAL.GET_POST_LIKERS(postId, query, page, size));
+  return normalizePage(response.data);
+},
+
 getComments: async (postId: string | number) => {
   const response = await axiosInstance.get(
     ENDPOINTS.SOCIAL.GET_COMMENTS(postId)

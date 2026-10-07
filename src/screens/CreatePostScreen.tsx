@@ -233,6 +233,11 @@ export default function CreatePostScreen() {
   };
 
   const createPost = async () => {
+    // Synchronous re-entrancy guard — `disabled={loading}` on the Post
+    // button alone isn't enough, since it only takes effect after the
+    // `setLoading(true)` below causes a re-render; a fast double-tap landing
+    // in that window could fire two POST requests and create two Posts.
+    if (loading) return;
     try {
       if (!selectedImage) {
         Alert.alert(

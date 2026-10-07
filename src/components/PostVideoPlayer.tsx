@@ -18,6 +18,7 @@ import { useTheme } from '../context/ThemeContext';
 import { usePostInteraction, postInteractionStore } from '../stores/postInteractionStore';
 import { LoopingVideo } from './LoopingVideo';
 import { CommentSheet } from './CommentSheet';
+import { LikesModal } from './LikesModal';
 
 interface PostVideoPlayerProps {
   visible: boolean;
@@ -39,6 +40,7 @@ export function PostVideoPlayer({ visible, post, onClose }: PostVideoPlayerProps
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [likeBusy, setLikeBusy] = useState(false);
   const [commentsVisible, setCommentsVisible] = useState(false);
+  const [likesModalVisible, setLikesModalVisible] = useState(false);
   const heartScale = useRef(new Animated.Value(1)).current;
 
   // usePostInteraction must be called unconditionally (Rules of Hooks) even
@@ -113,17 +115,27 @@ export function PostVideoPlayer({ visible, post, onClose }: PostVideoPlayerProps
             {!!post.caption && <Text style={styles.captionText} numberOfLines={2}>{post.caption}</Text>}
           </View>
           <View style={styles.actionsCol}>
-            <Pressable onPress={toggleLike} style={styles.actionBtn} hitSlop={10}>
-              <Animated.View style={{ transform: [{ scale: heartScale }] }}>
-                <Heart
-                  color={interaction.likedByCurrentUser ? colors.liveRed : '#fff'}
-                  fill={interaction.likedByCurrentUser ? colors.liveRed : 'none'}
-                  size={30}
-                  strokeWidth={2.2}
-                />
-              </Animated.View>
-              <Text style={styles.actionCount}>{interaction.likeCount}</Text>
-            </Pressable>
+            <View style={styles.actionBtn}>
+              <Pressable onPress={toggleLike} hitSlop={10}>
+                <Animated.View style={{ transform: [{ scale: heartScale }] }}>
+                  <Heart
+                    color={interaction.likedByCurrentUser ? colors.liveRed : '#fff'}
+                    fill={interaction.likedByCurrentUser ? colors.liveRed : 'none'}
+                    size={30}
+                    strokeWidth={2.2}
+                  />
+                </Animated.View>
+              </Pressable>
+              {/* Separate from the heart above — tapping the heart likes/unlikes,
+                  tapping the count opens who liked it. */}
+              <Pressable
+                onPress={() => interaction.likeCount > 0 && setLikesModalVisible(true)}
+                hitSlop={10}
+                disabled={interaction.likeCount === 0}
+              >
+                <Text style={styles.actionCount}>{interaction.likeCount}</Text>
+              </Pressable>
+            </View>
             <Pressable onPress={() => setCommentsVisible(true)} style={styles.actionBtn} hitSlop={10}>
               <MessageCircle color="#fff" size={28} strokeWidth={2.2} />
               <Text style={styles.actionCount}>{interaction.commentCount}</Text>
@@ -140,6 +152,7 @@ export function PostVideoPlayer({ visible, post, onClose }: PostVideoPlayerProps
         </View>
 
         <CommentSheet postId={post.id} visible={commentsVisible} onClose={() => setCommentsVisible(false)} />
+        <LikesModal postId={post.id} visible={likesModalVisible} onClose={() => setLikesModalVisible(false)} />
       </View>
     </Modal>
   );

@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Animated,
   Share,
+  Alert,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -41,6 +42,7 @@ import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import HeaderIconButton from '../components/HeaderIconButton';
 import ScreenGlow from '../components/ScreenGlow';
+import ShareToCommunityModal from '../components/ShareToCommunityModal';
 import { goBack } from '../utils/navigation';
 
 interface TournamentDetailsScreenProps {
@@ -56,6 +58,7 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [rosterTeam, setRosterTeam] = useState<TournamentTeamUI | null>(null);
+  const [showCommunityShare, setShowCommunityShare] = useState(false);
 
   const [addTeamVisible, setAddTeamVisible] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
@@ -173,11 +176,20 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
     }
   };
 
-  const handleShare = () => {
+  const handleShareExternally = () => {
     if (!tournament) return;
     Share.share({
       message: `Follow "${tournament.name}" live on Paasxo! Tournament #${tournament.id} at ${tournament.venueName || 'the venue'}.`,
     }).catch(() => {});
+  };
+
+  const handleShare = () => {
+    if (!tournament) return;
+    Alert.alert('Share Tournament', undefined, [
+      { text: 'Share to Community', onPress: () => setShowCommunityShare(true) },
+      { text: 'Share Externally', onPress: handleShareExternally },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   if (loading || !tournament) {
@@ -434,6 +446,14 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
           </View>
         </View>
       </Modal>
+
+      <ShareToCommunityModal
+        visible={showCommunityShare}
+        onClose={() => setShowCommunityShare(false)}
+        shareType="TOURNAMENT"
+        referenceId={String(tournament.id)}
+        label="Share Tournament"
+      />
     </SafeAreaView>
   );
 }
