@@ -9,8 +9,9 @@ import {
   Image,
   Animated,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -32,6 +33,8 @@ import {
   PersonStanding,
   UserCheck,
   Landmark,
+  X,
+  History,
 } from 'lucide-react-native';
 import { notificationApi } from '../api/notificationApi';
 import * as Location from 'expo-location';
@@ -56,6 +59,8 @@ import { AuthContext } from '../context/AuthContext';
 import { useSubscription } from '../hooks/useSubscription';
 import { activityStorage, StoredActivity } from '../api/activityApi';
 import { resolveMediaUrl } from '../utils/mediaUrl';
+import { TrainerBooking } from '../types/api';
+import { extractApiError } from '../utils/apiError';
 
 const TRAINER_CATEGORY_LABELS: Record<string, string> = {
   GYM: 'Gym', CALISTHENICS: 'Calisthenics', DANCING: 'Dancing', YOGA: 'Yoga',
@@ -112,6 +117,30 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
 
 type MainTab = 'MATCHES' | 'VENUES' | 'TOURNAMENTS' | 'TRAINER_SESSIONS' | 'WALKING_RUNNING';
 type MatchView = 'NEARBY' | 'MY_BOOKINGS' | 'JOINED';
+// Trainer tab's own 2-way view, mirroring Matches' Nearby/Joined split.
+type TrainerSessionsView = 'NEARBY' | 'JOINED';
+
+// Must match TrainerBookingService.REFUND_LEAD_HOURS on the backend — purely
+// for client-side copy; the server is always the real source of truth for
+// whether cancelling right now is refund-eligible.
+const TRAINER_REFUND_LEAD_HOURS = 24;
+
+function sessionTimeLabel(t?: string): string {
+  return t?.slice(0, 5) ?? '';
+}
+function sessionDateLabel(iso: string): string {
+  if (!iso) return '';
+  return new Date(iso + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+function isSessionPast(slotDate: string, endTime?: string): boolean {
+  if (!slotDate) return false;
+  return new Date(`${slotDate}T${endTime || '23:59:59'}`).getTime() < Date.now();
+}
+function isWithinTrainerRefundWindow(slotDate: string, startTime: string): boolean {
+  if (!slotDate || !startTime) return false;
+  const hoursUntil = (new Date(`${slotDate}T${startTime}`).getTime() - Date.now()) / 3_600_000;
+  return hoursUntil >= TRAINER_REFUND_LEAD_HOURS;
+}
 
 interface VenueCard {
   id: string;
@@ -165,6 +194,13 @@ export default function HomeScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const sportMascots = useMemo(() => getSportMascots(colors), [colors]);
+  // Small sport-filter row (Matches/Tournaments tabs only) — real sports
+  // only, Trainer and Walk/Run excluded since neither is filterable by
+  // "sport" the way Futsal/Cricket/Pickleball/Paddleball are.
+  const filterableSports = useMemo(
+    () => sportMascots.filter((s) => s.sport !== 'TRAINER_GYM' && s.sport !== 'WALKING_RUNNING'),
+    [sportMascots]
+  );
   const navBarHeight = useBottomNavBarHeight();
   const [searchText, setSearchText] = useState('');
   const [matches, setMatches] = useState<MatchCard[]>([]);
@@ -191,6 +227,11 @@ export default function HomeScreen() {
   const [loadingTrainers, setLoadingTrainers] = useState(false);
   const [loadingMoreTrainers, setLoadingMoreTrainers] = useState(false);
   const [trainersHasMore, setTrainersHasMore] = useState(false);
+  const [trainerSessionsView, setTrainerSessionsView] = useState<TrainerSessionsView>('NEARBY');
+  const [joinedTrainerSessions, setJoinedTrainerSessions] = useState<TrainerBooking[]>([]);
+  const [loadingJoinedTrainerSessions, setLoadingJoinedTrainerSessions] = useState(false);
+  const [joinedTrainerSessionsShowHistory, setJoinedTrainerSessionsShowHistory] = useState(false);
+  const [cancellingTrainerSessionId, setCancellingTrainerSessionId] = useState<number | null>(null);
   const [venues, setVenues] = useState<VenueCard[]>([]);
   const [loadingVenues, setLoadingVenues] = useState(false);
   const [loadingMoreVenues, setLoadingMoreVenues] = useState(false);
@@ -202,6 +243,7 @@ export default function HomeScreen() {
   const [loadingMoreTournaments, setLoadingMoreTournaments] = useState(false);
   const [tournamentSearchHasMore, setTournamentSearchHasMore] = useState(false);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user } = useContext(AuthContext);
   const { active: isPro } = useSubscription();
 
@@ -265,6 +307,34 @@ export default function HomeScreen() {
       prev.includes(sport) ? prev.filter((s) => s !== sport) : [...prev, sport]
     );
   };
+
+  // Small sport-filter chips — shared by the Matches and Tournaments tabs,
+  // sitting right under each tab's own "Nearby"/segment row instead of the
+  // old full-width image cards. Filters the same selectedSportFilters state
+  // both filteredMatches and filteredTournaments already read.
+  const renderSportFilterRow = () => (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sportFilterRow} contentContainerStyle={styles.sportFilterRowContent}>
+      {filterableSports.map((s) => {
+        const active = selectedSportFilters.includes(s.sport);
+        return (
+          <TouchableOpacity
+            key={s.sport}
+            style={[
+              styles.sportFilterChip,
+              { backgroundColor: active ? s.color : s.bg, borderColor: active ? s.color : 'transparent' },
+            ]}
+            onPress={() => toggleSportFilter(s.sport)}
+            activeOpacity={0.8}
+          >
+            <SportIcon sport={s.sport} size={14} color={active ? colors.white : s.color} />
+            <Text style={[styles.sportFilterChipText, { color: active ? colors.white : s.color }]}>
+              {s.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
+  );
 
   const firstName = user?.displayName?.trim().split(' ')[0] || user?.email?.split('@')[0] || 'Player';
 
@@ -414,6 +484,83 @@ export default function HomeScreen() {
     loadJoinedMatches();
   }, [matchView, joinedLoaded, loadingJoined, loadJoinedMatches]);
 
+  const loadJoinedTrainerSessions = React.useCallback(async () => {
+    setLoadingJoinedTrainerSessions(true);
+    try {
+      const res: TrainerBooking[] = await trainerApi.getMyBookings();
+      setJoinedTrainerSessions(res.slice().sort((a, b) => (a.slotDate < b.slotDate ? 1 : -1)));
+    } catch {
+      setJoinedTrainerSessions([]);
+    } finally {
+      setLoadingJoinedTrainerSessions(false);
+    }
+  }, []);
+
+  // Fetch the moment the user switches into this sub-view...
+  useEffect(() => {
+    if (activeTab === 'TRAINER_SESSIONS' && trainerSessionsView === 'JOINED') {
+      loadJoinedTrainerSessions();
+    }
+  }, [activeTab, trainerSessionsView, loadJoinedTrainerSessions]);
+
+  // ...and again every time this screen regains navigation focus while still
+  // on that sub-view (e.g. returning from the session detail screen after
+  // cancelling there) — mirrors loadNearbyAndMine's own useFocusEffect above,
+  // since a cancellation made on a different screen wouldn't otherwise be
+  // reflected here until a manual pull-to-refresh.
+  useFocusEffect(
+    React.useCallback(() => {
+      if (activeTab === 'TRAINER_SESSIONS' && trainerSessionsView === 'JOINED') {
+        loadJoinedTrainerSessions();
+      }
+    }, [activeTab, trainerSessionsView, loadJoinedTrainerSessions])
+  );
+
+  // Past/cancelled sessions are hidden from the default list (nothing to act
+  // on there) but stay reachable: typing in the shared search bar, or
+  // toggling history, brings them back so a past session can still be looked up.
+  const filteredJoinedTrainerSessions = React.useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    return joinedTrainerSessions.filter((s) => {
+      const inactive = s.status === 'CANCELLED' || isSessionPast(s.slotDate, s.endTime);
+      if (inactive && !joinedTrainerSessionsShowHistory && !q) return false;
+      if (q) {
+        const haystack = `${s.sessionTitle ?? ''} ${s.trainerDisplayName ?? ''}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [joinedTrainerSessions, searchText, joinedTrainerSessionsShowHistory]);
+
+  const handleCancelJoinedTrainerSession = (session: TrainerBooking) => {
+    const refundEligible = isWithinTrainerRefundWindow(session.slotDate, session.startTime);
+    const paid = (session.pricePaid ?? 0) > 0;
+    const message = !paid
+      ? 'This session is free — cancelling just releases your spot.'
+      : refundEligible
+      ? `You're cancelling at least ${TRAINER_REFUND_LEAD_HOURS} hours before the session, so you'll get a full refund.`
+      : `This is within ${TRAINER_REFUND_LEAD_HOURS} hours of the session, so your payment won't be refunded.`;
+
+    Alert.alert('Cancel This Session?', message, [
+      { text: 'Keep My Spot', style: 'cancel' },
+      {
+        text: 'Cancel Session',
+        style: 'destructive',
+        onPress: async () => {
+          setCancellingTrainerSessionId(session.id);
+          try {
+            await trainerApi.cancelBooking(session.id);
+            await loadJoinedTrainerSessions();
+          } catch (err) {
+            Alert.alert('Could Not Cancel', extractApiError(err, 'Could not cancel this session. Please try again.'));
+          } finally {
+            setCancellingTrainerSessionId(null);
+          }
+        },
+      },
+    ]);
+  };
+
   const mapTrainerContent = (content: any[]): TrainerCard[] =>
     content.map((t: any) => ({
       id: String(t.id),
@@ -549,12 +696,12 @@ export default function HomeScreen() {
       const t = setTimeout(() => loadTournamentSearch(searchText, true), 350);
       return () => clearTimeout(t);
     }
-    if (activeTab === 'TRAINER_SESSIONS') {
+    if (activeTab === 'TRAINER_SESSIONS' && trainerSessionsView === 'NEARBY') {
       const delay = searchText ? 350 : 0;
       const t = setTimeout(() => loadNearbyTrainers(searchText, true), delay);
       return () => clearTimeout(t);
     }
-  }, [activeTab, searchText, loadVenues, loadTournamentSearch, loadNearbyTrainers]);
+  }, [activeTab, trainerSessionsView, searchText, loadVenues, loadTournamentSearch, loadNearbyTrainers]);
 
   // Infinite scroll: called from the main ScrollView's onScroll handler when
   // the user nears the bottom while an active, has-more search tab is open.
@@ -564,11 +711,12 @@ export default function HomeScreen() {
     } else if (activeTab === 'TOURNAMENTS' && searchText.trim().length > 0
       && tournamentSearchHasMore && !loadingTournamentSearch && !loadingMoreTournaments) {
       loadTournamentSearch(searchText, false);
-    } else if (activeTab === 'TRAINER_SESSIONS' && trainersHasMore && !loadingTrainers && !loadingMoreTrainers) {
+    } else if (activeTab === 'TRAINER_SESSIONS' && trainerSessionsView === 'NEARBY'
+      && trainersHasMore && !loadingTrainers && !loadingMoreTrainers) {
       loadNearbyTrainers(searchText, false);
     }
   }, [
-    activeTab, searchText,
+    activeTab, searchText, trainerSessionsView,
     venuesHasMore, loadingVenues, loadingMoreVenues, loadVenues,
     tournamentSearchHasMore, loadingTournamentSearch, loadingMoreTournaments, loadTournamentSearch,
     trainersHasMore, loadingTrainers, loadingMoreTrainers, loadNearbyTrainers,
@@ -588,8 +736,26 @@ export default function HomeScreen() {
   // onMainScroll (infinite-scroll pagination, above) still fires via this
   // hook's listener option — see useFloatingHeader's doc comment for why
   // that's threaded through rather than composed by hand here.
-  const HEADER_HEIGHT = 84;
-  const { translateY: headerTranslateY, onScroll: onFloatingScroll } = useFloatingHeader(HEADER_HEIGHT, onMainScroll);
+  //
+  // The header card's own height is measured on-device (onLayout below)
+  // rather than hardcoded, since it varies with font scale/accessibility
+  // settings. topHeaderShadowVerticalMargin covers the wrapper's marginTop
+  // (6, from styles.topHeaderShadow) plus a deliberate breathing-room gap
+  // before the search bar below it — marginBottom on an absolutely
+  // positioned box with no `bottom` constraint renders inert in RN (nothing
+  // pushes against it), so that alone was previously giving only ~2px of
+  // real visual gap between the header and the search bar, reading as
+  // cramped. HEADER_HEIGHT (card + margin + gap) is how much top padding
+  // the scroll content needs to start a clean gap below the header.
+  // HEADER_HIDE_DISTANCE is bigger: the header is anchored at `top:
+  // insets.top` (below the notch/status bar), so fully hiding it means
+  // sliding it up by its own height PLUS that inset — otherwise a sliver
+  // stays visible right under the notch/status bar once "hidden".
+  const topHeaderShadowVerticalMargin = 22; // marginTop 6 + 16px intentional gap to the search bar
+  const [headerCardHeight, setHeaderCardHeight] = useState(72);
+  const HEADER_HEIGHT = headerCardHeight + topHeaderShadowVerticalMargin;
+  const HEADER_HIDE_DISTANCE = HEADER_HEIGHT + insets.top;
+  const { translateY: headerTranslateY, onScroll: onFloatingScroll } = useFloatingHeader(HEADER_HIDE_DISTANCE, onMainScroll);
 
   const loadTournaments = React.useCallback(async () => {
     setLoadingTournaments(true);
@@ -653,6 +819,85 @@ export default function HomeScreen() {
       setRefreshing(false);
     }
   }, [loadNearbyAndMine, loadTournaments, loadJoinedMatches, loadNearbyTrainers, loadVenues, loadTournamentSearch, matchView, activeTab, searchText]);
+
+  const renderJoinedTrainerSessionCard = (session: TrainerBooking) => {
+    const cancelled = session.status === 'CANCELLED';
+    const past = isSessionPast(session.slotDate, session.endTime);
+    const canCancel = !cancelled && !past;
+    const isCancelling = cancellingTrainerSessionId === session.id;
+    return (
+      <TouchableOpacity
+        key={session.id}
+        style={[styles.joinedSessionCard, (cancelled || past) && { opacity: 0.6 }]}
+        activeOpacity={0.88}
+        onPress={() => router.push({
+          pathname: '/trainer-booking/[bookingId]',
+          params: {
+            bookingId: String(session.id),
+            sessionTitle: session.sessionTitle ?? '',
+            trainerDisplayName: session.trainerDisplayName ?? '',
+            slotDate: session.slotDate,
+            startTime: session.startTime,
+            endTime: session.endTime,
+            pricePaid: String(session.pricePaid ?? 0),
+            status: session.status,
+          },
+        } as any)}
+      >
+        <View style={styles.joinedSessionHeader}>
+          <Text style={styles.joinedSessionTitle} numberOfLines={1}>{session.sessionTitle}</Text>
+          {cancelled ? (
+            <View style={[styles.joinedSessionBadge, { backgroundColor: colors.error + '1A' }]}>
+              <Text style={[styles.joinedSessionBadgeText, { color: colors.error }]}>Cancelled</Text>
+            </View>
+          ) : past ? (
+            <View style={styles.joinedSessionBadge}>
+              <Text style={styles.joinedSessionBadgeText}>Completed</Text>
+            </View>
+          ) : (
+            <View style={[styles.joinedSessionBadge, { backgroundColor: colors.trainerLight }]}>
+              <Text style={[styles.joinedSessionBadgeText, { color: colors.trainer }]}>Confirmed</Text>
+            </View>
+          )}
+        </View>
+        {!!session.trainerDisplayName && (
+          <Text style={styles.joinedSessionTrainerName}>with {session.trainerDisplayName}</Text>
+        )}
+        <View style={styles.joinedSessionMetaRow}>
+          <View style={styles.joinedSessionMetaItem}>
+            <Calendar color={colors.textMuted} size={12} strokeWidth={2} />
+            <Text style={styles.trainerCardMeta}>{sessionDateLabel(session.slotDate)}</Text>
+          </View>
+          <View style={styles.joinedSessionMetaItem}>
+            <Clock color={colors.textMuted} size={12} strokeWidth={2} />
+            <Text style={styles.trainerCardMeta}>{sessionTimeLabel(session.startTime)} – {sessionTimeLabel(session.endTime)}</Text>
+          </View>
+        </View>
+        <View style={styles.joinedSessionFooter}>
+          <Text style={styles.trainerCardPrice}>
+            {session.pricePaid ? `LKR ${session.pricePaid.toFixed(2)} paid` : 'Free'}
+          </Text>
+          {canCancel && (
+            <TouchableOpacity
+              style={styles.joinedSessionCancelBtn}
+              onPress={() => handleCancelJoinedTrainerSession(session)}
+              disabled={isCancelling}
+              hitSlop={6}
+            >
+              {isCancelling ? (
+                <ActivityIndicator size="small" color={colors.error} />
+              ) : (
+                <>
+                  <X color={colors.error} size={13} strokeWidth={2.5} />
+                  <Text style={styles.joinedSessionCancelBtnText}>Cancel</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   const renderMatchCard = (item: MatchCard) => {
     const spotsLabel = (() => {
@@ -904,7 +1149,8 @@ export default function HomeScreen() {
   const searchPlaceholder =
     activeTab === 'VENUES' ? 'Search venues by name or location...'
     : activeTab === 'TOURNAMENTS' ? 'Search tournaments...'
-    : activeTab === 'TRAINER_SESSIONS' ? 'Search trainers...'
+    : activeTab === 'TRAINER_SESSIONS'
+    ? (trainerSessionsView === 'JOINED' ? 'Search your joined sessions...' : 'Search trainers...')
     : 'Search matches by title, venue...';
 
   const matchViewTitle =
@@ -926,11 +1172,22 @@ export default function HomeScreen() {
       {/* Floating glass-gradient header — absolutely positioned so it overlays
           the scroll content (which reserves HEADER_HEIGHT of top padding,
           see scrollContent below) rather than pushing it down; hiding it on
-          scroll-down then reveals more content instead of leaving a gap. */}
+          scroll-down then reveals more content instead of leaving a gap.
+          `top: insets.top` is required here even though this sits inside a
+          SafeAreaView(edges=['top']): that safe-area padding only offsets
+          normal-flow children — an absolutely positioned child ignores its
+          parent's padding in React Native, so without this the header
+          renders at the physical top of the screen, under the status
+          bar/notch/camera cutout, on every device. */}
       <Animated.View
+        onLayout={(e) => setHeaderCardHeight(e.nativeEvent.layout.height)}
         style={[
           styles.topHeaderShadow,
-          { opacity: headerOpacity, transform: [{ scale: headerScale }, { translateY: headerTranslateY }] },
+          {
+            top: insets.top,
+            opacity: headerOpacity,
+            transform: [{ scale: headerScale }, { translateY: headerTranslateY }],
+          },
         ]}
       >
         <View style={styles.topHeader}>
@@ -976,7 +1233,7 @@ export default function HomeScreen() {
 
       <View style={styles.refreshableArea}>
       <PaasxoRefreshLogo refreshing={refreshing} />
-      <ScrollView
+      <Animated.ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.scrollContent, { paddingTop: HEADER_HEIGHT, paddingBottom: navBarHeight + 18 }]}
         showsVerticalScrollIndicator={false}
@@ -1004,32 +1261,6 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
         )}
-
-        {/* Sport filter chips */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sportRow}>
-          {sportMascots.map((s) => {
-            const active = selectedSportFilters.includes(s.sport);
-            return (
-              <TouchableOpacity
-                key={s.sport}
-                style={[
-                  styles.sportMascot,
-                  { backgroundColor: active ? s.color : s.bg },
-                  active && styles.sportMascotActive,
-                ]}
-                onPress={() => toggleSportFilter(s.sport)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.sportIconWrap}>
-                  <SportIcon sport={s.sport} size={26} color={active ? colors.white : s.color} />
-                </View>
-                <Text style={[styles.sportMascotLabel, { color: active ? colors.white : s.color }]}>
-                  {s.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
 
         {/* ── Tab Bar ─────────────────────────────────────────────── */}
         <View style={styles.tabBarWrap}>
@@ -1138,6 +1369,8 @@ export default function HomeScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
+
+            {renderSportFilterRow()}
 
             {/* Pending-approval hint — a freshly-created match is intentionally hidden from
                 Nearby (and from every other player) until its venue accepts the request, so
@@ -1257,6 +1490,8 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
 
+            {renderSportFilterRow()}
+
             {(isSearchingTournaments ? loadingTournamentSearch : loadingTournaments) ? (
               <View style={styles.loadingContainer}>
                 <ActivityIndicator size="small" color={colors.primary} />
@@ -1307,17 +1542,85 @@ export default function HomeScreen() {
           <>
             <View style={styles.sectionHeader}>
               <View>
-                <Text style={styles.sectionTitle}>{searchText.trim() ? 'Search Results' : 'Trainer Sessions'}</Text>
+                <Text style={styles.sectionTitle}>
+                  {trainerSessionsView === 'JOINED'
+                    ? 'My Joined Sessions'
+                    : searchText.trim() ? 'Search Results' : 'Trainer Sessions'}
+                </Text>
                 <Text style={styles.sectionSubtitle}>
-                  {searchText.trim() ? `Trainers matching "${searchText.trim()}"` : 'Book 1-on-1 or group training'}
+                  {trainerSessionsView === 'JOINED'
+                    ? 'Sessions you\'ve booked with trainers'
+                    : searchText.trim() ? `Trainers matching "${searchText.trim()}"` : 'Book 1-on-1 or group training'}
                 </Text>
               </View>
-              <TouchableOpacity activeOpacity={0.7} onPress={() => router.push('/explore' as any)}>
-                <Text style={styles.seeAllText}>See all →</Text>
+              {trainerSessionsView === 'JOINED' ? (
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => setJoinedTrainerSessionsShowHistory((v) => !v)}
+                  style={styles.joinedHistoryToggle}
+                  hitSlop={8}
+                >
+                  <History color={joinedTrainerSessionsShowHistory ? colors.trainer : colors.textMuted} size={16} strokeWidth={2.2} />
+                  <Text style={[styles.joinedHistoryToggleText, joinedTrainerSessionsShowHistory && { color: colors.trainer }]}>
+                    History
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity activeOpacity={0.7} onPress={() => router.push('/explore' as any)}>
+                  <Text style={styles.seeAllText}>See all →</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* 2-way segment control: Nearby | My Sessions — mirrors the Matches tab's own segment control */}
+            <View style={styles.matchSegment}>
+              <TouchableOpacity
+                style={[styles.segmentPill, trainerSessionsView === 'NEARBY' && styles.segmentPillActiveTrainer]}
+                onPress={() => setTrainerSessionsView('NEARBY')}
+                activeOpacity={0.75}
+              >
+                <MapPin size={11} color={trainerSessionsView === 'NEARBY' ? colors.white : colors.textMuted} strokeWidth={2} />
+                <Text style={[styles.segmentText, trainerSessionsView === 'NEARBY' && styles.segmentTextActive]}>
+                  Nearby Sessions
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.segmentPill, trainerSessionsView === 'JOINED' && styles.segmentPillActiveTrainer]}
+                onPress={() => setTrainerSessionsView('JOINED')}
+                activeOpacity={0.75}
+              >
+                <UserCheck size={11} color={trainerSessionsView === 'JOINED' ? colors.white : colors.textMuted} strokeWidth={2} />
+                <Text style={[styles.segmentText, trainerSessionsView === 'JOINED' && styles.segmentTextActive]}>
+                  My Joined Sessions
+                </Text>
               </TouchableOpacity>
             </View>
 
-            {loadingTrainers ? (
+            {trainerSessionsView === 'JOINED' ? (
+              joinedTrainerSessionsShowHistory && (
+                <Text style={styles.joinedHistoryHint}>Showing past & cancelled sessions too</Text>
+              )
+            ) : null}
+
+            {trainerSessionsView === 'JOINED' ? (
+              loadingJoinedTrainerSessions ? (
+                <ActivityIndicator color={colors.trainer} style={{ marginTop: 24 }} />
+              ) : filteredJoinedTrainerSessions.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <View style={styles.emptyIconWrap}>
+                    <Dumbbell color={colors.neutral400} size={36} strokeWidth={1.5} />
+                  </View>
+                  <Text style={styles.emptyStateTitle}>
+                    {searchText.trim() ? 'No sessions found' : 'No joined sessions yet'}
+                  </Text>
+                  <Text style={styles.emptyStateText}>
+                    {searchText.trim() ? 'Try a different search term.' : 'Trainer sessions you join will show up here.'}
+                  </Text>
+                </View>
+              ) : (
+                filteredJoinedTrainerSessions.map((s) => renderJoinedTrainerSessionCard(s))
+              )
+            ) : loadingTrainers ? (
               <ActivityIndicator color={colors.trainer} style={{ marginTop: 24 }} />
             ) : nearbyTrainers.length === 0 && searchText.trim() ? (
               <View style={styles.emptyState}>
@@ -1485,7 +1788,7 @@ export default function HomeScreen() {
             )}
           </>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
       </View>
 
       <BottomNavbar activeTab="EXPLORE" showCreateButton={false} />
@@ -1498,7 +1801,8 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
 
   topHeaderShadow: {
     position: 'absolute',
-    top: 0, left: 0, right: 0,
+    // top is set dynamically inline (insets.top) — see the header's onLayout/style above.
+    left: 0, right: 0,
     zIndex: 20,
     marginHorizontal: 12,
     marginTop: 6,
@@ -1576,17 +1880,17 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     marginLeft: 6,
   },
 
-  sportRow: { marginBottom: 16 },
-  sportMascot: {
-    alignItems: 'center', justifyContent: 'center', marginRight: 10,
-    width: 76, height: 76, borderRadius: 18, gap: 4,
+  // Small sport-filter chips (Matches/Tournaments tabs) — compact pill row,
+  // replaces the old full-width image cards that used to sit above the tab
+  // bar for every tab.
+  sportFilterRow: { marginBottom: 16 },
+  sportFilterRowContent: { paddingRight: 4 },
+  sportFilterChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 11, paddingVertical: 6, borderRadius: 16,
+    marginRight: 8, borderWidth: 1.5,
   },
-  sportMascotActive: {
-    shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 }, elevation: 5,
-  },
-  sportIconWrap: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
-  sportMascotLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  sportFilterChipText: { fontSize: 11.5, fontWeight: '700' },
 
   // Tab bar
   tabBarWrap: { marginBottom: 20 },
@@ -1667,6 +1971,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
+  // Trainer tab's own segment control uses the trainer accent color instead
+  // of the default primary, matching tabLabelTrainer elsewhere on this screen.
+  segmentPillActiveTrainer: {
+    backgroundColor: colors.trainer,
+    borderColor: colors.trainer,
+  },
   segmentText: {
     fontSize: 12,
     fontWeight: '700',
@@ -1675,6 +1985,29 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   segmentTextActive: {
     color: colors.white,
   },
+
+  // ── My Joined Sessions (Trainer tab)
+  joinedHistoryToggle: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  joinedHistoryToggleText: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
+  joinedHistoryHint: { fontSize: 11.5, color: colors.textMuted, fontWeight: '600', marginBottom: 8 },
+  joinedSessionCard: {
+    backgroundColor: colors.cardBg, borderRadius: 16, padding: 14, marginBottom: 16,
+    borderWidth: 1, borderColor: colors.neutral200,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
+  },
+  joinedSessionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  joinedSessionTitle: { flex: 1, fontSize: 16, fontWeight: '800', color: colors.text },
+  joinedSessionTrainerName: { fontSize: 12.5, color: colors.trainer, fontWeight: '600', marginTop: 2 },
+  joinedSessionBadge: { backgroundColor: colors.neutral100, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
+  joinedSessionBadgeText: { fontSize: 10.5, fontWeight: '700', color: colors.neutral600, textTransform: 'uppercase' },
+  joinedSessionMetaRow: { flexDirection: 'row', gap: 16, marginTop: 8 },
+  joinedSessionMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  joinedSessionFooter: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.neutral200,
+  },
+  joinedSessionCancelBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4, paddingHorizontal: 8 },
+  joinedSessionCancelBtnText: { fontSize: 12.5, fontWeight: '700', color: colors.error },
 
   pendingHint: {
     flexDirection: 'row',

@@ -530,6 +530,17 @@ export default function ExploreScreen() {
 
   // Filters
   const [searchText, setSearchText] = useState('');
+  // Live-as-you-type dropdown, shown directly under the search bar instead of
+  // requiring a "Show Results" tap + full-screen navigation for every search —
+  // that full RESULTS step (with its date/radius/sport filters) still exists
+  // for a complete browse, reached via "See all results" at the bottom of
+  // this dropdown, or the keyboard's search key. A separate, deliberately
+  // lightweight fetch (not fetchResults below) so this never touches the
+  // RESULTS step's own results/page/hasMore state.
+  const [dropdownResults, setDropdownResults] = useState<{ id: string; title: string; subtitle: string; raw: any }[]>([]);
+  const [dropdownLoading, setDropdownLoading] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sportFilter, setSportFilter] = useState<SportFilter>('ALL');
   const [dateQuick, setDateQuick] = useState<DateQuick>(null);
   const [customDate, setCustomDate] = useState<Date | null>(null);
@@ -725,8 +736,80 @@ export default function ExploreScreen() {
   }, [userLat, userLng, step, category, fetchResults]);
 
   const handleShowResults = () => {
+    setDropdownOpen(false);
     setStep('RESULTS');
     fetchResults(category, 0, false);
+  };
+
+  // Debounced live search — fires a small (5-result) preview fetch for the
+  // dropdown as the user types, independent of the full RESULTS step.
+  useEffect(() => {
+    if (dropdownDebounceRef.current) clearTimeout(dropdownDebounceRef.current);
+    const q = searchText.trim();
+    if (step !== 'SEARCH' || q.length < 2) {
+      setDropdownOpen(false);
+      setDropdownResults([]);
+      return;
+    }
+    dropdownDebounceRef.current = setTimeout(async () => {
+      setDropdownLoading(true);
+      setDropdownOpen(true);
+      try {
+        const pageParams = { page: 0, size: 5 };
+        const lat2 = userLat ?? undefined;
+        const lng2 = userLng ?? undefined;
+        if (category === 'VENUES') {
+          const { content } = await futsalApi.filterVenues({ query: q, lat: lat2, lng: lng2, radiusKm, ...pageParams });
+          setDropdownResults(content.map((v: any) => ({
+            id: String(v.id ?? v._id), title: v.name ?? 'Venue', subtitle: v.location ?? v.locationName ?? '', raw: v,
+          })));
+        } else if (category === 'TRAINERS') {
+          const { content } = await trainerApi.filterTrainers({ query: q, lat: lat2, lng: lng2, radiusKm, ...pageParams });
+          setDropdownResults(content.map((t: any) => ({
+            id: String(t.id), title: t.trainerDisplayName ?? 'Trainer', subtitle: t.location ?? '', raw: t,
+          })));
+        } else if (category === 'GAMES') {
+          const { content } = await bookingApi.filterBookings({ query: q, lat: lat2, lng: lng2, radiusKm, ...pageParams });
+          setDropdownResults(content.map((b: any) => ({
+            id: String(b.id ?? b._id), title: b.title ?? 'Match', subtitle: b.futsalName ?? b.locationName ?? b.location ?? '', raw: b,
+          })));
+        } else {
+          const { content } = await tournamentApi.filterTournaments({ query: q, lat: lat2, lng: lng2, radiusKm, ...pageParams });
+          setDropdownResults(content.map((t: any) => ({
+            id: String(t.id ?? t._id), title: t.name ?? t.title ?? 'Tournament', subtitle: t.futsalName ?? t.venueName ?? '', raw: t,
+          })));
+        }
+      } catch {
+        setDropdownResults([]);
+      } finally {
+        setDropdownLoading(false);
+      }
+    }, 350);
+    return () => {
+      if (dropdownDebounceRef.current) clearTimeout(dropdownDebounceRef.current);
+    };
+  }, [searchText, category, step, userLat, userLng, radiusKm]);
+
+  const handleSelectDropdownResult = (item: { raw: any }) => {
+    setDropdownOpen(false);
+    if (category === 'VENUES') {
+      // openSheet renders a bottom sheet expecting a fully-mapped VenueResult
+      // (resolved image/distance included) — the raw API row alone isn't
+      // enough, same mapping fetchResults applies for the full RESULTS step.
+      const v = item.raw;
+      openSheet({
+        id: String(v.id ?? v._id),
+        name: v.name ?? 'Venue',
+        location: v.location ?? v.locationName ?? '',
+        pricePerSlot: v.pricePerSlot != null ? Number(v.pricePerSlot) : null,
+        imageBase64: v.imageBase64, imageUrl: v.imageUrl,
+        latitude: v.latitude ?? DEFAULT_LAT, longitude: v.longitude ?? DEFAULT_LNG,
+        distance: mapDist(v.latitude, v.longitude),
+      });
+    }
+    else if (category === 'TRAINERS') router.push(`/trainer/${item.raw.id}` as any);
+    else if (category === 'GAMES') router.push(`/match/${item.raw.id ?? item.raw._id}` as any);
+    else router.push(`/tournament/${item.raw.id ?? item.raw._id}` as any);
   };
 
   const handleSwitchCategory = (cat: Category) => {
@@ -1065,21 +1148,57 @@ export default function ExploreScreen() {
         </View>
         <Text style={styles.heroTitle}>Discover</Text>
         <Text style={styles.heroSub}>Find venues & matches near you</Text>
-        <View style={styles.searchBar}>
-          <Search color={colors.neutral400} size={17} strokeWidth={2} />
-          <TextInput
-            style={styles.searchInput}
-            value={searchText}
-            onChangeText={setSearchText}
-            placeholder={category === 'VENUES' ? 'Search venue name…' : category === 'TRAINERS' ? 'Search trainer name…' : category === 'EVENTS' ? 'Search tournament…' : 'Search match title…'}
-            placeholderTextColor={colors.neutral400}
-            returnKeyType="search"
-            onSubmitEditing={handleShowResults}
-          />
-          {!!searchText && (
-            <TouchableOpacity onPress={() => setSearchText('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <X color={colors.neutral400} size={15} strokeWidth={2} />
-            </TouchableOpacity>
+        <View style={{ position: 'relative', zIndex: 20 }}>
+          <View style={styles.searchBar}>
+            <Search color={colors.neutral400} size={17} strokeWidth={2} />
+            <TextInput
+              style={styles.searchInput}
+              value={searchText}
+              onChangeText={setSearchText}
+              onFocus={() => { if (searchText.trim().length >= 2) setDropdownOpen(true); }}
+              placeholder={category === 'VENUES' ? 'Search venue name…' : category === 'TRAINERS' ? 'Search trainer name…' : category === 'EVENTS' ? 'Search tournament…' : 'Search match title…'}
+              placeholderTextColor={colors.neutral400}
+              returnKeyType="search"
+              onSubmitEditing={handleShowResults}
+            />
+            {!!searchText && (
+              <TouchableOpacity onPress={() => { setSearchText(''); setDropdownOpen(false); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <X color={colors.neutral400} size={15} strokeWidth={2} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {dropdownOpen && (
+            <View style={styles.searchDropdown}>
+              {dropdownLoading ? (
+                <View style={styles.searchDropdownLoading}>
+                  <ActivityIndicator color={colors.primary} size="small" />
+                </View>
+              ) : dropdownResults.length === 0 ? (
+                <Text style={styles.searchDropdownEmpty}>No {CATS.find((c) => c.id === category)?.label.toLowerCase()} found</Text>
+              ) : (
+                <>
+                  {dropdownResults.map((item) => (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={styles.searchDropdownRow}
+                      activeOpacity={0.7}
+                      onPress={() => handleSelectDropdownResult(item)}
+                    >
+                      <Search color={colors.neutral400} size={14} strokeWidth={2} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.searchDropdownTitle} numberOfLines={1}>{item.title}</Text>
+                        {!!item.subtitle && <Text style={styles.searchDropdownSubtitle} numberOfLines={1}>{item.subtitle}</Text>}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                  <TouchableOpacity style={styles.searchDropdownSeeAll} activeOpacity={0.7} onPress={handleShowResults}>
+                    <Text style={styles.searchDropdownSeeAllText}>See all results</Text>
+                    <ChevronRight color={colors.primary} size={14} strokeWidth={2.5} />
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
           )}
         </View>
       </View>
@@ -1601,6 +1720,26 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   heroSub: { fontSize: 13, color: colors.white + 'CC', marginBottom: 16, marginTop: 2 },
   searchBar: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.inputBg, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11 },
   searchInput: { flex: 1, fontSize: 14, color: colors.text },
+  searchDropdown: {
+    position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6,
+    backgroundColor: colors.cardBg, borderRadius: 14, paddingVertical: 4,
+    shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 6 },
+    elevation: 10, maxHeight: 320, overflow: 'hidden',
+  },
+  searchDropdownLoading: { paddingVertical: 20, alignItems: 'center' },
+  searchDropdownEmpty: { padding: 16, fontSize: 13, color: colors.textMuted, textAlign: 'center' },
+  searchDropdownRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 11,
+    borderBottomWidth: 1, borderBottomColor: colors.neutral200,
+  },
+  searchDropdownTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
+  searchDropdownSubtitle: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+  searchDropdownSeeAll: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    paddingVertical: 12,
+  },
+  searchDropdownSeeAllText: { fontSize: 13, fontWeight: '800', color: colors.primary },
 
   // ── Scroll
   searchScroll: { paddingBottom: 110 },
