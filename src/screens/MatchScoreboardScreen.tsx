@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Clock, Lock, Pause, Play, RotateCcw, Square, Zap } from 'lucide-react-native';
+import { ArrowLeft, ClipboardList, Clock, Lock, Pause, Play, RotateCcw, Share2, Square, Users, Zap } from 'lucide-react-native';
 import { Colors, ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
@@ -22,12 +22,14 @@ import { MatchDetails } from '../types/api';
 import { parseMatchDetails } from '../utils/parseMatch';
 import { useSubscription } from '../hooks/useSubscription';
 import { useLiveMatchScore } from '../hooks/useLiveMatchScore';
+import { useMatchScorecard } from '../hooks/useMatchScorecard';
 import { LiveScoreboard } from '../components/scoring/LiveScoreboard';
 import { FutsalScoringControls } from '../components/scoring/FutsalScoringControls';
 import { CricketScoringControls } from '../components/scoring/CricketScoringControls';
 import { RacketScoringControls } from '../components/scoring/RacketScoringControls';
 import { LoadingScreen } from '../components/LoadingScreen';
 import ScreenGlow from '../components/ScreenGlow';
+import ShareToCommunityModal from '../components/ShareToCommunityModal';
 import { goBack } from '../utils/navigation';
 
 const SPORT_ACCENT: Record<string, string> = {
@@ -53,9 +55,31 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
   const [match, setMatch] = useState<MatchDetails | null>(null);
   const [loadingMatch, setLoadingMatch] = useState(true);
   const [loadError, setLoadError] = useState<string | undefined>();
+  const [showCommunityShare, setShowCommunityShare] = useState(false);
 
-  const { score, loading: scoreLoading, actionLoading, error, displaySeconds, startMatch, pauseTimer, resumeTimer, endMatch, resetMatch, updateState } =
+  const { score, loading: scoreLoading, actionLoading, error, displaySeconds, startMatch, pauseTimer, resumeTimer, endMatch, resetMatch, updateState, refresh: refreshScore } =
     useLiveMatchScore(matchId);
+  const scoreIsLiveOrPaused = score?.status === 'LIVE' || score?.status === 'PAUSED';
+  const { scorecard, actionLoading: eventActionLoading, recordEvent: recordEventRaw, undoLastEvent: undoLastEventRaw } =
+    useMatchScorecard(matchId, scoreIsLiveOrPaused);
+
+  // Recording/undoing an event already re-fetches the scorecard (so the goal
+  // log / tally update instantly); also nudge the separately-polled headline
+  // score (LiveScoreboard, teamAScore/teamBScore up top) so the two displays
+  // never visibly disagree for the few seconds until its own next poll.
+  const recordEvent = useCallback(
+    async (payload: Parameters<typeof recordEventRaw>[0]) => {
+      const result = await recordEventRaw(payload);
+      refreshScore();
+      return result;
+    },
+    [recordEventRaw, refreshScore]
+  );
+  const undoLastEvent = useCallback(async () => {
+    const result = await undoLastEventRaw();
+    refreshScore();
+    return result;
+  }, [undoLastEventRaw, refreshScore]);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,8 +162,8 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
     );
   }
 
-  const teamAName = 'Team A';
-  const teamBName = 'Team B';
+  const teamAName = score?.teamAName || 'Team A';
+  const teamBName = score?.teamBName || 'Team B';
   const notStarted = !score || score.status === 'NOT_STARTED';
   const isLive = score?.status === 'LIVE';
   const isPaused = score?.status === 'PAUSED';
@@ -171,13 +195,34 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
           <ArrowLeft color={colors.neutral900} size={20} strokeWidth={2.2} />
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>{match.title || 'Match Scoring'}</Text>
-        <View style={{ width: 40 }} />
+        <Pressable onPress={() => setShowCommunityShare(true)} style={styles.headerIconBtn} hitSlop={8}>
+          <Share2 color={colors.neutral900} size={20} strokeWidth={2.2} />
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: fadeAnim }}>
           {score && (
-            <LiveScoreboard score={score} displaySeconds={displaySeconds} teamAName={teamAName} teamBName={teamBName} />
+            <LiveScoreboard score={score} displaySeconds={displaySeconds} teamAName={teamAName} teamBName={teamBName} scorecard={scorecard} />
+          )}
+
+          {SCOREABLE_SPORTS.has(sport) && (
+            <View style={styles.quickLinksRow}>
+              <Pressable
+                style={styles.quickLinkBtn}
+                onPress={() => router.push(`/match/${matchId}/teams` as any)}
+              >
+                <Users color={accent} size={15} strokeWidth={2.2} />
+                <Text style={[styles.quickLinkText, { color: accent }]}>Manage Teams</Text>
+              </Pressable>
+              <Pressable
+                style={styles.quickLinkBtn}
+                onPress={() => router.push(`/match/${matchId}/scorecard` as any)}
+              >
+                <ClipboardList color={accent} size={15} strokeWidth={2.2} />
+                <Text style={[styles.quickLinkText, { color: accent }]}>Full Scorecard</Text>
+              </Pressable>
+            </View>
           )}
 
           {!!error && <Text style={styles.errorText}>{error}</Text>}
@@ -234,30 +279,37 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
               {sport === 'FUTSAL' && (
                 <FutsalScoringControls
                   score={score}
+                  scorecard={scorecard}
                   displaySeconds={displaySeconds}
                   teamAName={teamAName}
                   teamBName={teamBName}
-                  updating={actionLoading}
+                  updating={actionLoading || eventActionLoading}
                   onUpdateState={updateState}
+                  onRecordEvent={recordEvent}
+                  onUndoLastEvent={undoLastEvent}
                 />
               )}
               {sport === 'CRICKET' && (
                 <CricketScoringControls
                   score={score}
+                  scorecard={scorecard}
                   teamAName={teamAName}
                   teamBName={teamBName}
-                  updating={actionLoading}
-                  onUpdateState={updateState}
+                  updating={actionLoading || eventActionLoading}
+                  onRecordEvent={recordEvent}
+                  onUndoLastEvent={undoLastEvent}
                 />
               )}
               {(sport === 'PICKLEBALL' || sport === 'PADDLEBALL') && (
                 <RacketScoringControls
                   score={score}
+                  scorecard={scorecard}
                   teamAName={teamAName}
                   teamBName={teamBName}
                   accent={accent}
-                  updating={actionLoading}
+                  updating={actionLoading || eventActionLoading}
                   onUpdateState={updateState}
+                  onRecordEvent={recordEvent}
                 />
               )}
             </View>
@@ -277,6 +329,14 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
           )}
         </Animated.View>
       </ScrollView>
+
+      <ShareToCommunityModal
+        visible={showCommunityShare}
+        onClose={() => setShowCommunityShare(false)}
+        shareType="SCORECARD"
+        referenceId={matchId}
+        label="Share Scorecard"
+      />
     </SafeAreaView>
   );
 }
@@ -304,6 +364,13 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
 
   scroll: { paddingHorizontal: 18, paddingBottom: 48, gap: 16 },
   errorText: { color: colors.error, fontSize: 13, textAlign: 'center', marginTop: 10 },
+
+  quickLinksRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  quickLinkBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: colors.cardBg, borderRadius: 12, paddingVertical: 10, borderWidth: 1, borderColor: colors.neutral200,
+  },
+  quickLinkText: { fontSize: 12.5, fontWeight: '700' },
 
   startBtn: { marginTop: 16, borderRadius: 18, overflow: 'hidden' },
   startBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 16 },

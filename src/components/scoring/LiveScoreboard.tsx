@@ -4,7 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Clock, Trophy } from 'lucide-react-native';
 import { ThemeColors } from '../../styles/colors';
 import { useTheme } from '../../context/ThemeContext';
-import { MatchScoreState } from '../../types/api';
+import { MatchScorecard, MatchScoreState } from '../../types/api';
 import { formatMatchDuration } from '../../utils/matchTimer';
 
 interface LiveScoreboardProps {
@@ -13,16 +13,20 @@ interface LiveScoreboardProps {
   teamAName?: string;
   teamBName?: string;
   loading?: boolean;
+  /** Cricket's overs/wickets subline is server-computed from the event log
+   *  (see useMatchScorecard) rather than kept in score.state — optional since
+   *  viewers without scoring access may not have fetched it yet. */
+  scorecard?: MatchScorecard | null;
 }
 
-function sportSubline(score: MatchScoreState): string {
+function sportSubline(score: MatchScoreState, scorecard?: MatchScorecard | null): string {
   const s = score.state || {};
   switch (score.sport) {
     case 'CRICKET': {
-      const innings = Array.isArray(s.innings) ? s.innings[s.currentInnings ? s.currentInnings - 1 : 0] : null;
-      if (!innings) return 'Match not yet underway';
-      const overs = `${innings.overs ?? 0}.${innings.balls ?? 0}`;
-      return `Innings ${s.currentInnings ?? 1} • Overs ${overs} • ${innings.wickets ?? 0} wkts`;
+      const innings = scorecard?.innings;
+      const active = innings && innings.length > 0 ? innings[innings.length - 1] : null;
+      if (!active) return 'Match not yet underway';
+      return `Innings ${active.inningsNumber} • Overs ${active.overs}.${active.ballsInOver} • ${active.wickets} wkts`;
     }
     case 'PICKLEBALL':
     case 'PADDLEBALL': {
@@ -58,7 +62,7 @@ function PulsingDot({ color, styles }: { color: string; styles: ReturnType<typeo
   );
 }
 
-export function LiveScoreboard({ score, displaySeconds, teamAName = 'Team A', teamBName = 'Team B' }: LiveScoreboardProps) {
+export function LiveScoreboard({ score, displaySeconds, teamAName = 'Team A', teamBName = 'Team B', scorecard }: LiveScoreboardProps) {
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const SPORT_COLOR: Record<string, string> = {
@@ -109,7 +113,7 @@ export function LiveScoreboard({ score, displaySeconds, teamAName = 'Team A', te
               <Text style={[styles.scoreValue, { color: accent }]}>{score.teamBScore}</Text>
             </View>
           </View>
-          <Text style={styles.subline}>{sportSubline(score)}</Text>
+          <Text style={styles.subline}>{sportSubline(score, scorecard)}</Text>
         </>
       )}
     </LinearGradient>

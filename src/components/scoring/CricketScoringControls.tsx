@@ -1,106 +1,74 @@
-import React, { useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Undo2 } from 'lucide-react-native';
 import { ThemeColors } from '../../styles/colors';
 import { useTheme } from '../../context/ThemeContext';
-import { MatchScoreState } from '../../types/api';
-
-interface Innings {
-  battingTeam: 'A' | 'B';
-  runs: number;
-  wickets: number;
-  overs: number;
-  balls: number; // 0-5, balls into the current over
-  batsman: string;
-  bowler: string;
-}
+import { MatchScorecard, MatchScoreState, MatchTeamPlayer } from '../../types/api';
+import { RecordEventPayload } from '../../api/matchScoreApi';
+import { RosterPlayerSelectSheet } from './RosterPlayerSelectSheet';
 
 interface CricketScoringControlsProps {
   score: MatchScoreState;
+  scorecard: MatchScorecard | null;
   teamAName: string;
   teamBName: string;
   updating: boolean;
-  onUpdateState: (payload: { teamAScore?: number; teamBScore?: number; state?: Record<string, any> }) => Promise<any>;
+  onRecordEvent: (payload: RecordEventPayload) => Promise<any>;
+  onUndoLastEvent: () => Promise<any>;
 }
 
 const RUN_OPTIONS = [0, 1, 2, 3, 4, 6];
 
-function legalDelivery(innings: Innings, patch: Partial<Innings>): Innings {
-  let { balls, overs } = innings;
-  balls += 1;
-  if (balls === 6) { overs += 1; balls = 0; }
-  return { ...innings, ...patch, balls, overs };
-}
-
-function teamScoresFrom(innings: Innings[]): { teamAScore: number; teamBScore: number } {
-  const a = innings.find((i) => i.battingTeam === 'A');
-  const b = innings.find((i) => i.battingTeam === 'B');
-  return { teamAScore: a?.runs ?? 0, teamBScore: b?.runs ?? 0 };
-}
-
-export function CricketScoringControls({ score, teamAName, teamBName, updating, onUpdateState }: CricketScoringControlsProps) {
+export function CricketScoringControls({
+  score, scorecard, teamAName, teamBName, updating, onRecordEvent, onUndoLastEvent,
+}: CricketScoringControlsProps) {
   const { colors } = useTheme();
-  const styles = React.useMemo(() => createStyles(colors), [colors]);
-  const currentInnings: number = score.state?.currentInnings ?? 1;
-  const inningsList: Innings[] = Array.isArray(score.state?.innings) ? score.state.innings : [];
-  const active: Innings = inningsList[currentInnings - 1] || {
-    battingTeam: 'A', runs: 0, wickets: 0, overs: 0, balls: 0, batsman: '', bowler: '',
-  };
-  const historyRef = useRef<{ currentInnings: number; innings: Innings[] }[]>([]);
-  const [batsman, setBatsman] = useState(active.batsman || '');
-  const [bowler, setBowler] = useState(active.bowler || '');
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const [currentInnings, setCurrentInnings] = useState<1 | 2>(1);
+  const [battingTeamChoice, setBattingTeamChoice] = useState<'A' | 'B'>('A');
+  const [batsman, setBatsman] = useState<MatchTeamPlayer | null>(null);
+  const [bowler, setBowler] = useState<MatchTeamPlayer | null>(null);
+  const [picker, setPicker] = useState<'batsman' | 'bowler' | null>(null);
 
-  const commit = (nextInnings: Innings, nextCurrentInnings = currentInnings) => {
-    historyRef.current.push({ currentInnings, innings: inningsList });
-    const list = [...inningsList];
-    list[nextCurrentInnings - 1] = nextInnings;
-    const { teamAScore, teamBScore } = teamScoresFrom(list);
-    onUpdateState({
-      teamAScore,
-      teamBScore,
-      state: { ...score.state, currentInnings: nextCurrentInnings, innings: list },
-    });
-  };
+  const activeInnings = scorecard?.innings?.find((i) => i.inningsNumber === currentInnings) ?? null;
+  // Once the first ball of an innings is recorded, the server's own record of
+  // who's batting is authoritative — the pre-ball local toggle only matters
+  // for picking who bats BEFORE that first ball exists anywhere.
+  const battingTeam: 'A' | 'B' = (activeInnings?.battingTeamLabel as 'A' | 'B') ?? battingTeamChoice;
+  const bowlingTeam: 'A' | 'B' = battingTeam === 'A' ? 'B' : 'A';
+  const battingTeamName = battingTeam === 'A' ? teamAName : teamBName;
+  const runs = activeInnings?.runs ?? 0;
+  const wickets = activeInnings?.wickets ?? 0;
+  const overs = activeInnings?.overs ?? 0;
+  const ballsInOver = activeInnings?.ballsInOver ?? 0;
+  const hasAnyBall = activeInnings != null;
+  const eventsSoFar = scorecard?.events.length ?? 0;
 
-  const recordRuns = (runs: number) => {
+  const battingRoster = battingTeam === 'A' ? (scorecard?.teamA ?? []) : (scorecard?.teamB ?? []);
+  const bowlingRoster = bowlingTeam === 'A' ? (scorecard?.teamA ?? []) : (scorecard?.teamB ?? []);
+
+  const recordBall = (opts: { runs: number; extraType?: string; isWicket?: boolean; wicketType?: string }) => {
     if (updating) return;
-    commit(legalDelivery(active, { runs: active.runs + runs, batsman, bowler }));
-  };
-
-  const recordWicket = () => {
-    if (updating) return;
-    commit(legalDelivery(active, { wickets: Math.min(10, active.wickets + 1), batsman, bowler }));
-  };
-
-  const recordExtra = (kind: 'wide' | 'noball') => {
-    if (updating) return;
-    commit({ ...active, runs: active.runs + 1, batsman, bowler });
-  };
-
-  const undo = () => {
-    const prev = historyRef.current.pop();
-    if (!prev || updating) return;
-    const { teamAScore, teamBScore } = teamScoresFrom(prev.innings);
-    onUpdateState({
-      teamAScore,
-      teamBScore,
-      state: { ...score.state, currentInnings: prev.currentInnings, innings: prev.innings },
+    onRecordEvent({
+      teamLabel: battingTeam,
+      eventType: 'BALL',
+      playerId: batsman?.id ?? null,
+      bowlerId: bowler?.id ?? null,
+      inningsNumber: currentInnings,
+      runs: opts.runs,
+      extraType: opts.extraType,
+      isWicket: opts.isWicket ?? false,
+      wicketType: opts.wicketType,
     });
   };
 
   const startNextInnings = () => {
-    if (updating || currentInnings >= 2) return;
-    const otherTeam: 'A' | 'B' = active.battingTeam === 'A' ? 'B' : 'A';
-    historyRef.current.push({ currentInnings, innings: inningsList });
-    const list = [...inningsList];
-    list[1] = { battingTeam: otherTeam, runs: 0, wickets: 0, overs: 0, balls: 0, batsman: '', bowler: '' };
-    setBatsman('');
-    setBowler('');
-    const { teamAScore, teamBScore } = teamScoresFrom(list);
-    onUpdateState({ teamAScore, teamBScore, state: { ...score.state, currentInnings: 2, innings: list } });
+    if (updating || currentInnings === 2) return;
+    setCurrentInnings(2);
+    setBattingTeamChoice(battingTeam === 'A' ? 'B' : 'A');
+    setBatsman(null);
+    setBowler(null);
   };
-
-  const battingName = active.battingTeam === 'A' ? teamAName : teamBName;
 
   return (
     <View style={styles.wrap}>
@@ -108,32 +76,45 @@ export function CricketScoringControls({ score, teamAName, teamBName, updating, 
         <View style={styles.inningsBadge}>
           <Text style={styles.inningsBadgeText}>INNINGS {currentInnings}</Text>
         </View>
-        <Text style={styles.battingText}>{battingName} batting</Text>
-        <Pressable onPress={undo} disabled={updating || historyRef.current.length === 0} hitSlop={8} style={styles.undoBtn}>
-          <Undo2 color={historyRef.current.length === 0 ? colors.neutral300 : colors.neutral600} size={16} strokeWidth={2.2} />
+        <Text style={styles.battingText}>{battingTeamName} batting</Text>
+        <Pressable onPress={onUndoLastEvent} disabled={updating || eventsSoFar === 0} hitSlop={8} style={styles.undoBtn}>
+          <Undo2 color={eventsSoFar === 0 ? colors.neutral300 : colors.neutral600} size={16} strokeWidth={2.2} />
         </Pressable>
       </View>
 
+      {!hasAnyBall && (
+        <View style={styles.battingChoiceRow}>
+          <Text style={styles.battingChoiceLabel}>Who's batting?</Text>
+          <View style={styles.battingChoicePills}>
+            {(['A', 'B'] as const).map((t) => (
+              <Pressable
+                key={t}
+                style={[styles.battingChoicePill, battingTeamChoice === t && styles.battingChoicePillActive]}
+                onPress={() => setBattingTeamChoice(t)}
+              >
+                <Text style={[styles.battingChoicePillText, battingTeamChoice === t && styles.battingChoicePillTextActive]}>
+                  {t === 'A' ? teamAName : teamBName}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
+
       <View style={styles.tallyCard}>
-        <Text style={styles.tallyRuns}>{active.runs}<Text style={styles.tallyWickets}>/{active.wickets}</Text></Text>
-        <Text style={styles.tallyOvers}>Overs {active.overs}.{active.balls}</Text>
+        <Text style={styles.tallyRuns}>{runs}<Text style={styles.tallyWickets}>/{wickets}</Text></Text>
+        <Text style={styles.tallyOvers}>Overs {overs}.{ballsInOver}</Text>
       </View>
 
       <View style={styles.namesRow}>
-        <TextInput
-          style={styles.nameInput}
-          placeholder="Batsman"
-          placeholderTextColor={colors.textMuted}
-          value={batsman}
-          onChangeText={setBatsman}
-        />
-        <TextInput
-          style={styles.nameInput}
-          placeholder="Bowler"
-          placeholderTextColor={colors.textMuted}
-          value={bowler}
-          onChangeText={setBowler}
-        />
+        <Pressable style={styles.nameBtn} onPress={() => setPicker('batsman')} disabled={updating}>
+          <Text style={styles.nameBtnLabel}>Batsman</Text>
+          <Text style={styles.nameBtnValue} numberOfLines={1}>{batsman?.displayName ?? 'Select…'}</Text>
+        </Pressable>
+        <Pressable style={styles.nameBtn} onPress={() => setPicker('bowler')} disabled={updating}>
+          <Text style={styles.nameBtnLabel}>Bowler</Text>
+          <Text style={styles.nameBtnValue} numberOfLines={1}>{bowler?.displayName ?? 'Select…'}</Text>
+        </Pressable>
       </View>
 
       <Text style={styles.sectionLabel}>RUNS</Text>
@@ -142,7 +123,7 @@ export function CricketScoringControls({ score, teamAName, teamBName, updating, 
           <Pressable
             key={r}
             style={[styles.runBtn, r === 4 && styles.runBtnFour, r === 6 && styles.runBtnSix]}
-            onPress={() => recordRuns(r)}
+            onPress={() => recordBall({ runs: r })}
             disabled={updating}
           >
             <Text style={[styles.runBtnText, (r === 4 || r === 6) && styles.runBtnTextLight]}>{r}</Text>
@@ -151,14 +132,22 @@ export function CricketScoringControls({ score, teamAName, teamBName, updating, 
       </View>
 
       <View style={styles.eventsRow}>
-        <Pressable style={[styles.eventBtn, { backgroundColor: colors.liveRed }]} onPress={recordWicket} disabled={updating}>
+        <Pressable style={[styles.eventBtn, { backgroundColor: colors.liveRed }]} onPress={() => recordBall({ runs: 0, isWicket: true, wicketType: 'BOWLED' })} disabled={updating}>
           <Text style={styles.eventBtnText}>WICKET</Text>
         </Pressable>
-        <Pressable style={[styles.eventBtn, { backgroundColor: colors.warning }]} onPress={() => recordExtra('wide')} disabled={updating}>
+        <Pressable style={[styles.eventBtn, { backgroundColor: colors.warning }]} onPress={() => recordBall({ runs: 0, extraType: 'WIDE' })} disabled={updating}>
           <Text style={styles.eventBtnText}>WIDE</Text>
         </Pressable>
-        <Pressable style={[styles.eventBtn, { backgroundColor: colors.primaryAccent }]} onPress={() => recordExtra('noball')} disabled={updating}>
+        <Pressable style={[styles.eventBtn, { backgroundColor: colors.primaryAccent }]} onPress={() => recordBall({ runs: 0, extraType: 'NO_BALL' })} disabled={updating}>
           <Text style={styles.eventBtnText}>NO BALL</Text>
+        </Pressable>
+      </View>
+      <View style={styles.eventsRow}>
+        <Pressable style={[styles.eventBtn, styles.eventBtnOutline]} onPress={() => recordBall({ runs: 1, extraType: 'BYE' })} disabled={updating}>
+          <Text style={styles.eventBtnOutlineText}>BYE</Text>
+        </Pressable>
+        <Pressable style={[styles.eventBtn, styles.eventBtnOutline]} onPress={() => recordBall({ runs: 1, extraType: 'LEG_BYE' })} disabled={updating}>
+          <Text style={styles.eventBtnOutlineText}>LEG BYE</Text>
         </Pressable>
       </View>
 
@@ -167,6 +156,23 @@ export function CricketScoringControls({ score, teamAName, teamBName, updating, 
           <Text style={styles.nextInningsText}>Start Innings 2</Text>
         </Pressable>
       )}
+
+      <RosterPlayerSelectSheet
+        visible={picker === 'batsman'}
+        onClose={() => setPicker(null)}
+        title={`${battingTeamName} batsman`}
+        players={battingRoster}
+        noneLabel="Clear selection"
+        onSelect={setBatsman}
+      />
+      <RosterPlayerSelectSheet
+        visible={picker === 'bowler'}
+        onClose={() => setPicker(null)}
+        title={`${bowlingTeam === 'A' ? teamAName : teamBName} bowler`}
+        players={bowlingRoster}
+        noneLabel="Clear selection"
+        onSelect={setBowler}
+      />
     </View>
   );
 }
@@ -179,6 +185,14 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   battingText: { flex: 1, fontSize: 13, fontWeight: '700', color: colors.neutral700 },
   undoBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.neutral100, alignItems: 'center', justifyContent: 'center' },
 
+  battingChoiceRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  battingChoiceLabel: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
+  battingChoicePills: { flexDirection: 'row', gap: 8, flex: 1 },
+  battingChoicePill: { flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center', backgroundColor: colors.neutral100, borderWidth: 1.5, borderColor: 'transparent' },
+  battingChoicePillActive: { backgroundColor: colors.cricketLight, borderColor: colors.cricket },
+  battingChoicePillText: { fontSize: 12, fontWeight: '700', color: colors.neutral500 },
+  battingChoicePillTextActive: { color: colors.cricket },
+
   tallyCard: {
     backgroundColor: colors.cricketLight, borderRadius: 18, paddingVertical: 18, alignItems: 'center', gap: 4,
   },
@@ -187,10 +201,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   tallyOvers: { fontSize: 13, fontWeight: '700', color: colors.primaryDark },
 
   namesRow: { flexDirection: 'row', gap: 10 },
-  nameInput: {
+  nameBtn: {
     flex: 1, backgroundColor: colors.inputBg, borderRadius: 12, borderWidth: 1, borderColor: colors.inputBorder,
-    paddingHorizontal: 12, paddingVertical: 9, fontSize: 13, color: colors.text,
+    paddingHorizontal: 12, paddingVertical: 9, gap: 2,
   },
+  nameBtnLabel: { fontSize: 10, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase' },
+  nameBtnValue: { fontSize: 13.5, fontWeight: '700', color: colors.text },
 
   sectionLabel: { fontSize: 10.5, fontWeight: '800', color: colors.neutral500, letterSpacing: 1.2 },
   runsGrid: { flexDirection: 'row', gap: 8 },
@@ -206,6 +222,8 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   eventsRow: { flexDirection: 'row', gap: 8 },
   eventBtn: { flex: 1, borderRadius: 12, paddingVertical: 11, alignItems: 'center' },
   eventBtnText: { color: colors.white, fontSize: 11.5, fontWeight: '800', letterSpacing: 0.4 },
+  eventBtnOutline: { backgroundColor: colors.neutral100, borderWidth: 1, borderColor: colors.neutral200 },
+  eventBtnOutlineText: { color: colors.neutral700, fontSize: 11.5, fontWeight: '800', letterSpacing: 0.4 },
 
   nextInningsBtn: {
     marginTop: 4, backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 13, alignItems: 'center',

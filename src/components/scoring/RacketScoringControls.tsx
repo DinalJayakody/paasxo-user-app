@@ -1,17 +1,21 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Minus, Plus } from 'lucide-react-native';
+import { ChevronDown, Minus, Plus } from 'lucide-react-native';
 import { ThemeColors } from '../../styles/colors';
 import { useTheme } from '../../context/ThemeContext';
-import { MatchScoreState } from '../../types/api';
+import { MatchScorecard, MatchScoreState, MatchTeamPlayer } from '../../types/api';
+import { RecordEventPayload } from '../../api/matchScoreApi';
+import { RosterPlayerSelectSheet } from './RosterPlayerSelectSheet';
 
 interface RacketScoringControlsProps {
   score: MatchScoreState;
+  scorecard: MatchScorecard | null;
   teamAName: string;
   teamBName: string;
   accent: string;
   updating: boolean;
   onUpdateState: (payload: { teamAScore?: number; teamBScore?: number; state?: Record<string, any> }) => Promise<any>;
+  onRecordEvent: (payload: RecordEventPayload) => Promise<any>;
 }
 
 const DEFAULT_POINTS_TO_WIN = 11;
@@ -23,13 +27,21 @@ function isGameOver(pointsA: number, pointsB: number, target: number): 'A' | 'B'
   return null;
 }
 
-export function RacketScoringControls({ score, teamAName, teamBName, accent, updating, onUpdateState }: RacketScoringControlsProps) {
+export function RacketScoringControls({
+  score, scorecard, teamAName, teamBName, accent, updating, onUpdateState, onRecordEvent,
+}: RacketScoringControlsProps) {
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const setsA: number = score.state?.setsA ?? 0;
   const setsB: number = score.state?.setsB ?? 0;
   const pointsToWin: number = score.state?.pointsToWin ?? DEFAULT_POINTS_TO_WIN;
   const gameHistory: { pointsA: number; pointsB: number }[] = Array.isArray(score.state?.gameHistory) ? score.state.gameHistory : [];
+  // Sticky "who's currently on serve/scoring" per team — set once via the chip
+  // below a team's score, then every rapid +1 tap attributes to them without
+  // opening a picker each time. Entirely optional: a point with no one
+  // selected is still scored, just unattributed on the scorecard.
+  const [selected, setSelected] = useState<{ A: MatchTeamPlayer | null; B: MatchTeamPlayer | null }>({ A: null, B: null });
+  const [picker, setPicker] = useState<'A' | 'B' | null>(null);
 
   const addPoint = (team: 'A' | 'B') => {
     if (updating) return;
@@ -52,6 +64,9 @@ export function RacketScoringControls({ score, teamAName, teamBName, accent, upd
       teamBScore: pointsB,
       state: { ...score.state, setsA: nextSetsA, setsB: nextSetsB, pointsToWin, gameHistory: nextHistory },
     });
+    // Purely informational — never touches the score (see recordEvent's POINT
+    // handling), so it can safely run alongside the updateState call above.
+    onRecordEvent({ teamLabel: team, eventType: 'POINT', playerId: selected[team]?.id ?? null }).catch(() => {});
   };
 
   const adjustPoint = (team: 'A' | 'B', delta: -1) => {
@@ -60,6 +75,8 @@ export function RacketScoringControls({ score, teamAName, teamBName, accent, upd
     const pointsB = team === 'B' ? Math.max(0, score.teamBScore + delta) : score.teamBScore;
     onUpdateState({ teamAScore: pointsA, teamBScore: pointsB });
   };
+
+  const rosterFor = (team: 'A' | 'B') => (team === 'A' ? (scorecard?.teamA ?? []) : (scorecard?.teamB ?? []));
 
   return (
     <View style={styles.wrap}>
@@ -80,6 +97,10 @@ export function RacketScoringControls({ score, teamAName, teamBName, accent, upd
         {(['A', 'B'] as const).map((team) => (
           <View key={team} style={styles.teamColumn}>
             <Text style={styles.teamName} numberOfLines={1}>{team === 'A' ? teamAName : teamBName}</Text>
+            <Pressable style={styles.playerChip} onPress={() => setPicker(team)} disabled={updating}>
+              <Text style={styles.playerChipText} numberOfLines={1}>{selected[team]?.displayName ?? 'Attribute to…'}</Text>
+              <ChevronDown color={colors.textMuted} size={12} strokeWidth={2.2} />
+            </Pressable>
             <Text style={[styles.pointsValue, { color: accent }]}>{team === 'A' ? score.teamAScore : score.teamBScore}</Text>
             <View style={styles.pointBtnRow}>
               <Pressable
@@ -113,6 +134,15 @@ export function RacketScoringControls({ score, teamAName, teamBName, accent, upd
           </View>
         </View>
       )}
+
+      <RosterPlayerSelectSheet
+        visible={picker != null}
+        onClose={() => setPicker(null)}
+        title={`Attribute points to (${picker === 'A' ? teamAName : teamBName})`}
+        players={picker ? rosterFor(picker) : []}
+        noneLabel="Leave unattributed"
+        onSelect={(player) => { if (picker) setSelected((prev) => ({ ...prev, [picker]: player })); }}
+      />
     </View>
   );
 }
@@ -129,6 +159,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   pointsRow: { flexDirection: 'row', gap: 14 },
   teamColumn: { flex: 1, alignItems: 'center', gap: 8, backgroundColor: colors.cardBg, borderRadius: 18, paddingVertical: 16 },
   teamName: { fontSize: 12, fontWeight: '700', color: colors.neutral600, maxWidth: '90%' },
+  playerChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.neutral100,
+    borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, maxWidth: '92%',
+  },
+  playerChipText: { fontSize: 10.5, fontWeight: '600', color: colors.textMuted, maxWidth: 90 },
   pointsValue: { fontSize: 36, fontWeight: '900', fontVariant: ['tabular-nums'] },
   pointBtnRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   minusBtn: {
