@@ -76,6 +76,19 @@ export const reelApi = {
     return data;
   },
 
+  // Resolves a single reel by id — used to open a reel shared into a
+  // Community's feed (see communityApi.ts / PostCard's isReelShare branch),
+  // which only carries the reel's id, not the full ReelSummary ReelGrid
+  // normally already has on hand locally.
+  getById: async (id: string): Promise<ReelSummary | null> => {
+    try {
+      const { data } = await axiosInstance.get(ENDPOINTS.REELS.GET_BY_ID(id));
+      return data;
+    } catch {
+      return null;
+    }
+  },
+
   getUserReels: async (userId: string, page: number = 0, size: number = 12) => {
     const res = await axiosInstance.get(ENDPOINTS.REELS.GET_USER_REELS(userId, page, size));
     return normalizePage(res.data);

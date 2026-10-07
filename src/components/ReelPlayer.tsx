@@ -10,13 +10,14 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Eye, Heart, X } from 'lucide-react-native';
+import { Eye, Heart, Share2, X } from 'lucide-react-native';
 import { ReelSummary } from '../types/api';
 import { reelApi } from '../api/reelApi';
 import { parseMediaUrl } from '../utils/postFormat';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { LoopingVideo } from './LoopingVideo';
+import ShareToCommunityModal from './ShareToCommunityModal';
 
 let Audio: any = null;
 if (Platform.OS !== 'web') {
@@ -49,6 +50,7 @@ export function ReelPlayer({ visible, reel, onClose }: ReelPlayerProps) {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [showCommunityShare, setShowCommunityShare] = useState(false);
   const heartScale = useRef(new Animated.Value(1)).current;
   const viewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -181,9 +183,20 @@ export function ReelPlayer({ visible, reel, onClose }: ReelPlayerProps) {
               <Eye color="#fff" size={26} strokeWidth={2} />
               <Text style={styles.actionCount}>{reel.viewCount}</Text>
             </View>
+            <Pressable onPress={() => setShowCommunityShare(true)} style={styles.actionBtn} hitSlop={10}>
+              <Share2 color="#fff" size={26} strokeWidth={2} />
+            </Pressable>
           </View>
         </View>
       </View>
+
+      <ShareToCommunityModal
+        visible={showCommunityShare}
+        onClose={() => setShowCommunityShare(false)}
+        shareType="REEL"
+        referenceId={reel.id}
+        label="Share Reel"
+      />
     </Modal>
   );
 }

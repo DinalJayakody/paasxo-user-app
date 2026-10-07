@@ -1,17 +1,19 @@
-import React, { useState } from 'react';
-import { Alert, View, Text, Image, Pressable, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { Alert, View, Text, Image, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Heart, MessageCircle, Share2, Bookmark, Camera, Sparkles, MoreHorizontal, Flag, UserX, Trophy, ChevronRight, Play } from 'lucide-react-native';
+import { Heart, MessageCircle, Share2, Bookmark, Camera, Sparkles, MoreHorizontal, Flag, UserX, Trophy, ChevronRight, Play, Swords, Radio, Film } from 'lucide-react-native';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { PostSummary } from '../types/api';
+import { PostSummary, MatchScorecard } from '../types/api';
 import { parseMediaUrl, formatTimeAgo } from '../utils/postFormat';
 import { resolveAvatarUri } from '../utils/mediaUrl';
 import { socialMediaApi } from '../api/socialMediaApi';
+import { matchScoreApi } from '../api/matchScoreApi';
 import { usePostInteraction, postInteractionStore } from '../stores/postInteractionStore';
 import { CommentSheet } from './CommentSheet';
+import { LikesModal } from './LikesModal';
 import { ActionMenuSheet } from './ActionMenuSheet';
 import { ReportSheet } from './ReportSheet';
 import { PostVideoPlayer } from './PostVideoPlayer';
@@ -19,6 +21,11 @@ import { PostVideoPlayer } from './PostVideoPlayer';
 interface PostCardProps {
   post: PostSummary;
   onShare?: () => void;
+  // One-shot: opens the comment sheet as soon as this card mounts, for the
+  // "X commented on your photo" notification deep link — landing on the
+  // post without its comments already open still leaves the user to find
+  // and tap the comment button themselves.
+  autoOpenComments?: boolean;
 }
 
 // A post's image used to be forced into a fixed 220px-tall box with RN's
@@ -31,7 +38,7 @@ interface PostCardProps {
 const MIN_IMAGE_ASPECT_RATIO = 0.66; // tallest allowed — 2:3 portrait
 const MAX_IMAGE_ASPECT_RATIO = 1.91; // widest allowed — landscape cap
 
-export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
+export const PostCard: React.FC<PostCardProps> = ({ post, onShare, autoOpenComments }) => {
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
@@ -39,7 +46,8 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
   const interaction = usePostInteraction(post);
   const [likeBusy, setLikeBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
-  const [commentsVisible, setCommentsVisible] = useState(false);
+  const [commentsVisible, setCommentsVisible] = useState(!!autoOpenComments);
+  const [likesModalVisible, setLikesModalVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
   const [reportVisible, setReportVisible] = useState(false);
   const [videoPlayerVisible, setVideoPlayerVisible] = useState(false);
@@ -57,6 +65,13 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
   const videoThumbUri = parseMediaUrl(post.thumbnailUrl);
   const isProfileUpdate = post.postType === 'PROFILE_PICTURE_UPDATE';
   const isTournamentAnnouncement = post.postType === 'TOURNAMENT_CREATED';
+  // The four "share X into a community" pointer types (see communityApi.ts)
+  // — each just carries post.referenceId, re-fetched/navigated-to live
+  // rather than anything baked into the post itself.
+  const isMatchShare = post.postType === 'COMMUNITY_MATCH_SHARE';
+  const isTournamentShare = post.postType === 'COMMUNITY_TOURNAMENT_SHARE';
+  const isScorecardShare = post.postType === 'COMMUNITY_SCORECARD_SHARE';
+  const isReelShare = post.postType === 'COMMUNITY_REEL_SHARE';
   const isVideo = post.mediaType === 'VIDEO';
   const isOwnPost = !!user?.firebaseUid && user.firebaseUid === post.authorId;
 
@@ -165,7 +180,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
             <Text style={styles.profileUpdatePillText}>New Profile Photo</Text>
           </View>
         </LinearGradient>
-      ) : isTournamentAnnouncement ? (
+      ) : isTournamentAnnouncement || isTournamentShare ? (
         <Pressable
           style={styles.tournamentCard}
           onPress={() => post.referenceId && router.push(`/tournament/${post.referenceId}` as any)}
@@ -174,6 +189,35 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
             <Trophy color={colors.white} size={20} strokeWidth={2.5} />
           </View>
           <Text style={styles.tournamentCardText}>View Tournament</Text>
+          <ChevronRight color={colors.primary} size={18} strokeWidth={2.5} />
+        </Pressable>
+      ) : isMatchShare ? (
+        <Pressable
+          style={styles.tournamentCard}
+          onPress={() => post.referenceId && router.push(`/match/${post.referenceId}` as any)}
+        >
+          <View style={styles.tournamentIconWrap}>
+            <Swords color={colors.white} size={20} strokeWidth={2.5} />
+          </View>
+          <Text style={styles.tournamentCardText}>View Match</Text>
+          <ChevronRight color={colors.primary} size={18} strokeWidth={2.5} />
+        </Pressable>
+      ) : isScorecardShare ? (
+        <CommunityScorecardPreview
+          bookingId={post.referenceId}
+          colors={colors}
+          styles={styles}
+          onPress={() => post.referenceId && router.push(`/match/${post.referenceId}` as any)}
+        />
+      ) : isReelShare ? (
+        <Pressable
+          style={styles.tournamentCard}
+          onPress={() => post.referenceId && router.push(`/reel/${post.referenceId}` as any)}
+        >
+          <View style={styles.tournamentIconWrap}>
+            <Film color={colors.white} size={20} strokeWidth={2.5} />
+          </View>
+          <Text style={styles.tournamentCardText}>View Reel</Text>
           <ChevronRight color={colors.primary} size={18} strokeWidth={2.5} />
         </Pressable>
       ) : isVideo ? (
@@ -202,17 +246,28 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
       {/* ACTIONS */}
       <View style={styles.postActions}>
         <View style={styles.postActionsLeft}>
-          <Pressable style={styles.postStats} onPress={handleToggleLike} disabled={likeBusy} hitSlop={8}>
-            <Heart
-              color={interaction.likedByCurrentUser ? colors.liveRed : colors.neutral600}
-              fill={interaction.likedByCurrentUser ? colors.liveRed : 'none'}
-              size={18}
-              strokeWidth={2.5}
-            />
-            <Text style={[styles.postStatText, interaction.likedByCurrentUser && { color: colors.liveRed }]}>
-              {interaction.likeCount}
-            </Text>
-          </Pressable>
+          <View style={styles.postStats}>
+            <Pressable onPress={handleToggleLike} disabled={likeBusy} hitSlop={8}>
+              <Heart
+                color={interaction.likedByCurrentUser ? colors.liveRed : colors.neutral600}
+                fill={interaction.likedByCurrentUser ? colors.liveRed : 'none'}
+                size={18}
+                strokeWidth={2.5}
+              />
+            </Pressable>
+            {/* Separate from the heart above — tapping the heart likes/unlikes,
+                tapping the count opens who liked it (a no-op with nothing to
+                show when the count is 0, so it's not worth a wasted API call). */}
+            <Pressable
+              onPress={() => interaction.likeCount > 0 && setLikesModalVisible(true)}
+              hitSlop={8}
+              disabled={interaction.likeCount === 0}
+            >
+              <Text style={[styles.postStatText, interaction.likedByCurrentUser && { color: colors.liveRed }]}>
+                {interaction.likeCount}
+              </Text>
+            </Pressable>
+          </View>
 
           <Pressable style={styles.postStats} onPress={() => setCommentsVisible(true)} hitSlop={8}>
             <MessageCircle color={colors.neutral600} size={18} strokeWidth={2.5} />
@@ -231,6 +286,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare }) => {
       </View>
 
       <CommentSheet postId={post.id} visible={commentsVisible} onClose={() => setCommentsVisible(false)} />
+      <LikesModal postId={post.id} visible={likesModalVisible} onClose={() => setLikesModalVisible(false)} />
       {isVideo && (
         <PostVideoPlayer visible={videoPlayerVisible} post={post} onClose={() => setVideoPlayerVisible(false)} />
       )}
@@ -441,4 +497,63 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   saveAction: {
     padding: 4,
   },
+});
+
+/**
+ * A COMMUNITY_SCORECARD_SHARE's preview — a one-shot snapshot of the match's
+ * current score, fetched once on mount (NOT polled) so a feed full of these
+ * doesn't turn into N concurrent 4-second polling loops (useLiveMatchScore,
+ * built for a single dedicated match screen, is the wrong tool here).
+ * Tapping through to the match's own live scoreboard is what actually shows
+ * a continuously-updating score.
+ */
+function CommunityScorecardPreview({
+  bookingId, colors, styles, onPress,
+}: {
+  bookingId?: string;
+  colors: ThemeColors;
+  styles: ReturnType<typeof createStyles>;
+  onPress: () => void;
+}) {
+  const [scorecard, setScorecard] = useState<MatchScorecard | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!bookingId) { setLoaded(true); return; }
+    let cancelled = false;
+    matchScoreApi.getScorecard(bookingId).then((sc) => {
+      if (!cancelled) { setScorecard(sc); setLoaded(true); }
+    }).catch(() => { if (!cancelled) setLoaded(true); });
+    return () => { cancelled = true; };
+  }, [bookingId]);
+
+  return (
+    <Pressable style={scorecardStyles.card} onPress={onPress}>
+      <View style={styles.tournamentIconWrap}>
+        <Radio color={colors.white} size={18} strokeWidth={2.5} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.tournamentCardText, { fontSize: 11, opacity: 0.8 }]}>LIVE SCORECARD</Text>
+        {!loaded ? (
+          <ActivityIndicator color={colors.primary} size="small" style={{ alignSelf: 'flex-start', marginTop: 2 }} />
+        ) : scorecard ? (
+          <Text style={scorecardStyles.score} numberOfLines={1}>
+            {scorecard.teamAName} {scorecard.teamAScore} · {scorecard.teamBName} {scorecard.teamBScore}
+          </Text>
+        ) : (
+          <Text style={styles.tournamentCardText}>View Scorecard</Text>
+        )}
+      </View>
+      <ChevronRight color={colors.primary} size={18} strokeWidth={2.5} />
+    </Pressable>
+  );
+}
+
+const scorecardStyles = StyleSheet.create({
+  card: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginTop: 10, padding: 12, borderRadius: 14,
+    backgroundColor: 'rgba(220,38,38,0.08)', borderWidth: 1, borderColor: 'rgba(220,38,38,0.25)',
+  },
+  score: { fontSize: 14, fontWeight: '800' },
 });
