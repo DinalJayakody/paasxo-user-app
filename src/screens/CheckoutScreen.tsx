@@ -89,6 +89,13 @@ export default function CheckoutScreen({ matchId }: CheckoutScreenProps) {
       for (let attempt = 0; attempt < STATUS_POLL_ATTEMPTS; attempt++) {
         const status = await paymentApi.getStatus('BOOKING', matchId);
         if (status.status === 'CHARGED' || status.status === 'CONFIRMED') {
+          // A Team Match Challenge booking still needs an opponent picked —
+          // send the organizer there instead of the normal booking-status
+          // screen (see create-team-challenge-match.tsx / TeamMatchService).
+          if (match?.organizerTeamId) {
+            router.replace(`/select-opponent-team/${matchId}` as any);
+            return;
+          }
           // Replace (not push) — checkout is a one-time step for this booking and should
           // never be revisitable via back once payment is confirmed. create-match already
           // replaced itself with checkout on the way in, so this leaves Home as the only

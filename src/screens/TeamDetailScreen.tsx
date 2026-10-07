@@ -12,12 +12,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Check, Shield, Swords, Trash2, UserMinus, UserPlus, X } from 'lucide-react-native';
+import { ArrowLeft, Check, Shield, Swords, Trash2, UserMinus, UserPlus, Wallet, X } from 'lucide-react-native';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { teamApi } from '../api/teamApi';
-import { Team, TeamChallenge } from '../types/api';
+import { teamMatchApi } from '../api/teamMatchApi';
+import { Team, TeamChallenge, TeamMatchChallenge } from '../types/api';
 import { resolveMediaUrl, resolveAvatarUri } from '../utils/mediaUrl';
 import { extractApiError } from '../utils/apiError';
 import { LoadingScreen } from '../components/LoadingScreen';
@@ -48,6 +49,7 @@ export default function TeamDetailScreen({ teamId }: TeamDetailScreenProps) {
   const [team, setTeam] = useState<Team | null>(null);
   const [myTeams, setMyTeams] = useState<Team[]>([]);
   const [challenges, setChallenges] = useState<TeamChallenge[]>([]);
+  const [matchChallenges, setMatchChallenges] = useState<TeamMatchChallenge[]>([]);
   const [loading, setLoading] = useState(true);
   const [addMemberVisible, setAddMemberVisible] = useState(false);
   const [teamSearchVisible, setTeamSearchVisible] = useState(false);
@@ -57,14 +59,16 @@ export default function TeamDetailScreen({ teamId }: TeamDetailScreenProps) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [teamRes, challengesRes, myTeamsRes] = await Promise.all([
+      const [teamRes, challengesRes, myTeamsRes, matchChallengesRes] = await Promise.all([
         teamApi.getTeam(teamId),
         teamApi.getChallengesForTeam(teamId),
         myUid ? teamApi.getMyTeams() : Promise.resolve<Team[]>([]),
+        myUid ? teamMatchApi.getMyPendingChallenges().catch(() => []) : Promise.resolve<TeamMatchChallenge[]>([]),
       ]);
       setTeam(teamRes);
       setChallenges(challengesRes);
       setMyTeams(myTeamsRes);
+      setMatchChallenges(matchChallengesRes.filter((c) => c.challengedTeamId === teamId));
     } catch (err) {
       Alert.alert('Could not load team', extractApiError(err));
     } finally {
@@ -160,6 +164,41 @@ export default function TeamDetailScreen({ teamId }: TeamDetailScreenProps) {
     }
   };
 
+  const handleAcceptMatchChallenge = (c: TeamMatchChallenge) => {
+    router.push({
+      pathname: `/team-challenge-accept/${c.id}` as any,
+      params: {
+        bookingId: String(c.bookingId),
+        organizerTeamName: c.organizerTeamName ?? '',
+        challengedTeamName: c.challengedTeamName ?? '',
+        amountDue: String(c.amountDue),
+      },
+    });
+  };
+
+  const handleDeclineMatchChallenge = (c: TeamMatchChallenge) => {
+    Alert.alert(
+      'Decline this challenge?',
+      `${c.organizerTeamName || 'Their'}'s booking will be cancelled and fully refunded.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Decline', style: 'destructive', onPress: async () => {
+            setBusyChallengeId(c.id);
+            try {
+              await teamMatchApi.declineChallenge(c.id);
+              setMatchChallenges((prev) => prev.filter((x) => x.id !== c.id));
+            } catch (err) {
+              Alert.alert('Could not decline', extractApiError(err));
+            } finally {
+              setBusyChallengeId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (loading || !team) {
     return <LoadingScreen message="Loading team..." />;
   }
@@ -244,6 +283,33 @@ export default function TeamDetailScreen({ teamId }: TeamDetailScreenProps) {
             );
           })}
         </View>
+
+        {isCaptain && matchChallenges.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.sectionLabel}>MATCH CHALLENGES</Text>
+            {matchChallenges.map((c) => (
+              <View key={c.id} style={styles.matchChallengeRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.challengeText}>{c.organizerTeamName || 'A team'} challenged you to a match</Text>
+                  <Text style={styles.matchChallengeAmount}>Pay LKR {c.amountDue.toFixed(2)} to accept</Text>
+                </View>
+                {busyChallengeId === c.id ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <View style={styles.challengeActions}>
+                    <Pressable style={styles.matchAcceptBtn} onPress={() => handleAcceptMatchChallenge(c)}>
+                      <Wallet color={colors.white} size={13} strokeWidth={2.4} />
+                      <Text style={styles.matchAcceptBtnText}>Pay</Text>
+                    </Pressable>
+                    <Pressable style={styles.declineBtn} onPress={() => handleDeclineMatchChallenge(c)}>
+                      <X color={colors.white} size={14} strokeWidth={2.6} />
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
 
         {isCaptain && pendingReceived.length > 0 && (
           <View style={styles.card}>
@@ -402,6 +468,16 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   captainTag: { fontSize: 10, fontWeight: '800', color: colors.primary, letterSpacing: 0.6, marginTop: 1 },
 
   challengeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, gap: 10 },
+  matchChallengeRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.neutral200,
+  },
+  matchChallengeAmount: { fontSize: 12, fontWeight: '700', color: colors.primary, marginTop: 2 },
+  matchAcceptBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.primary,
+    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
+  },
+  matchAcceptBtnText: { color: colors.white, fontSize: 12, fontWeight: '800' },
   challengeText: { fontSize: 13, fontWeight: '600', color: colors.text, flex: 1 },
   challengeMessage: { fontSize: 12, color: colors.textMuted, marginTop: 2, fontStyle: 'italic' },
   challengeStatus: { fontSize: 11, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.5 },

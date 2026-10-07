@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { ArrowLeft, Camera, Shield } from 'lucide-react-native';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
@@ -59,6 +60,21 @@ export default function CreateTeamScreen() {
     }
   };
 
+  // Best-effort, silent — never blocks or alerts on denial/failure. Only used
+  // to let TeamMatchService's "nearby teams" search find this team later; a
+  // team with no location just stays findable by name search instead (see
+  // Team.latitude's doc comment on the backend).
+  const captureLocationBestEffort = async (): Promise<{ latitude: number; longitude: number } | null> => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return null;
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      return { latitude: position.coords.latitude, longitude: position.coords.longitude };
+    } catch {
+      return null;
+    }
+  };
+
   const handleCreate = async () => {
     if (!name.trim()) {
       setError('Give your team a name');
@@ -71,6 +87,7 @@ export default function CreateTeamScreen() {
     setError(undefined);
     setCreating(true);
     try {
+      const coords = await captureLocationBestEffort();
       const team = await teamApi.createTeam({
         name: name.trim(),
         sport,
@@ -81,6 +98,8 @@ export default function CreateTeamScreen() {
               type: logoAsset.mimeType || 'image/jpeg',
             }
           : undefined,
+        latitude: coords?.latitude,
+        longitude: coords?.longitude,
       });
       router.replace(`/team/${team.id}` as any);
     } catch (err: any) {

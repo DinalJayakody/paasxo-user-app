@@ -43,8 +43,11 @@ import {
   Navigation,
   Check,
   RefreshCw,
+  Swords,
 } from 'lucide-react-native';
 import { PlayerSearchSheet } from '../components/PlayerSearchSheet';
+import { teamApi } from '../api/teamApi';
+import ShareToCommunityModal from '../components/ShareToCommunityModal';
 import { invitationApi, InvitationResponse } from '../api/invitationApi';
 import { extractApiError } from '../utils/apiError';
 import { ThemeColors } from '../styles/colors';
@@ -58,6 +61,7 @@ import { parseMatchDetails } from '../utils/parseMatch';
 import { useSubscription } from '../hooks/useSubscription';
 import { resolveMediaUrl, resolveAvatarUri } from '../utils/mediaUrl';
 import { useLiveMatchScore } from '../hooks/useLiveMatchScore';
+import { useMatchScorecard } from '../hooks/useMatchScorecard';
 import { LiveScoreboard } from '../components/scoring/LiveScoreboard';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
@@ -141,8 +145,16 @@ function addToCalendar(match: MatchDetails) {
   Linking.openURL(url).catch(() => {});
 }
 
-function shareMatch(match: MatchDetails) {
+function shareMatchExternally(match: MatchDetails) {
   Share.share({ message: `Join me for ${match.title} at ${match.venue.name}!` }).catch(() => {});
+}
+
+function showShareOptions(match: MatchDetails, onShareToCommunity: () => void) {
+  Alert.alert('Share Match', undefined, [
+    { text: 'Share to Community', onPress: onShareToCommunity },
+    { text: 'Share Externally', onPress: () => shareMatchExternally(match) },
+    { text: 'Cancel', style: 'cancel' },
+  ]);
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -172,6 +184,50 @@ function MapPreview({ match, height = 130 }: { match: MatchDetails; height?: num
         <Text style={styles.mapNavBadgeText}>Tap to navigate</Text>
       </View>
     </Pressable>
+  );
+}
+
+// Shown on a Team Match Challenge booking (match.organizerTeamId set) — a
+// one-shot team-name lookup on render, not a poll, since this only matters
+// while the screen is open. Waiting-for-opponent vs confirmed is purely
+// opponentTeamId's presence; no separate status field needed on MatchDetails.
+function TeamChallengeBanner({ match }: { match: MatchDetails }) {
+  const { colors } = useTheme();
+  const styles = React.useMemo(() => createStyles(colors), [colors]);
+  const [organizerName, setOrganizerName] = useState<string | null>(null);
+  const [opponentName, setOpponentName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (match.organizerTeamId) {
+      teamApi.getTeam(match.organizerTeamId).then((t) => setOrganizerName(t.name)).catch(() => {});
+    }
+    if (match.opponentTeamId) {
+      teamApi.getTeam(match.opponentTeamId).then((t) => setOpponentName(t.name)).catch(() => {});
+    }
+  }, [match.organizerTeamId, match.opponentTeamId]);
+
+  if (!match.organizerTeamId) return null;
+
+  return match.opponentTeamId ? (
+    <View style={[styles.vendorBanner, { backgroundColor: colors.success + '12', borderColor: colors.success + '30' }]}>
+      <View style={[styles.vendorBannerIcon, { backgroundColor: colors.success + '20' }]}>
+        <Swords color={colors.success} size={20} strokeWidth={2} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.vendorBannerTitle, { color: colors.success }]}>Team Match Confirmed</Text>
+        <Text style={styles.vendorBannerText}>{organizerName || 'Team A'} vs {opponentName || 'Team B'}</Text>
+      </View>
+    </View>
+  ) : (
+    <View style={styles.vendorBanner}>
+      <View style={styles.vendorBannerIcon}>
+        <Swords color="#EA580C" size={20} strokeWidth={2} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.vendorBannerTitle}>Team Match Challenge</Text>
+        <Text style={styles.vendorBannerText}>Waiting for the challenged team to accept and pay their half.</Text>
+      </View>
+    </View>
   );
 }
 
@@ -497,7 +553,11 @@ function JoinerView({
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const [showInviteSheet, setShowInviteSheet] = useState(false);
+  const [joinRequestBusy, setJoinRequestBusy] = useState(false);
+  const [joinRequestSent, setJoinRequestSent] = useState(false);
+  const [showCommunityShare, setShowCommunityShare] = useState(false);
   const { score, displaySeconds } = useLiveMatchScore(matchId);
+  const { scorecard } = useMatchScorecard(matchId, score?.status === 'LIVE' || score?.status === 'PAUSED');
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = async () => {
     setRefreshing(true);
@@ -507,6 +567,37 @@ function JoinerView({
       setRefreshing(false);
     }
   };
+
+  /**
+   * A Public Space Match never charges a joiner — the organizer already paid
+   * PAASXO's flat fee in full at creation (see createPublicSpaceBooking on
+   * the backend). Instead of checkout, "Join Match" sends a join REQUEST the
+   * organizer must approve (MatchInvitationService.sendRequest/accept — the
+   * same request/accept machinery already used for organizer-initiated
+   * invites, just the other direction). Deliberately doesn't pre-fetch
+   * "do I already have a pending request" on mount (that would be one more
+   * backend call on every match-details view, for every joiner, on every
+   * match) — if one already exists, the backend says so and this just
+   * reflects that back instead of erroring.
+   */
+  const handleRequestToJoinPublicMatch = useCallback(async () => {
+    if (!match.creatorId || joinRequestBusy || joinRequestSent) return;
+    setJoinRequestBusy(true);
+    try {
+      await invitationApi.sendRequest(matchId, match.creatorId);
+      setJoinRequestSent(true);
+      Alert.alert('Request Sent', 'The organizer will review your request to join this match.');
+    } catch (e: any) {
+      const msg = extractApiError(e, 'Could not send your join request. Please try again.');
+      if (msg.toLowerCase().includes('already have an active join request')) {
+        setJoinRequestSent(true);
+      } else {
+        Alert.alert('Could not send request', msg);
+      }
+    } finally {
+      setJoinRequestBusy(false);
+    }
+  }, [match.creatorId, matchId, joinRequestBusy, joinRequestSent]);
 
   const joinedCount = playerProfiles.length || match.participants?.length || 0;
   const spotsLeftKnown = match.spotsLeft != null;
@@ -537,7 +628,10 @@ function JoinerView({
             <HeaderIconButton style={styles.circleBtn} onPress={() => goBack(router)}>
               <ArrowLeft color={colors.white} size={20} strokeWidth={2.5} />
             </HeaderIconButton>
-            <HeaderIconButton style={styles.circleBtn} onPress={() => shareMatch(match)}>
+            <HeaderIconButton
+              style={styles.circleBtn}
+              onPress={() => showShareOptions(match, () => setShowCommunityShare(true))}
+            >
               <Share2 color={colors.white} size={18} strokeWidth={2.5} />
             </HeaderIconButton>
           </SafeAreaView>
@@ -555,9 +649,16 @@ function JoinerView({
 
           <Text style={styles.title}>{match.title}</Text>
 
+          <TeamChallengeBanner match={match} />
+
           {score && SCOREABLE_SPORTS.has((match.sportType || '').toUpperCase()) && (
             <View style={styles.scoreboardWrap}>
-              <LiveScoreboard score={score} displaySeconds={displaySeconds} />
+              <LiveScoreboard score={score} displaySeconds={displaySeconds} scorecard={scorecard} />
+              {score.status !== 'NOT_STARTED' && (
+                <Pressable style={styles.scorecardLink} onPress={() => router.push(`/match/${matchId}/scorecard` as any)}>
+                  <Text style={styles.scorecardLinkText}>View Full Scorecard →</Text>
+                </Pressable>
+              )}
             </View>
           )}
 
@@ -608,10 +709,19 @@ function JoinerView({
               <MapPin color={colors.primary} size={18} strokeWidth={2} />
             </View>
             <View style={styles.flex1}>
-              <Text style={styles.infoPrimary}>{match.venue.name}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={styles.infoPrimary}>{match.venue.name}</Text>
+                {match.isPublicSpaceMatch && (
+                  <View style={styles.publicSpaceBadge}>
+                    <Text style={styles.publicSpaceBadgeText}>PUBLIC SPACE</Text>
+                  </View>
+                )}
+              </View>
               <Text style={styles.infoSecondary}>
-                {[match.venue.postcode, match.venue.country].filter(Boolean).join(', ') ||
-                  'Location details unavailable'}
+                {match.isPublicSpaceMatch
+                  ? 'Organizer-picked location — not a Paasxo-managed venue'
+                  : [match.venue.postcode, match.venue.country].filter(Boolean).join(', ') ||
+                    'Location details unavailable'}
               </Text>
             </View>
           </View>
@@ -712,7 +822,9 @@ function JoinerView({
               ? `${match.currencySymbol ?? 'LKR '}${match.pricePerSlot.toFixed(2)}`
               : 'TBD'}
           </Text>
-          {(() => {
+          {match.isPublicSpaceMatch ? (
+            <Text style={styles.bottomBarPerPlayer}>Free to join</Text>
+          ) : (() => {
             const total = match.totalPrice ?? match.pricePerSlot;
             const perPlayer =
               match.pricePerPlayer ??
@@ -727,12 +839,28 @@ function JoinerView({
           })()}
         </View>
         <Pressable
-          style={[styles.joinButton, (hasJoined || isFull) && styles.joinButtonDisabled]}
-          disabled={hasJoined || isFull}
-          onPress={() => router.push(`/checkout/${matchId}` as any)}
+          style={[
+            styles.joinButton,
+            (hasJoined || isFull || (match.isPublicSpaceMatch && joinRequestSent)) && styles.joinButtonDisabled,
+          ]}
+          disabled={hasJoined || isFull || (match.isPublicSpaceMatch ? joinRequestBusy || joinRequestSent : false)}
+          onPress={() => {
+            if (match.isPublicSpaceMatch) handleRequestToJoinPublicMatch();
+            else router.push(`/checkout/${matchId}` as any);
+          }}
         >
           <Text style={styles.joinButtonText}>
-            {hasJoined ? 'Already Joined' : isFull ? 'Match Full' : 'Join Match'}
+            {hasJoined
+              ? 'Already Joined'
+              : isFull
+              ? 'Match Full'
+              : match.isPublicSpaceMatch
+              ? joinRequestSent
+                ? 'Request Sent'
+                : joinRequestBusy
+                ? 'Sending…'
+                : 'Request to Join'
+              : 'Join Match'}
           </Text>
         </Pressable>
       </View>
@@ -749,6 +877,14 @@ function JoinerView({
           onChanged();
         }}
         title="Invite Players"
+      />
+
+      <ShareToCommunityModal
+        visible={showCommunityShare}
+        onClose={() => setShowCommunityShare(false)}
+        shareType="MATCH"
+        referenceId={matchId}
+        label="Share Match"
       />
     </View>
   );
@@ -778,6 +914,7 @@ function OwnerView({
   const [cancelling, setCancelling] = useState(false);
   const [showInviteSheet, setShowInviteSheet] = useState(false);
   const { score, displaySeconds } = useLiveMatchScore(matchId);
+  const { scorecard } = useMatchScorecard(matchId, score?.status === 'LIVE' || score?.status === 'PAUSED');
   const [refreshing, setRefreshing] = useState(false);
 
   // ── Pending join requests (players who requested to join this match) ──────
@@ -956,6 +1093,8 @@ function OwnerView({
           </View>
         )}
 
+        <TeamChallengeBanner match={match} />
+
         {/* Payment/refund status — shown for any cancelled, previously-paid booking
             (vendor rejection, vendor cancellation, or the organizer's own cancel),
             not just the rejection case above, so "where's my money" is never a
@@ -993,13 +1132,23 @@ function OwnerView({
         <View style={styles.ownerLocationRow}>
           <MapPin color={colors.textSecondary} size={14} strokeWidth={2} />
           <Text style={styles.ownerLocationText}>{match.venue.name}</Text>
+          {match.isPublicSpaceMatch && (
+            <View style={styles.publicSpaceBadge}>
+              <Text style={styles.publicSpaceBadgeText}>PUBLIC SPACE</Text>
+            </View>
+          )}
         </View>
 
         <MapPreview match={match} height={140} />
 
         {score && SCOREABLE_SPORTS.has((match.sportType || '').toUpperCase()) && (
           <View style={styles.scoreboardWrap}>
-            <LiveScoreboard score={score} displaySeconds={displaySeconds} />
+            <LiveScoreboard score={score} displaySeconds={displaySeconds} scorecard={scorecard} />
+            {score.status !== 'NOT_STARTED' && (
+              <Pressable style={styles.scorecardLink} onPress={() => router.push(`/match/${matchId}/scorecard` as any)}>
+                <Text style={styles.scorecardLinkText}>View Full Scorecard →</Text>
+              </Pressable>
+            )}
           </View>
         )}
 
@@ -1300,6 +1449,8 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   flex1: { flex: 1 },
   refreshableArea: { flex: 1, position: 'relative' },
   scoreboardWrap: { marginTop: 14, marginBottom: 4 },
+  scorecardLink: { alignSelf: 'center', marginTop: 10, paddingVertical: 4 },
+  scorecardLinkText: { fontSize: 12.5, fontWeight: '700', color: colors.primary },
   loadingScreen: {
     flex: 1,
     backgroundColor: colors.background,
@@ -1366,6 +1517,8 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   infoPrimary: { fontSize: 15, fontWeight: '700', color: colors.text },
   infoSecondary: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  publicSpaceBadge: { backgroundColor: colors.success + '22', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 },
+  publicSpaceBadgeText: { fontSize: 9.5, fontWeight: '800', color: colors.success, letterSpacing: 0.4 },
   infoLink: { fontSize: 13, color: colors.primary, marginTop: 2 },
 
   // ─── Section labels ─────────────────────────────────────────────────────────
