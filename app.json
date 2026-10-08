@@ -12,7 +12,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "buildNumber": "9",
+      "buildNumber": "10",
       "infoPlist": {
         "NSCameraUsageDescription": "Allow access to camera",
         "NSPhotoLibraryUsageDescription": "Allow access to photos",
