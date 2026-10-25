@@ -92,7 +92,10 @@ export default function CheckoutScreen({ matchId }: CheckoutScreenProps) {
           // A Team Match Challenge booking still needs an opponent picked —
           // send the organizer there instead of the normal booking-status
           // screen (see create-team-challenge-match.tsx / TeamMatchService).
-          if (match?.organizerTeamId) {
+          // An OPEN challenge needs nothing more from the organizer — it's listed in
+          // Explore -> Team vs Team once the venue confirms, so it falls through to
+          // the normal pending booking-status screen below.
+          if (match?.organizerTeamId && !match.openTeamChallenge) {
             router.replace(`/select-opponent-team/${matchId}` as any);
             return;
           }
@@ -101,8 +104,9 @@ export default function CheckoutScreen({ matchId }: CheckoutScreenProps) {
           // replaced itself with checkout on the way in, so this leaves Home as the only
           // thing behind booking-status, and therefore behind wherever the user goes next
           // (e.g. Track My Request -> match control center) too.
-          // Always pass pending=true — newly created matches require vendor approval before going active
-          router.replace(`/booking-status/${matchId}?pending=true` as any);
+          // Venue bookings wait for the venue to accept; a Public Match at a public
+          // space has no venue to approve it — the server activates it on payment.
+          router.replace((match?.isPublicSpaceMatch ? `/booking-status/${matchId}` : `/booking-status/${matchId}?pending=true`) as any);
           return;
         }
         if (status.status === 'FAILED' || status.status === 'EXPIRED') {

@@ -31,6 +31,18 @@ export const teamApi = {
     return data;
   },
 
+  /** Captain-only rename / logo change (PUT /teams/{id}, multipart). */
+  updateTeam: async (
+    id: string,
+    payload: { name?: string; removeLogo?: boolean; logo?: { uri: string; name: string; type: string } },
+  ): Promise<Team> => {
+    const formData = new FormData();
+    formData.append('request', JSON.stringify({ name: payload.name, removeLogo: payload.removeLogo }));
+    if (payload.logo) formData.append('logo', payload.logo as any);
+    const { data } = await axiosInstance.put(ENDPOINTS.TEAMS.DETAIL(id), formData, { timeout: 60000 });
+    return data;
+  },
+
   getTeam: async (id: string): Promise<Team> => {
     const { data } = await axiosInstance.get(ENDPOINTS.TEAMS.DETAIL(id));
     return data;
@@ -46,10 +58,22 @@ export const teamApi = {
     return Array.isArray(data) ? data : [];
   },
 
+  /** Same-sport opponents the caller isn't in, nearest first (located teams). */
+  suggestOpponents: async (params: { sport?: string; lat?: number; lng?: number; excludeTeamId?: string }): Promise<Team[]> => {
+    const { data } = await axiosInstance.get('/teams/suggestions', { params });
+    return Array.isArray(data) ? data : [];
+  },
+
   searchTeams: async (query: string): Promise<Team[]> => {
     if (!query.trim()) return [];
     const { data } = await axiosInstance.get(ENDPOINTS.TEAMS.SEARCH(query.trim()));
     return Array.isArray(data) ? data : [];
+  },
+
+  /** Leave a team. A captain must pass newCaptainUid (another member) to hand over first. */
+  leaveTeam: async (teamId: string, newCaptainUid?: string): Promise<Team> => {
+    const { data } = await axiosInstance.post(`/teams/${encodeURIComponent(teamId)}/leave`, newCaptainUid ? { newCaptainUid } : {});
+    return data;
   },
 
   addMember: async (teamId: string, memberFirebaseUid: string): Promise<Team> => {

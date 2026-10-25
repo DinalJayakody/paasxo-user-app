@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import { getChatState } from '../stores/chatStore';
 
 /**
  * Registers this device directly with APNs (getDevicePushTokenAsync, not
@@ -58,6 +59,12 @@ export function configurePushNotificationHandler() {
           shouldShowBanner: false,
           shouldShowList: true,
         };
+      }
+      // A chat message for the conversation already open on screen is shown
+      // live in the chat itself — no banner on top of it.
+      const data = notification.request.content.data as Record<string, unknown> | undefined;
+      if (data?.type === 'CHAT_MESSAGE' && data.conversationId && getChatState().active === data.conversationId) {
+        return { shouldShowAlert: false, shouldPlaySound: false, shouldSetBadge: false, shouldShowBanner: false, shouldShowList: false };
       }
       return {
         shouldShowAlert: true,

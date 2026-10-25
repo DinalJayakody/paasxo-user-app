@@ -10,10 +10,12 @@ import {
   ScrollView,
   Share,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import MapView, { Polyline, Marker, PROVIDER_DEFAULT } from 'react-native-maps';
@@ -22,7 +24,7 @@ import {
   Navigation, Zap, TrendingUp, Wind,
   ChevronRight, Trophy, Share2, Trash2, MapPin,
   Footprints, ListOrdered, BookImage, Send,
-  Globe, Users, Lock, Camera,
+  Globe, Users, Lock, Camera, Image as ImageIcon,
 } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
 import { activityStorage, activityApi, StoredActivity, ActivityType, ActivityVisibility, activityShareUrl } from '../api/activityApi';
@@ -56,6 +58,7 @@ const ACT = {
   WALK: {
     label: 'Walk',
     emoji: '🚶',
+    icon: 'walk',
     colors: ['#059669', '#047857'] as [string, string],
     accentColor: '#059669',
     guideText: 'Perfect for a relaxed outdoor stroll. Every step counts!',
@@ -63,6 +66,7 @@ const ACT = {
   RUN: {
     label: 'Run',
     emoji: '🏃',
+    icon: 'run-fast',
     colors: ['#DC2626', '#991B1B'] as [string, string],
     accentColor: '#DC2626',
     guideText: 'Push your limits. Stay hydrated and breathe steady!',
@@ -70,6 +74,7 @@ const ACT = {
   CYCLING: {
     label: 'Cycle',
     emoji: '🚴',
+    icon: 'bike',
     colors: ['#2563EB', '#1D4ED8'] as [string, string],
     accentColor: '#2563EB',
     guideText: 'Cover more ground on two wheels. Enjoy the ride!',
@@ -140,8 +145,51 @@ const Avatar = ({ type, active }: { type: ActivityType; active: boolean }) => {
   }, [active, type]);
   return (
     <Animated.View style={{ transform: [{ translateY: bounce }, { rotate: tilt.interpolate({ inputRange: [-0.15, 0.15], outputRange: ['-8deg', '8deg'] }) }] }}>
-      <Text style={{ fontSize: 52 }}>{ACT[type].emoji}</Text>
+      <MaterialCommunityIcons name={ACT[type].icon} size={64} color={Colors.white} />
     </Animated.View>
+  );
+};
+
+// ── Big round start button with a breathing ring ──────────────────────────────
+const StartRing = ({ colors, ready, label, onPress }: {
+  colors: [string, string]; ready: boolean; label: string; onPress: () => void;
+}) => {
+  const ring = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!ready) { ring.stopAnimation(); ring.setValue(0); return; }
+    const loop = Animated.loop(Animated.timing(ring, { toValue: 1, duration: 1800, useNativeDriver: true }));
+    loop.start();
+    return () => loop.stop();
+  }, [ready, ring]);
+  return (
+    <View style={styles.startRingWrap}>
+      {ready && (
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.startRingPulse, {
+            borderColor: colors[0],
+            opacity: ring.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
+            transform: [{ scale: ring.interpolate({ inputRange: [0, 1], outputRange: [1, 1.45] }) }],
+          }]}
+        />
+      )}
+      <TouchableOpacity
+        onPress={onPress}
+        disabled={!ready}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel={ready ? `Start ${label}` : 'Waiting for GPS'}
+      >
+        <LinearGradient
+          colors={ready ? colors : ['#334155', '#1E293B']}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          style={styles.startRing}
+        >
+          <Play color={Colors.white} size={34} strokeWidth={2.5} fill={Colors.white} style={{ marginLeft: 4 }} />
+          <Text style={styles.startRingText}>{ready ? 'START' : 'GPS…'}</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+    </View>
   );
 };
 
@@ -192,6 +240,27 @@ const Countdown = ({ value, color, starting }: { value: number; color: string; s
 };
 
 // ── Main screen ───────────────────────────────────────────────────────────────
+/** Copies the photo picked for the "photo" share design into the app's
+ *  documents folder, so the saved activity can show it again later (picker
+ *  results live in a cache folder the OS may clear). Best effort. */
+async function persistActivityPhoto(uri: string, localId: string): Promise<string | undefined> {
+  try {
+    const FileSystem = require('expo-file-system/legacy');
+    if (!FileSystem.documentDirectory) return uri;
+    const dir = `${FileSystem.documentDirectory}activity-photos/`;
+    await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
+    const safeId = localId.replace(/[^A-Za-z0-9_-]/g, '');
+    const dest = `${dir}${safeId}.jpg`;
+    if (uri !== dest) {
+      await FileSystem.deleteAsync(dest, { idempotent: true }).catch(() => {});
+      await FileSystem.copyAsync({ from: uri, to: dest });
+    }
+    return dest;
+  } catch {
+    return uri;
+  }
+}
+
 export default function ActivityTrackerScreen() {
   const router = useRouter();
   const mapRef = useRef<MapView>(null);
@@ -199,7 +268,11 @@ export default function ActivityTrackerScreen() {
 
   // Phase state
   const [phase, setPhase] = useState<Phase>('SELECT');
-  const [actType, setActType] = useState<ActivityType>('RUN');
+  // Pre-selected when launched from a Walk/Run/Cycle shortcut (?type=WALK).
+  const { type: typeParam } = useLocalSearchParams<{ type?: string }>();
+  const [actType, setActType] = useState<ActivityType>(
+    typeParam === 'WALK' || typeParam === 'CYCLING' || typeParam === 'RUN' ? typeParam : 'RUN'
+  );
   const [gpsStatus, setGpsStatus] = useState<GpsStatus>('CHECKING');
   const [countdown, setCountdown] = useState(3);
   // True for the gap between the "1" tick finishing and tracking.start()
@@ -222,6 +295,10 @@ export default function ActivityTrackerScreen() {
   // "Save Activity" or implicitly by any share action) — a real serverId is
   // what a share link actually points at. See ensureSavedAndSynced.
   const [savedServerId, setSavedServerId] = useState<string | null>(null);
+  const syncPromiseRef = useRef<Promise<string | null> | null>(null);
+  // Filled in below once the share-card hook exists: stamps the currently
+  // picked design (and a persisted copy of its photo) onto the activity.
+  const withShareDesignRef = useRef<(a: StoredActivity) => Promise<StoredActivity>>(async (a) => a);
   const [shareBusy, setShareBusy] = useState<null | 'story' | 'post' | 'external'>(null);
   // A checkpoint found on mount from a session that never got a normal
   // finish — the app was killed (or crashed) while ACTIVE/PAUSED. Non-null
@@ -229,6 +306,14 @@ export default function ActivityTrackerScreen() {
   // see checkForResumableSession below and activeTrackingSession.ts.
   const [resumableSession, setResumableSession] = useState<PersistedTrackingSession | null>(null);
   const [resuming, setResuming] = useState(false);
+
+  // Re-applies the shortcut's type if this screen was already mounted when
+  // a new ?type= arrived — only while choosing, never mid-session.
+  useEffect(() => {
+    if ((typeParam === 'WALK' || typeParam === 'RUN' || typeParam === 'CYCLING') && phase === 'SELECT') setActType(typeParam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeParam]);
+
 
   const tracking = useActivityTracking(actType);
   const { stats } = tracking;
@@ -386,31 +471,23 @@ export default function ActivityTrackerScreen() {
   const beginTracking = useCallback(async () => {
     prevSplitCountRef.current = 0;
     try {
-      const { started, backgroundGranted } = await tracking.start();
+      const { started } = await tracking.start();
       if (!started) {
-        Alert.alert('Location permission needed', 'Please enable location access to track this activity.');
+        Alert.alert(
+          'Location is off',
+          'Paasxo needs location access to measure your distance and route. Choose "While Using the App" for Paasxo in Settings.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings().catch(() => {}) },
+          ],
+        );
         setPhase('SELECT');
         return;
       }
+      // "While Using" access is enough — a session started here keeps
+      // recording with the phone locked (see useActivityTracking's start()).
       setPhase('ACTIVE');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      if (!backgroundGranted) {
-        // Without "Always" location access, iOS pauses GPS updates soon
-        // after the app is backgrounded/the phone locks — tracking here
-        // would silently stop recording distance/time rather than actually
-        // running in the background as the feature promises. Foreground-only
-        // tracking still starts (better than blocking the user outright),
-        // but they need to know why their run might come up short if they
-        // lock the phone. Fires after the countdown, not before, so it
-        // doesn't compete with the background-permission system dialog
-        // itself for the user's attention.
-        setTimeout(() => {
-          Alert.alert(
-            'Background access not enabled',
-            "Paasxo only has \"While Using\" location access, so tracking may pause if you lock your phone or switch apps. For uninterrupted background tracking, enable \"Always\" location access in Settings > Privacy > Location Services > Paasxo.",
-          );
-        }, 500);
-      }
     } catch (e: any) {
       // A permission/config failure here (e.g. background location not yet
       // granted) must never leave the countdown screen frozen — surface it
@@ -455,7 +532,30 @@ export default function ActivityTrackerScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, [tracking]);
 
+  // Another tracker screen took over (or finished) this session — leave the
+  // live view instead of showing a frozen/ticking timer for a dead session.
+  useEffect(() => {
+    if (tracking.superseded && (phase === 'ACTIVE' || phase === 'PAUSED')) setPhase('SELECT');
+  }, [tracking.superseded, phase]);
+
+  const [finishing, setFinishing] = useState(false);
+  const finishingGuard = useRef(false);
+
   const finishActivity = useCallback(async () => {
+    if (finishingGuard.current) return; // double-tap / notification + button
+    finishingGuard.current = true;
+    setFinishing(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    try {
+      await finishActivityInner();
+    } finally {
+      finishingGuard.current = false;
+      setFinishing(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actType, user?.weightKg]);
+
+  const finishActivityInner = async () => {
     const result = await tracking.stop();
     const last = result.route[result.route.length - 1];
 
@@ -534,8 +634,7 @@ export default function ActivityTrackerScreen() {
     }
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actType, user?.weightKg]);
+  };
 
   // ── Stop & finish ─────────────────────────────────────────────────────────
   // Depends on finishActivity (not []) for the same reason beginTracking
@@ -607,18 +706,47 @@ export default function ActivityTrackerScreen() {
   // the network round-trip finishing — see ensureSavedAndSynced below for
   // the version the share actions use, which DOES need to wait (a share
   // link is only real once a serverId exists).
+  // Leaves the tracker after a save: the finished session is fully closed
+  // (nothing live, nothing resumable), so the screen is reset first.
+  const leaveAfterSave = useCallback((toHistory: boolean) => {
+    setCompletedActivity(null);
+    setNewRecords([]);
+    setPhase('SELECT');
+    if (toHistory) router.replace('/activity-history' as any);
+    else goBack(router);
+  }, [router]);
+
   const handleSave = useCallback(async () => {
-    if (!completedActivity) return;
+    if (!completedActivity || saving) return;
     setSaving(true);
-    await activityStorage.save(completedActivity);
-    activityApi.syncToServer(completedActivity).then((id) => { if (id) setSavedServerId(id); }).catch(() => {});
-    setSaving(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert('Saved!', 'Your activity has been saved to your history.', [
-      { text: 'View History', onPress: () => router.replace('/activity-history' as any) },
-      { text: 'Done', onPress: () => goBack(router) },
-    ]);
-  }, [completedActivity, router]);
+    try {
+      const withDesign = await withShareDesignRef.current(completedActivity);
+      setCompletedActivity(withDesign);
+      await activityStorage.save(withDesign);
+      // Only one server copy per activity, however many times Save/Share is tapped.
+      if (!savedServerId && !syncPromiseRef.current) {
+        syncPromiseRef.current = activityApi.syncToServer(withDesign)
+          .then((id) => {
+            if (id) {
+              setSavedServerId(id);
+              activityStorage.save({ ...withDesign, serverId: id }).catch(() => {});
+            }
+            return id;
+          })
+          .catch(() => null)
+          .finally(() => { syncPromiseRef.current = null; });
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Saved!', 'Your activity has been saved to your history with the design you picked.', [
+        { text: 'View History', onPress: () => leaveAfterSave(true) },
+        { text: 'Done', onPress: () => leaveAfterSave(false) },
+      ]);
+    } catch {
+      Alert.alert('Couldn’t save', 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  }, [completedActivity, saving, savedServerId, leaveAfterSave]);
 
   /**
    * Every share destination (Story/Post/external) needs the activity to
@@ -630,10 +758,21 @@ export default function ActivityTrackerScreen() {
   const ensureSavedAndSynced = useCallback(async (): Promise<string | null> => {
     if (!completedActivity) return null;
     if (savedServerId) return savedServerId;
-    await activityStorage.save(completedActivity);
-    const serverId = await activityApi.syncToServer(completedActivity);
-    if (serverId) setSavedServerId(serverId);
-    return serverId;
+    if (syncPromiseRef.current) return syncPromiseRef.current;
+    const withDesign = await withShareDesignRef.current(completedActivity);
+    setCompletedActivity(withDesign);
+    await activityStorage.save(withDesign);
+    syncPromiseRef.current = activityApi.syncToServer(withDesign)
+      .then((id) => {
+        if (id) {
+          setSavedServerId(id);
+          activityStorage.save({ ...withDesign, serverId: id }).catch(() => {});
+        }
+        return id;
+      })
+      .catch(() => null)
+      .finally(() => { syncPromiseRef.current = null; });
+    return syncPromiseRef.current;
   }, [completedActivity, savedServerId]);
 
   const {
@@ -641,6 +780,12 @@ export default function ActivityTrackerScreen() {
     templateId, setTemplateId, aspectRatio, setAspectRatio,
     photoUri, pickPhoto, ensureMapSnapshot,
   } = useActivityShareCard(completedActivity, user?.displayName || 'A Paasxo user', newRecords);
+
+  withShareDesignRef.current = async (a: StoredActivity) => {
+    let sharePhotoUri: string | undefined;
+    if (templateId === 'photo' && photoUri) sharePhotoUri = await persistActivityPhoto(photoUri, a.localId);
+    return { ...a, shareTemplateId: templateId, shareAspectRatio: aspectRatio, sharePhotoUri };
+  };
 
   // Proactively snapshots the route map as soon as there's something to
   // share, so the design preview below has a background ready the instant
@@ -650,14 +795,26 @@ export default function ActivityTrackerScreen() {
     if (phase === 'SUMMARY') ensureMapSnapshot(mapRef);
   }, [phase, ensureMapSnapshot]);
 
-  const handlePickPhotoForCard = useCallback(async () => {
-    const picked = await pickPhoto();
+  const handlePickPhotoForCard = useCallback(async (source: 'camera' | 'library') => {
+    const picked = await pickPhoto(source);
     if (!picked) return;
     if (templateId !== 'photo') setTemplateId('photo');
   }, [pickPhoto, templateId, setTemplateId]);
 
-  const handleShareToStory = useCallback(async () => {
+  const handleShareToStory = useCallback(async (confirmed = false) => {
     if (!completedActivity || shareBusy) return;
+    // Stories are seen by followers — don't quietly publish an "Only Me" activity.
+    if (completedActivity.visibility === 'private' && !confirmed) {
+      Alert.alert(
+        'This activity is set to Only Me',
+        'Your Story is visible to your followers for 24 hours. Share this activity there anyway?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Share to Story', onPress: () => { handleShareToStoryRef.current(true); } },
+        ],
+      );
+      return;
+    }
     setShareBusy('story');
     try {
       const serverId = await ensureSavedAndSynced();
@@ -673,8 +830,22 @@ export default function ActivityTrackerScreen() {
     }
   }, [completedActivity, shareBusy, ensureSavedAndSynced, buildShareCard, templateId]);
 
-  const handleShareToPost = useCallback(async () => {
+  const handleShareToPost = useCallback(async (visibilityOverride?: ActivityVisibility) => {
     if (!completedActivity || shareBusy) return;
+    // The post follows the "Who can see this activity?" choice above.
+    const postVisibility: ActivityVisibility = visibilityOverride ?? completedActivity.visibility ?? 'friends';
+    if (postVisibility === 'private' && !visibilityOverride) {
+      Alert.alert(
+        'This activity is set to Only Me',
+        'A post set to Only Me appears on your profile but nobody else sees it. Who should see this post?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Only Me', onPress: () => { handleShareToPostRef.current('private'); } },
+          { text: 'Friends', onPress: () => { handleShareToPostRef.current('friends'); } },
+        ],
+      );
+      return;
+    }
     setShareBusy('post');
     try {
       const serverId = await ensureSavedAndSynced();
@@ -685,20 +856,26 @@ export default function ActivityTrackerScreen() {
         caption,
         media: { uri: cardUri, fileName: 'activity.jpg', mimeType: 'image/jpeg' },
         sport: 'FITNESS',
-        // Personal fitness data defaults to Friends-only rather than Public —
-        // a quieter default for route/pace/location than a regular post; the
-        // full visibility picker (CreatePostScreen) still applies to
-        // everything else.
-        visibility: 'friends',
+        visibility: postVisibility,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Posted to your feed!');
+      Alert.alert(
+        'Posted!',
+        postVisibility === 'public' ? 'Your activity is on the Paasxo feed for everyone.'
+          : postVisibility === 'friends' ? 'Your activity is on the feed for your friends.'
+          : 'Your activity is on your profile — only you can see it.',
+      );
     } catch (e: any) {
       Alert.alert('Could not share as a Post', extractApiError(e, 'Please try again.'));
     } finally {
       setShareBusy(null);
     }
   }, [completedActivity, actType, shareBusy, ensureSavedAndSynced, buildShareCard, templateId]);
+
+  const handleShareToStoryRef = useRef(handleShareToStory);
+  handleShareToStoryRef.current = handleShareToStory;
+  const handleShareToPostRef = useRef(handleShareToPost);
+  handleShareToPostRef.current = handleShareToPost;
 
   // Shares outside Paasxo (WhatsApp, Messages, etc). expo-sharing is used
   // rather than RN's built-in Share so the image attaches reliably on
@@ -778,95 +955,89 @@ export default function ActivityTrackerScreen() {
         </View>
 
         <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
-          {/* Guide */}
-          <View style={styles.guideBox}>
-            <Text style={styles.guideStep}>STEP 1 OF 2</Text>
-            <Text style={styles.guideTitle}>Choose your activity</Text>
-            <Text style={styles.guideBody}>{cfg.guideText}</Text>
+          {/* Activity picker — three tiles */}
+          <View style={styles.pickRow}>
+            {(['WALK', 'RUN', 'CYCLING'] as ActivityType[]).map((t) => {
+              const c = ACT[t];
+              const selected = actType === t;
+              return (
+                <TouchableOpacity
+                  key={t}
+                  onPress={() => { if (!selected) { setActType(t); Haptics.selectionAsync(); } }}
+                  activeOpacity={0.85}
+                  style={[styles.pickTile, selected && { borderColor: c.accentColor, backgroundColor: c.accentColor + '26' }]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={c.label}
+                >
+                  <View style={[styles.pickIcon, { backgroundColor: selected ? c.accentColor : 'rgba(255,255,255,0.08)' }]}>
+                    <MaterialCommunityIcons name={c.icon} size={26} color={selected ? Colors.white : Colors.neutral300} />
+                  </View>
+                  <Text style={[styles.pickLabel, selected && { color: Colors.white }]}>{c.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
-          {/* Activity type cards */}
-          {(['WALK', 'RUN', 'CYCLING'] as ActivityType[]).map((t) => {
-            const c = ACT[t];
-            const selected = actType === t;
-            return (
-              <TouchableOpacity
-                key={t}
-                onPress={() => { setActType(t); Haptics.selectionAsync(); }}
-                activeOpacity={0.85}
-                style={[styles.actCard, selected && { borderColor: c.accentColor, borderWidth: 2.5 }]}
-              >
-                <LinearGradient
-                  colors={selected ? c.colors : ['#1E293B', '#2D3748']}
-                  style={styles.actCardInner}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                >
-                  <Text style={{ fontSize: 36 }}>{c.emoji}</Text>
-                  <View style={{ flex: 1, marginLeft: 16 }}>
-                    <Text style={[styles.actCardLabel, { color: selected ? Colors.white : Colors.neutral300 }]}>{c.label}</Text>
-                    <Text style={[styles.actCardSub, { color: selected ? 'rgba(255,255,255,0.75)' : Colors.neutral500 }]}>{c.guideText}</Text>
-                  </View>
-                  {selected && (
-                    <View style={[styles.actCardCheck, { backgroundColor: c.accentColor }]}>
-                      <CheckCircle color={Colors.white} size={18} strokeWidth={2.5} />
-                    </View>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
-            );
-          })}
+          {/* Hero card for the selected activity */}
+          <LinearGradient colors={cfg.colors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroCard}>
+            <View style={styles.heroGlyph} pointerEvents="none">
+              <MaterialCommunityIcons name={cfg.icon} size={150} color="rgba(255,255,255,0.14)" />
+            </View>
+            <Text style={styles.heroKicker}>READY TO {actType === 'CYCLING' ? 'RIDE' : actType === 'RUN' ? 'RUN' : 'WALK'}</Text>
+            <Text style={styles.heroTitle}>{cfg.label}</Text>
+            <Text style={styles.heroBody}>{cfg.guideText}</Text>
+            <View style={styles.heroChips}>
+              {[
+                { icon: <MapPin color={Colors.white} size={13} strokeWidth={2.5} />, text: 'Route map' },
+                { icon: <Zap color={Colors.white} size={13} strokeWidth={2.5} />, text: 'Pace & splits' },
+                { icon: <TrendingUp color={Colors.white} size={13} strokeWidth={2.5} />, text: 'Calories' },
+              ].map((f) => (
+                <View key={f.text} style={styles.heroChip}>
+                  {f.icon}
+                  <Text style={styles.heroChipText}>{f.text}</Text>
+                </View>
+              ))}
+            </View>
+          </LinearGradient>
 
           {/* GPS status */}
-          <View style={styles.gpsBox}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              {gpsStatus === 'READY' ? (
-                <GpsDot color="#22C55E" />
-              ) : gpsStatus === 'ERROR' ? (
-                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.error }} />
-              ) : (
-                <GpsDot color={Colors.warning} />
-              )}
+          <View style={[styles.gpsPill, gpsStatus === 'READY' && { borderColor: 'rgba(34,197,94,0.45)' }, gpsStatus === 'ERROR' && { borderColor: 'rgba(239,68,68,0.5)' }]}>
+            {gpsStatus === 'READY' ? (
+              <GpsDot color="#22C55E" />
+            ) : gpsStatus === 'ERROR' ? (
+              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.error }} />
+            ) : (
+              <GpsDot color={Colors.warning} />
+            )}
+            <View style={{ flex: 1 }}>
               <Text style={styles.gpsText}>
                 {gpsStatus === 'READY'
-                  ? 'GPS locked — ready to track!'
+                  ? 'GPS locked'
                   : gpsStatus === 'ERROR'
-                  ? 'Location permission denied. Please enable in Settings.'
-                  : 'Acquiring GPS signal…'}
+                  ? 'Location is off for Paasxo'
+                  : 'Finding your GPS signal…'}
+              </Text>
+              <Text style={styles.gpsCoord} numberOfLines={1}>
+                {gpsStatus === 'READY'
+                  ? (placeName ?? 'Current location')
+                  : gpsStatus === 'ERROR'
+                  ? 'Turn it on in Settings → Paasxo → Location'
+                  : 'Head outdoors for the best accuracy'}
               </Text>
             </View>
-            {gpsStatus === 'READY' && currentLoc && (
-              <Text style={styles.gpsCoord} numberOfLines={1}>
-                {placeName ?? 'Current location'}
-              </Text>
+            {gpsStatus === 'ERROR' && (
+              <TouchableOpacity onPress={() => Linking.openSettings().catch(() => {})} style={styles.gpsSettingsBtn} accessibilityRole="button">
+                <Text style={styles.gpsSettingsText}>Settings</Text>
+              </TouchableOpacity>
             )}
           </View>
 
-          {/* Guide step 2 */}
-          <View style={styles.guideBox}>
-            <Text style={styles.guideStep}>STEP 2 OF 2</Text>
-            <Text style={styles.guideTitle}>Start tracking</Text>
-            <Text style={styles.guideBody}>
-              Once GPS is locked, press the button below. A 3-second countdown will begin so you can get moving!
-              Tracking keeps running in the background even if you lock your phone.
-            </Text>
-          </View>
-
-          {/* Start button */}
-          <TouchableOpacity
-            onPress={beginCountdown}
-            disabled={gpsStatus !== 'READY'}
-            activeOpacity={0.85}
-          >
-            <LinearGradient
-              colors={gpsStatus === 'READY' ? cfg.colors : ['#374151', '#374151']}
-              style={[styles.startBtn, gpsStatus !== 'READY' && { opacity: 0.5 }]}
-            >
-              <Play color={Colors.white} size={24} strokeWidth={2.5} fill={Colors.white} />
-              <Text style={styles.startBtnText}>
-                {gpsStatus === 'READY' ? `Start ${cfg.label}` : 'Waiting for GPS…'}
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
+          {/* Start */}
+          <StartRing colors={cfg.colors} ready={gpsStatus === 'READY'} label={cfg.label} onPress={beginCountdown} />
+          <Text style={styles.startHint}>
+            3-second countdown, then go. Keeps recording with your phone locked.
+          </Text>
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -885,17 +1056,20 @@ export default function ActivityTrackerScreen() {
   );
 
   const renderActivePhase = (paused: boolean) => {
-    const avgLabel = 'Avg Pace';
-    const avgValue = formatPace(stats.currentPaceSecPerKm);
-    const avgUnit = 'min/km';
-    const currentLabel = 'Pace';
-    const currentValue = formatPace(stats.currentPaceSecPerKm);
-    const currentUnit = 'min/km';
+    const cycling = actType === 'CYCLING';
+    // "Now" = last ~30s of the route; "Avg" = whole session (moving time).
+    const nowPace = stats.rollingPaceSecPerKm;
+    const nowValue = cycling
+      ? (nowPace ? (3600 / nowPace).toFixed(1) : '0.0')
+      : formatPace(paused ? null : nowPace);
+    const avgValue = cycling ? stats.avgSpeedKmh.toFixed(1) : formatPace(stats.currentPaceSecPerKm);
+    const paceUnit = cycling ? 'km/h' : '/km';
+    const liveCalories = calcCalories(actType as MetActivityType, stats.avgSpeedKmh, stats.elapsedSeconds, user?.weightKg, stats.splits);
 
     return (
-      <View style={{ flex: 1, backgroundColor: '#0F172A' }}>
-        {/* Map */}
-        <View style={styles.mapContainer}>
+      <View style={{ flex: 1, backgroundColor: '#0B1220' }}>
+        {/* Map — takes all space the metrics sheet doesn't need */}
+        <View style={styles.liveMapContainer}>
           {stats.currentLocation || currentLoc ? (
             <MapView
               ref={mapRef}
@@ -916,7 +1090,7 @@ export default function ActivityTrackerScreen() {
                 <Polyline
                   coordinates={stats.mapCoords}
                   strokeColor={cfg.accentColor}
-                  strokeWidth={5}
+                  strokeWidth={6}
                   lineCap="round"
                   lineJoin="round"
                 />
@@ -941,50 +1115,89 @@ export default function ActivityTrackerScreen() {
             <View style={styles.mapStatusRow}>
               <View style={[styles.statusPill, { backgroundColor: paused ? '#F59E0B' : cfg.accentColor }]}>
                 <GpsDot color={Colors.white} />
-                <Text style={styles.statusPillText}>{paused ? 'PAUSED' : 'TRACKING'}</Text>
+                <Text style={styles.statusPillText}>{paused ? 'PAUSED' : `${cfg.label.toUpperCase()} · LIVE`}</Text>
               </View>
-              <TouchableOpacity onPress={handleStop} style={styles.stopTopBtn}>
-                <Square color={Colors.white} size={16} fill={Colors.white} />
-                <Text style={styles.stopTopText}>STOP</Text>
-              </TouchableOpacity>
+              {(stats.currentLocation || currentLoc) && (
+                <TouchableOpacity
+                  onPress={() => {
+                    const c = stats.currentLocation ?? currentLoc;
+                    if (c) mapRef.current?.animateToRegion({ ...c, latitudeDelta: 0.003, longitudeDelta: 0.003 }, 500);
+                  }}
+                  style={styles.recenterBtn}
+                  accessibilityLabel="Re-centre map"
+                >
+                  <Navigation color={Colors.white} size={16} strokeWidth={2.6} />
+                </TouchableOpacity>
+              )}
             </View>
           </SafeAreaView>
         </View>
 
-        {/* Metrics panel */}
+        {/* Metrics sheet */}
         <View style={styles.metricsPanel}>
-          {/* Avatar + timer */}
-          <View style={styles.timerRow}>
-            <Avatar type={actType} active={!paused} />
-            <View style={{ flex: 1, marginLeft: 16 }}>
-              <Text style={styles.timerLabel}>TIME</Text>
-              <Text style={[styles.timerValue, { color: cfg.accentColor }]}>{formatTime(stats.elapsedSeconds)}</Text>
+          <View style={styles.sheetHandle} />
+
+          {/* Distance — the hero number */}
+          <View style={styles.distBlock}>
+            <View style={styles.distRow}>
+              <Text style={styles.distValue} allowFontScaling={false} accessibilityLabel={`Distance ${formatDist(stats.distanceMeters)} ${distUnit(stats.distanceMeters) === 'km' ? 'kilometres' : 'metres'}`}>
+                {formatDist(stats.distanceMeters)}
+              </Text>
+              <Text style={styles.distUnit}>{distUnit(stats.distanceMeters) === 'km' ? 'km' : 'm'}</Text>
             </View>
-            <View style={styles.pauseBtn}>
-              <TouchableOpacity
-                onPress={paused ? handleResume : handlePause}
-                style={[styles.pauseBtnInner, { backgroundColor: paused ? cfg.accentColor : '#374151' }]}
-              >
-                {paused
-                  ? <Play color={Colors.white} size={24} fill={Colors.white} />
-                  : <Pause color={Colors.white} size={24} />
-                }
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.distLabel}>DISTANCE</Text>
           </View>
 
-          {/* Distance (large) */}
-          <View style={styles.distRow}>
-            <Text style={styles.distValue}>{formatDist(stats.distanceMeters)}</Text>
-            <Text style={styles.distUnit}>{distUnit(stats.distanceMeters)}</Text>
+          {/* Primary row: time · now · avg */}
+          <View style={styles.primaryRow}>
+            <PrimaryStat label="TIME" value={formatTime(stats.elapsedSeconds)} color={cfg.accentColor} />
+            <View style={styles.primaryDivider} />
+            <PrimaryStat label={cycling ? 'SPEED' : 'PACE'} value={nowValue} unit={paceUnit} />
+            <View style={styles.primaryDivider} />
+            <PrimaryStat label={cycling ? 'AVG SPEED' : 'AVG PACE'} value={avgValue} unit={paceUnit} />
           </View>
 
-          {/* Stats grid */}
+          {/* Secondary tiles */}
           <View style={styles.statsGrid}>
-            <StatTile label={currentLabel} value={currentValue} unit={currentUnit} Icon={<Zap color={cfg.accentColor} size={14} />} />
-            <StatTile label={avgLabel} value={avgValue} unit={avgUnit} Icon={<Wind color={cfg.accentColor} size={14} />} />
-            <StatTile label="Elevation" value={`+${stats.elevationGainMeters}`} unit="m" Icon={<TrendingUp color="#8B5CF6" size={14} />} />
-            <StatTile label="Steps" value={stats.stepCount != null ? `${stats.stepCount}` : '—'} unit="steps" Icon={<Footprints color="#F97316" size={14} />} />
+            <StatTile
+              label="Calories"
+              value={liveCalories != null ? `${liveCalories}` : '—'}
+              unit={liveCalories != null ? 'kcal' : 'add weight'}
+              Icon={<Zap color="#F59E0B" size={13} />}
+              onPress={liveCalories == null ? () => router.push('/edit-profile' as any) : undefined}
+            />
+            <StatTile label="Elevation" value={`+${stats.elevationGainMeters}`} unit="m gain" Icon={<TrendingUp color="#8B5CF6" size={13} />} />
+            {cycling ? (
+              <StatTile label="Max speed" value={stats.maxSpeedKmh.toFixed(1)} unit="km/h" Icon={<Wind color={cfg.accentColor} size={13} />} />
+            ) : (
+              <StatTile label="Steps" value={stats.stepCount != null ? stats.stepCount.toLocaleString() : '—'} unit="steps" Icon={<Footprints color="#F97316" size={13} />} />
+            )}
+          </View>
+
+          {/* Controls */}
+          <View style={styles.controlsRow}>
+            <TouchableOpacity
+              onPress={paused ? handleResume : handlePause}
+              style={[styles.ctrlBtn, { backgroundColor: paused ? cfg.accentColor : '#1F2A3D' }]}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={paused ? 'Resume' : 'Pause'}
+            >
+              {paused
+                ? <Play color={Colors.white} size={22} fill={Colors.white} />
+                : <Pause color={Colors.white} size={22} fill={Colors.white} />}
+              <Text style={styles.ctrlText}>{paused ? 'Resume' : 'Pause'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleStop}
+              style={[styles.ctrlBtn, { backgroundColor: '#DC2626' }]}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Finish activity"
+            >
+              <Square color={Colors.white} size={18} fill={Colors.white} />
+              <Text style={styles.ctrlText}>Finish</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Milestone banner */}
@@ -1170,12 +1383,22 @@ export default function ActivityTrackerScreen() {
           </View>
 
           {templateId === 'photo' && (
-            <TouchableOpacity onPress={handlePickPhotoForCard} activeOpacity={0.8} style={styles.takePhotoBtn}>
-              <Camera color={cfg.accentColor} size={16} strokeWidth={2.25} />
-              <Text style={[styles.takePhotoBtnText, { color: cfg.accentColor }]}>
-                {photoUri ? 'Retake Photo' : 'Take Photo'}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.photoBtnRow}>
+              <TouchableOpacity onPress={() => handlePickPhotoForCard('camera')} activeOpacity={0.8} style={[styles.takePhotoBtn, styles.photoBtnHalf]}
+                accessibilityRole="button" accessibilityLabel={photoUri ? 'Retake photo' : 'Take photo'}>
+                <Camera color={cfg.accentColor} size={16} strokeWidth={2.25} />
+                <Text style={[styles.takePhotoBtnText, { color: cfg.accentColor }]}>
+                  {photoUri ? 'Retake' : 'Take Photo'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handlePickPhotoForCard('library')} activeOpacity={0.8} style={[styles.takePhotoBtn, styles.photoBtnHalf]}
+                accessibilityRole="button" accessibilityLabel="Choose a photo from your library">
+                <ImageIcon color={cfg.accentColor} size={16} strokeWidth={2.25} />
+                <Text style={[styles.takePhotoBtnText, { color: cfg.accentColor }]}>
+                  {photoUri ? 'Change' : 'Choose Photo'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           )}
 
           {/* Who can see this activity */}
@@ -1212,7 +1435,7 @@ export default function ActivityTrackerScreen() {
           {/* Share to Paasxo — Story / Post */}
           <View style={styles.shareRow}>
             <TouchableOpacity
-              onPress={handleShareToStory}
+              onPress={() => handleShareToStory()}
               disabled={shareBusy !== null}
               activeOpacity={0.8}
               style={[styles.shareRowBtn, shareBusy === 'story' && styles.shareRowBtnBusy]}
@@ -1221,7 +1444,7 @@ export default function ActivityTrackerScreen() {
               <Text style={[styles.shareBtnText, { color: cfg.accentColor }]}>To Story</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={handleShareToPost}
+              onPress={() => handleShareToPost()}
               disabled={shareBusy !== null}
               activeOpacity={0.8}
               style={[styles.shareRowBtn, shareBusy === 'post' && styles.shareRowBtnBusy]}
@@ -1249,7 +1472,11 @@ export default function ActivityTrackerScreen() {
   const renderResumePrompt = () => {
     const session = resumableSession!;
     const sessionCfg = ACT[session.activityType];
-    const elapsedNow = Math.max(0, Math.round((Date.now() - new Date(session.startTime).getTime()) / 1000));
+    // Same rule resumeFromSession applies: moving time as of the checkpoint,
+    // plus time since then only if the session was still ACTIVE.
+    const elapsedNow = session.activeMs != null
+      ? Math.floor((session.activeMs + (session.phase === 'ACTIVE' && session.savedAt ? Math.max(0, Date.now() - session.savedAt) : 0)) / 1000)
+      : Math.max(0, Math.round((Date.now() - new Date(session.startTime).getTime()) / 1000));
     return (
       <View style={{ flex: 1 }}>
         <LinearGradient colors={['#0F172A', '#1E293B', '#0F172A']} style={StyleSheet.absoluteFill} />
@@ -1291,22 +1518,46 @@ export default function ActivityTrackerScreen() {
   if (resumableSession) return renderResumePrompt();
   if (phase === 'SELECT') return renderSelectPhase();
   if (phase === 'COUNTDOWN') return renderCountdownPhase();
-  if (phase === 'ACTIVE') return renderActivePhase(false);
-  if (phase === 'PAUSED') return renderActivePhase(true);
+  const finishingOverlay = finishing ? (
+    <View style={styles.finishingOverlay} accessibilityViewIsModal accessibilityLabel="Finishing your activity">
+      <View style={styles.finishingCard}>
+        <ActivityIndicator color={Colors.white} />
+        <Text style={styles.finishingTitle}>Activity stopped</Text>
+        <Text style={styles.finishingSub}>Saving your route and stats…</Text>
+      </View>
+    </View>
+  ) : null;
+  if (phase === 'ACTIVE') return <View style={{ flex: 1 }}>{renderActivePhase(false)}{finishingOverlay}</View>;
+  if (phase === 'PAUSED') return <View style={{ flex: 1 }}>{renderActivePhase(true)}{finishingOverlay}</View>;
   if (phase === 'SUMMARY') return renderSummaryPhase();
   return null;
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
-function StatTile({ label, value, unit, Icon }: { label: string; value: string; unit: string; Icon: React.ReactNode }) {
-  return (
-    <View style={styles.statTile}>
+function StatTile({ label, value, unit, Icon, onPress }: { label: string; value: string; unit: string; Icon: React.ReactNode; onPress?: () => void }) {
+  const body = (
+    <>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 }}>
         {Icon}
         <Text style={styles.statTileLabel}>{label}</Text>
       </View>
-      <Text style={styles.statTileValue}>{value}</Text>
-      <Text style={styles.statTileUnit}>{unit}</Text>
+      <Text style={styles.statTileValue} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+      <Text style={[styles.statTileUnit, onPress && { color: '#60A5FA', fontWeight: '700' }]}>{unit}</Text>
+    </>
+  );
+  return onPress
+    ? <TouchableOpacity style={styles.statTile} onPress={onPress} activeOpacity={0.8}>{body}</TouchableOpacity>
+    : <View style={styles.statTile}>{body}</View>;
+}
+
+function PrimaryStat({ label, value, unit, color }: { label: string; value: string; unit?: string; color?: string }) {
+  return (
+    <View style={styles.primaryStat} accessible accessibilityLabel={`${label} ${value} ${unit ?? ''}`}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+        <Text style={[styles.primaryValue, color ? { color } : null]} numberOfLines={1} adjustsFontSizeToFit allowFontScaling={false}>{value}</Text>
+        {unit ? <Text style={styles.primaryUnit}>{unit}</Text> : null}
+      </View>
+      <Text style={styles.primaryLabel}>{label}</Text>
     </View>
   );
 }
@@ -1323,6 +1574,15 @@ function SummaryTile({ label, value, unit, color }: { label: string; value: stri
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  finishingOverlay: {
+    ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,6,23,0.72)', alignItems: 'center', justifyContent: 'center',
+  },
+  finishingCard: {
+    alignItems: 'center', gap: 10, paddingHorizontal: 28, paddingVertical: 24, borderRadius: 22,
+    backgroundColor: '#0F172A', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+  },
+  finishingTitle: { color: Colors.white, fontSize: 17, fontWeight: '900' },
+  finishingSub: { color: 'rgba(255,255,255,0.65)', fontSize: 13.5, fontWeight: '600' },
   resumeCenterWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   resumeEmoji: { fontSize: 56, marginBottom: 16 },
   resumeTitle: { fontSize: 22, fontWeight: '800', color: Colors.white, marginBottom: 8, textAlign: 'center' },
@@ -1359,6 +1619,40 @@ const styles = StyleSheet.create({
   guideTitle: { fontSize: 16, fontWeight: '800', color: Colors.white, marginBottom: 6 },
   guideBody: { fontSize: 13, color: Colors.neutral400, lineHeight: 19 },
 
+  pickRow: { flexDirection: 'row', gap: 10, marginTop: 8, marginBottom: 16 },
+  pickTile: {
+    flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.08)',
+  },
+  pickIcon: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  pickLabel: { fontSize: 14, fontWeight: '800', color: Colors.neutral400 },
+
+  heroCard: { borderRadius: 24, padding: 22, marginBottom: 16, overflow: 'hidden', minHeight: 190 },
+  heroGlyph: { position: 'absolute', right: -18, bottom: -22 },
+  heroKicker: { fontSize: 11, fontWeight: '900', color: 'rgba(255,255,255,0.75)', letterSpacing: 1.6 },
+  heroTitle: { fontSize: 34, fontWeight: '900', color: Colors.white, marginTop: 4 },
+  heroBody: { fontSize: 14, lineHeight: 20, color: 'rgba(255,255,255,0.88)', marginTop: 6, maxWidth: '78%' },
+  heroChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 16 },
+  heroChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  heroChipText: { fontSize: 11.5, fontWeight: '800', color: Colors.white },
+
+  gpsPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', marginBottom: 26,
+  },
+  gpsSettingsBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.12)' },
+  gpsSettingsText: { fontSize: 12.5, fontWeight: '800', color: Colors.white },
+
+  startRingWrap: { alignSelf: 'center', width: 150, height: 150, alignItems: 'center', justifyContent: 'center' },
+  startRingPulse: { position: 'absolute', width: 132, height: 132, borderRadius: 66, borderWidth: 3 },
+  startRing: { width: 132, height: 132, borderRadius: 66, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  startRingText: { fontSize: 15, fontWeight: '900', color: Colors.white, letterSpacing: 2 },
+  startHint: { textAlign: 'center', fontSize: 12.5, color: Colors.neutral500, marginTop: 14, lineHeight: 18 },
+
   actCard: {
     borderRadius: 18, marginBottom: 12, overflow: 'hidden',
     borderWidth: 2, borderColor: 'transparent',
@@ -1389,7 +1683,7 @@ const styles = StyleSheet.create({
   startBtnText: { fontSize: 17, fontWeight: '900', color: Colors.white, letterSpacing: 0.3 },
 
   // Map phase
-  mapContainer: { height: SCREEN_H * 0.48, position: 'relative' },
+  mapContainer: { height: SCREEN_H * 0.42, position: 'relative' },
   mapOverlay: { position: 'absolute', top: 0, left: 0, right: 0 },
   mapStatusRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -1412,32 +1706,49 @@ const styles = StyleSheet.create({
   },
 
   // Metrics panel
+  liveMapContainer: { flex: 1, minHeight: SCREEN_H * 0.3, position: 'relative' },
   metricsPanel: {
-    flex: 1, backgroundColor: '#0F172A',
-    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8,
+    backgroundColor: '#0B1220',
+    marginTop: -26, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 20, paddingTop: 10, paddingBottom: 28,
   },
-  timerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  timerLabel: { fontSize: 10, fontWeight: '800', color: Colors.neutral500, letterSpacing: 1.5 },
-  timerValue: { fontSize: 36, fontWeight: '900', letterSpacing: -1 },
-  pauseBtn: { alignItems: 'center', justifyContent: 'center' },
-  pauseBtnInner: {
-    width: 52, height: 52, borderRadius: 26,
+  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#334155', marginBottom: 8 },
+  recenterBtn: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(15,23,42,0.85)',
     alignItems: 'center', justifyContent: 'center',
   },
+  distBlock: { alignItems: 'center', marginBottom: 14 },
+  distRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center' },
+  distValue: { fontSize: 64, fontWeight: '900', color: Colors.white, letterSpacing: -2, fontVariant: ['tabular-nums'] },
+  distUnit: { fontSize: 20, fontWeight: '800', color: Colors.neutral400, marginBottom: 12, marginLeft: 6 },
+  distLabel: { fontSize: 11, fontWeight: '800', color: Colors.neutral500, letterSpacing: 2, marginTop: -4 },
 
-  distRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 12 },
-  distValue: { fontSize: 52, fontWeight: '900', color: Colors.white, letterSpacing: -2 },
-  distUnit: { fontSize: 18, fontWeight: '700', color: Colors.neutral400, marginBottom: 10, marginLeft: 6 },
+  primaryRow: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#131C2E',
+    borderRadius: 18, paddingVertical: 14, marginBottom: 10,
+  },
+  primaryStat: { flex: 1, alignItems: 'center', paddingHorizontal: 4 },
+  primaryValue: { fontSize: 24, fontWeight: '900', color: Colors.white, fontVariant: ['tabular-nums'] },
+  primaryUnit: { fontSize: 11, fontWeight: '700', color: Colors.neutral400, marginLeft: 2, marginBottom: 4 },
+  primaryLabel: { fontSize: 10, fontWeight: '800', color: Colors.neutral500, letterSpacing: 1.2, marginTop: 2 },
+  primaryDivider: { width: StyleSheet.hairlineWidth, alignSelf: 'stretch', backgroundColor: '#273449' },
 
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  statsGrid: { flexDirection: 'row', gap: 8 },
   statTile: {
-    flex: 1, minWidth: '44%',
-    backgroundColor: '#1E293B', borderRadius: 14,
-    padding: 12,
+    flex: 1,
+    backgroundColor: '#131C2E', borderRadius: 14,
+    paddingVertical: 10, paddingHorizontal: 12,
   },
   statTileLabel: { fontSize: 10, fontWeight: '700', color: Colors.neutral400, letterSpacing: 0.5 },
-  statTileValue: { fontSize: 20, fontWeight: '900', color: Colors.white, marginTop: 2 },
+  statTileValue: { fontSize: 19, fontWeight: '900', color: Colors.white, marginTop: 2, fontVariant: ['tabular-nums'] },
   statTileUnit: { fontSize: 11, color: Colors.neutral500, marginTop: 1 },
+
+  controlsRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
+  ctrlBtn: {
+    flex: 1, height: 58, borderRadius: 18, flexDirection: 'row', gap: 8,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  ctrlText: { color: Colors.white, fontSize: 16, fontWeight: '900', letterSpacing: 0.3 },
 
   milestoneBanner: {
     position: 'absolute', top: -20, left: 16, right: 16,
@@ -1535,6 +1846,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.15)',
   },
   takePhotoBtnText: { fontSize: 14, fontWeight: '800' },
+  photoBtnRow: { flexDirection: 'row', gap: 10 },
+  photoBtnHalf: { flex: 1 },
   visibilityPill: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, paddingVertical: 10,

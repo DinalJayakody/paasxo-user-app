@@ -127,7 +127,7 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
   const [loading, setLoading] = useState(true);
   const [celebrating, setCelebrating] = useState(false);
   const [sport, setSport] = useState<Sport>('FUTSAL');
-  const [activeTab, setActiveTab] = useState<'SCORE' | 'EVENTS' | 'STATS'>('SCORE');
+  const [activeTab, setActiveTab] = useState<'EVENTS' | 'STATS'>('EVENTS');
 
   // Animated values
   const scoreAScale = useRef(new Animated.Value(1)).current;
@@ -161,6 +161,27 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
   // Player stats
   const [playerStats, setPlayerStats] = useState<PlayerStat[]>([]);
 
+  // Server sync (tournament mode): every scorer change is saved — score,
+  // status and the full scorecard — so everyone viewing sees the same thing.
+  const dirtyRef = useRef(false);
+  const [saveTick, setSaveTick] = useState(0);
+  const [syncState, setSyncState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  const hydrateDetail = (d: Record<string, any> | null | undefined) => {
+    if (!d || typeof d !== 'object') return;
+    if (d.sport === 'FUTSAL' || d.sport === 'CRICKET' || d.sport === 'PICKLEBALL') setSport(d.sport);
+    if (Array.isArray(d.futsalEvents)) setFutsalEvents(d.futsalEvents);
+    if (Array.isArray(d.cricketInnings)) setCricketInnings(d.cricketInnings);
+    if (typeof d.currentInnings === 'number') setCurrentInnings(d.currentInnings);
+    if (typeof d.totalOvers === 'number') setTotalOvers(d.totalOvers);
+    if (Array.isArray(d.pickleballGames) && d.pickleballGames.length) setPickleballGames(d.pickleballGames);
+    if (typeof d.currentGame === 'number') setCurrentGame(d.currentGame);
+    if (typeof d.setsA === 'number') setSetsA(d.setsA);
+    if (typeof d.setsB === 'number') setSetsB(d.setsB);
+    if (Array.isArray(d.playerStats)) setPlayerStats(d.playerStats);
+    if (typeof d.matchMinute === 'number') setMatchMinute(d.matchMinute);
+  };
+
   // ─── Load ─────────────────────────────────────────────────────────────────
 
   const load = useCallback(async (silent = false) => {
@@ -193,7 +214,11 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
       const teamMap = new Map(teams.map((t) => [t.id, t]));
       const overrides = await tournamentStorage.getMatchOverrides(tournamentId);
       const raw = matchRecords.find((m: any) => String(m.id) === String(matchId));
-      if (raw) setMatch(buildMatchUI(raw, teamMap, overrides[String(matchId)]));
+      if (raw) {
+        setMatch((prev) => (dirtyRef.current && prev ? prev : buildMatchUI(raw, teamMap, overrides[String(matchId)])));
+        // Don't clobber the scorer's unsaved changes with an older server copy.
+        if (!dirtyRef.current) hydrateDetail(raw.detail);
+      }
       setIsOwner(!!user && tournament.createdBy === user.firebaseUid);
     } catch (err) {
       console.warn('Failed to load match', err);
@@ -223,6 +248,32 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
     return () => loop.stop();
   }, [match?.derivedStatus]);
 
+  // Debounced save of the latest state (runs after the render that applied the change).
+  useEffect(() => {
+    if (normalMatchId || !tournamentId || !isOwner || !match || !dirtyRef.current) return;
+    const t = setTimeout(async () => {
+      setSyncState('saving');
+      try {
+        await tournamentApi.updateScore(tournamentId, matchId, {
+          teamAScore: match.teamAScore ?? 0,
+          teamBScore: match.teamBScore ?? 0,
+          status: match.derivedStatus,
+          detail: {
+            sport, futsalEvents, cricketInnings, currentInnings, totalOvers,
+            pickleballGames, currentGame, setsA, setsB, playerStats, matchMinute,
+          },
+        });
+        dirtyRef.current = false;
+        setSyncState('saved');
+      } catch {
+        setSyncState('error'); // the next change (or Retry) tries again
+      }
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saveTick, match?.teamAScore, match?.teamBScore, match?.derivedStatus, futsalEvents, cricketInnings,
+      pickleballGames, setsA, setsB, playerStats, sport, currentInnings, totalOvers]);
+
   // ─── Score helpers ────────────────────────────────────────────────────────
 
   const bumpScore = (which: 'A' | 'B') => {
@@ -239,12 +290,10 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
       await AsyncStorage.setItem(`normal_match_score_${normalMatchId}`, JSON.stringify(next)).catch(() => {});
       return;
     }
-    await tournamentStorage.setMatchOverride(tournamentId, matchId, next);
-    tournamentApi.updateScore(tournamentId, matchId, {
-      teamAScore: next.teamAScore ?? match.teamAScore ?? 0,
-      teamBScore: next.teamBScore ?? match.teamBScore ?? 0,
-      status: next.status,
-    }).catch(() => {});
+    // Offline fallback only — replaced by the server copy once the save lands.
+    tournamentStorage.setMatchOverride(tournamentId, matchId, next).catch(() => {});
+    dirtyRef.current = true;
+    setSaveTick((t) => t + 1);
   };
 
   const adjustScore = (which: 'A' | 'B', delta: number) => {
@@ -739,6 +788,18 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
 
       <ScrollView style={styles.flex1} showsVerticalScrollIndicator={false}>
         {/* Sport selector (only pre-match for owner) */}
+        {isOwner && !normalMatchId && syncState !== 'idle' && (
+          <Pressable
+            disabled={syncState !== 'error'}
+            onPress={() => { dirtyRef.current = true; setSaveTick((t) => t + 1); }}
+            style={[styles.syncPill, syncState === 'error' && styles.syncPillError]}
+            accessibilityRole={syncState === 'error' ? 'button' : 'text'}
+          >
+            <Text style={[styles.syncText, syncState === 'error' && styles.syncTextError]}>
+              {syncState === 'saving' ? 'Saving…' : syncState === 'saved' ? 'Saved · everyone sees this score' : 'Not saved — tap to retry'}
+            </Text>
+          </Pressable>
+        )}
         {renderSportSelector()}
 
         {/* Scoreboard */}
@@ -798,20 +859,21 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
 
         {/* Tab navigation */}
         <View style={styles.tabBar}>
-          {(['SCORE', 'EVENTS', 'STATS'] as const).map((tab) => (
+          {(['EVENTS', 'STATS'] as const).map((tab) => (
             <Pressable
               key={tab}
               onPress={() => setActiveTab(tab)}
               style={[styles.tabItem, activeTab === tab && { borderBottomColor: sportColor }]}
             >
-              <Text style={[styles.tabText, activeTab === tab && { color: sportColor }]}>{tab}</Text>
+              <Text style={[styles.tabText, activeTab === tab && { color: sportColor }]}>
+                {tab === 'EVENTS' ? (sport === 'CRICKET' ? 'BALL BY BALL' : sport === 'PICKLEBALL' ? 'GAMES' : 'TIMELINE') : 'PLAYER STATS'}
+              </Text>
             </Pressable>
           ))}
         </View>
 
         {/* Tab content */}
         <View style={styles.tabContent}>
-          {activeTab === 'SCORE' && renderScoreboard()}
           {activeTab === 'EVENTS' && renderEventsTab()}
           {activeTab === 'STATS' && renderStatsTab()}
         </View>
@@ -942,6 +1004,13 @@ export default function MatchScoringScreen({ tournamentId = '', matchId = '', no
 }
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  syncPill: {
+    alignSelf: 'center', marginTop: 8, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 999,
+    backgroundColor: colors.success + '18',
+  },
+  syncPillError: { backgroundColor: colors.error + '18' },
+  syncText: { fontSize: 12, fontWeight: '700', color: colors.success },
+  syncTextError: { color: colors.error },
   flex1: { flex: 1, backgroundColor: colors.background },
   loadingScreen: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { fontSize: 14, color: colors.textSecondary },

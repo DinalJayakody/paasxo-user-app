@@ -1,3 +1,4 @@
+import { formatProfileActivities } from '../constants/sports';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -23,6 +24,8 @@ import { reelApi } from '../api/reelApi';
 import { resolveAvatarUri } from '../utils/mediaUrl';
 import { PostGrid } from '../components/PostGrid';
 import { ReelGrid } from '../components/ReelGrid';
+import { TaggedPostsTab } from '../components/TaggedPostsTab';
+import { PlayerStatsSection } from '../components/stats/PlayerStatsSection';
 import { PostSummary, ReelSummary } from '../types/api';
 import { FullScreenImageViewer } from '../components/FullScreenImageViewer';
 import { LoadingScreen } from '../components/LoadingScreen';
@@ -194,14 +197,24 @@ export default function FriendProfileScreen() {
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
-      const tasks = [fetchProfile(), fetchPosts()];
-      if (selectedTab === 'Reels') tasks.push(fetchReels());
-      if (selectedTab === 'Stats') tasks.push(fetchActivitySummary());
+      // Same fresh loads as a first visit: profile + posts always; the open tab's
+      // own data now; every other lazy tab is marked stale so it reloads fresh the
+      // next time it's opened instead of showing pre-refresh data.
+      const tasks: Promise<unknown>[] = [fetchProfile(), fetchPosts()];
+      if (selectedTab === 'Reels') tasks.push(fetchReels()); else setReelsLoaded(false);
+      if (selectedTab === 'Stats') tasks.push(fetchActivitySummary()); else setActivitySummaryLoaded(false);
+      setTeamsRefreshKey((k) => k + 1);
+      setTaggedRefreshKey(Date.now());
+      setStatsRefreshKey(Date.now());
       await Promise.all(tasks);
     } finally {
       setRefreshing(false);
     }
   }, [fetchProfile, fetchPosts, fetchReels, fetchActivitySummary, selectedTab]);
+  const [teamsRefreshKey, setTeamsRefreshKey] = useState(0);
+  // A new visit (and every pull-to-refresh) loads tagged posts fresh; switching tabs reuses them.
+  const [taggedRefreshKey, setTaggedRefreshKey] = useState(() => Date.now());
+  const [statsRefreshKey, setStatsRefreshKey] = useState(() => Date.now());
 
   const handleFollowToggle = async () => {
     try {
@@ -237,7 +250,7 @@ export default function FriendProfileScreen() {
   );
 
   const displayName = profile?.displayName || 'Sports Player';
-  const sportsText = Array.isArray(profile?.sports) ? profile.sports.join(' • ').toUpperCase() : sport;
+  const sportsText = formatProfileActivities(Array.isArray(profile?.sports) ? profile.sports : sport, (profile as any)?.otherSports, sport);
   const skillLevel = profile?.skillLevel ? ` • ${String(profile.skillLevel).toUpperCase()}` : '';
   const bioText = profile?.bio || `Passionate ${sport.toLowerCase()} player striving for excellence in every match.`;
   // Jackson strips the "is" prefix from boolean getters (isRestricted() -> "restricted"
@@ -357,27 +370,25 @@ export default function FriendProfileScreen() {
 
   const renderStatsTab = () => (
     <View>
+      {!!userId && (
+        <PlayerStatsSection
+          userId={userId as string}
+          isOwn={false}
+          refreshKey={statsRefreshKey}
+          colors={colors}
+          displayName={displayName}
+        />
+      )}
       <ActivityStatsSection
         summary={activitySummary}
         loading={activitySummaryLoading}
         loaded={activitySummaryLoaded}
         colors={colors}
       />
-
-      <TeamsSection uid={userId as string} colors={colors} />
-      <View style={styles.statsSportBadge}>
-        <Text style={styles.statsSportEmoji}>{sportEmoji}</Text>
-        <Text style={[styles.statsSportLabel, { color: sportColor }]}>{sport} STATISTICS</Text>
-      </View>
+      <TeamsSection uid={userId as string} colors={colors} refreshKey={teamsRefreshKey} />
     </View>
   );
 
-  const renderEmptyTab = (label: string) => (
-    <View style={styles.emptyTabContent}>
-      <Text style={styles.emptyTabEmoji}>🏷️</Text>
-      <Text style={styles.emptyTabTitle}>No {label} yet</Text>
-    </View>
-  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -459,8 +470,11 @@ export default function FriendProfileScreen() {
                         : 'Follow'}
                 </Text>
               </AnimatedPressable>
-              <AnimatedPressable onPress={() => {}} style={[styles.messageButton, styles.buttonShadow]}>
-                <MessageCircle color={colors.white} size={16} strokeWidth={2} />
+              <AnimatedPressable
+                onPress={() => router.push(`/chat/${encodeURIComponent(userId as string)}?name=${encodeURIComponent(displayName)}` as any)}
+                style={[styles.messageButton, styles.buttonShadow]}
+              >
+                <MessageCircle color={colors.background} size={16} strokeWidth={2} />
                 <Text style={styles.messageButtonText}>Message</Text>
               </AnimatedPressable>
             </View>
@@ -483,7 +497,7 @@ export default function FriendProfileScreen() {
         {selectedTab === 'Moments' && renderMomentsTab()}
         {selectedTab === 'Stats' && renderStatsTab()}
         {selectedTab === 'Reels' && renderReelsTab()}
-        {selectedTab === 'Tagged' && renderEmptyTab('tags')}
+        {selectedTab === 'Tagged' && !!userId && <TaggedPostsTab userId={userId} refreshKey={taggedRefreshKey} isOwn={false} displayName={displayName} />}
       </ScrollView>
 
       <BottomNavbar activeTab="FRIENDS" showCreateButton={false} />
@@ -595,7 +609,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, paddingHorizontal: 20, height: 46, borderRadius: 23, backgroundColor: colors.neutral900,
   },
-  messageButtonText: { color: colors.white, fontSize: 14, fontWeight: '700' },
+  messageButtonText: { color: colors.background, fontSize: 14, fontWeight: '700' },
   buttonShadow: { shadowColor: colors.neutral900, shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
 
   tabRow: {

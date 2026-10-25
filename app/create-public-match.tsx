@@ -45,6 +45,7 @@ import { PlayerSearchSheet, SearchedPlayer } from '../src/components/PlayerSearc
 import { extractApiError } from '../src/utils/apiError';
 import { getTermsOfServiceUrl } from '../src/constants/legal';
 import ScreenGlow from '../src/components/ScreenGlow';
+import ClockTimePicker from '../src/components/ClockTimePicker';
 import { goBack } from '../src/utils/navigation';
 
 // Mirrors the backend's default PlatformProperties.publicSpaceMatchFee (LKR) —
@@ -61,13 +62,6 @@ const SPORTS = [
   { id: 'PADDLEBALL', label: 'Paddleball', emoji: '🎾', color: Colors.paddleball },
 ];
 
-// 06:00–22:00 in 30-minute increments.
-const START_TIME_OPTIONS = Array.from({ length: 33 }, (_, i) => {
-  const totalMinutes = 6 * 60 + i * 30;
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-});
 const DURATION_OPTIONS = [
   { label: '1 hr', minutes: 60 },
   { label: '1.5 hr', minutes: 90 },
@@ -206,6 +200,7 @@ export default function CreatePublicMatch() {
   const [showCalendar, setShowCalendar] = useState(false);
   const [selectedDate, setSelectedDate] = useState('');
   const [startTime, setStartTime] = useState('');
+  const [showClock, setShowClock] = useState(false);
   const [durationMinutes, setDurationMinutes] = useState(60);
 
   const [maxCapacity, setMaxCapacity] = useState('10');
@@ -221,6 +216,13 @@ export default function CreatePublicMatch() {
 
   const currentSport = SPORTS.find((s) => s.id === selectedSport) || SPORTS[0];
   const endTime = startTime ? addMinutes(startTime, durationMinutes) : '';
+  // The match must start in the future (with 15 min to spare when it's today)
+  // and finish by 23:55 the same day — the backend rejects end <= start.
+  const isToday = !!selectedDate && selectedDate === toIsoDate(new Date());
+  const clockMin = isToday ? (() => { const n = new Date(); return n.getHours() * 60 + n.getMinutes() + 15; })() : 0;
+  const clockMax = 24 * 60 - 5 - durationMinutes;
+  const startMinutes = startTime ? (() => { const [h, m] = startTime.split(':').map(Number); return h * 60 + m; })() : null;
+  const startTimeValid = startMinutes != null && startMinutes >= clockMin && startMinutes <= clockMax;
 
   const formatDisplayDate = (dateStr: string) => {
     if (!dateStr) return 'Select a date';
@@ -260,6 +262,22 @@ export default function CreatePublicMatch() {
     }
     if (!selectedDate || !startTime) {
       alert('Please select a date and start time before continuing.');
+      return;
+    }
+    if (!startTimeValid) {
+      alert(startMinutes != null && startMinutes < clockMin
+        ? 'That start time has already passed. Please pick a later time.'
+        : 'The match has to finish by midnight. Pick an earlier start time or a shorter duration.');
+      return;
+    }
+    const maxN = parseInt(maxCapacity, 10);
+    if (!Number.isFinite(maxN) || maxN < 2 || maxN > 100) {
+      alert('Max players must be between 2 and 100.');
+      return;
+    }
+    const minN = minPlayers ? parseInt(minPlayers, 10) : NaN;
+    if (minPlayers && (!Number.isFinite(minN) || minN < 1 || minN > maxN)) {
+      alert('Min players must be at least 1 and no more than max players.');
       return;
     }
     if (!rulesAccepted) {
@@ -331,7 +349,7 @@ export default function CreatePublicMatch() {
           <View style={styles.infoBanner}>
             <Info color={colors.primary} size={16} strokeWidth={2.2} />
             <Text style={styles.infoBannerText}>
-              Organize a match at any public space — a park, beach, or open court. PAASXO charges a flat LKR {PUBLIC_SPACE_FEE_DISPLAY} fee to create it, split evenly across everyone who joins.
+              Organize a match at any public space — a park, beach, or open court. You pay a one-time LKR {PUBLIC_SPACE_FEE_DISPLAY} PAASXO fee to create it — no venue approval needed, and players join free once you approve their request.
             </Text>
           </View>
 
@@ -408,20 +426,23 @@ export default function CreatePublicMatch() {
           {/* Start time */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Start Time</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timeScroll}>
-              {START_TIME_OPTIONS.map((t) => {
-                const active = t === startTime;
-                return (
-                  <Pressable
-                    key={t}
-                    style={[styles.timeChip, active && { backgroundColor: currentSport.color, borderColor: currentSport.color }]}
-                    onPress={() => setStartTime(t)}
-                  >
-                    <Text style={[styles.timeChipText, active && { color: colors.white }]}>{timeLabel(t)}</Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
+            <Pressable
+              style={styles.selectRow}
+              onPress={() => {
+                if (!selectedDate) { alert('Please select a date first.'); return; }
+                setShowClock(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={startTime ? `Start time ${timeLabel(startTime)}` : 'Select a start time'}
+            >
+              <View style={[styles.selectIconWrap, { backgroundColor: currentSport.color + '22' }]}>
+                <Clock color={currentSport.color} size={18} strokeWidth={2.2} />
+              </View>
+              <Text style={[styles.selectRowText, !!startTime && styles.selectRowTextFilled]}>
+                {startTime ? timeLabel(startTime) : 'Select a start time'}
+              </Text>
+              <ChevronRight color={colors.neutral400} size={18} />
+            </Pressable>
           </View>
 
           {/* Duration */}
@@ -443,7 +464,9 @@ export default function CreatePublicMatch() {
               })}
             </View>
             {!!startTime && (
-              <Text style={styles.venueSubtext}>{timeLabel(startTime)} – {timeLabel(endTime)}</Text>
+              <Text style={[styles.venueSubtext, !startTimeValid && { color: colors.error }]}>
+                {timeLabel(startTime)} – {timeLabel(endTime)}{!startTimeValid ? (startMinutes != null && startMinutes < clockMin ? ' · start time has passed' : ' · must finish by midnight') : ''}
+              </Text>
             )}
           </View>
 
@@ -539,7 +562,7 @@ export default function CreatePublicMatch() {
             <View style={{ flex: 1 }}>
               <Text style={styles.feeCardTitle}>LKR {PUBLIC_SPACE_FEE_DISPLAY} — PAASXO Public Match Fee</Text>
               <Text style={styles.feeCardSub}>
-                Split evenly between every player who joins (LKR {Math.round(PUBLIC_SPACE_FEE_DISPLAY / (parseInt(maxCapacity || '1', 10) || 1))}/player at {maxCapacity || '1'} max players). Paid securely via PayHere, refundable up to 48 hours before kickoff.
+                Paid once by you, the organiser — players who join don't pay anything. The match goes live as soon as the fee is paid (no venue approval). Paid securely via PayHere, refundable up to 48 hours before kickoff.
               </Text>
             </View>
           </View>
@@ -644,6 +667,17 @@ export default function CreatePublicMatch() {
         selectedDate={selectedDate}
         onSelect={setSelectedDate}
         colors={colors}
+      />
+
+      <ClockTimePicker
+        visible={showClock}
+        value={startTime}
+        minMinutes={clockMin}
+        maxMinutes={clockMax}
+        accent={currentSport.color}
+        title="Match start time"
+        onCancel={() => setShowClock(false)}
+        onConfirm={(t) => { setStartTime(t); setShowClock(false); }}
       />
 
       <PlayerSearchSheet

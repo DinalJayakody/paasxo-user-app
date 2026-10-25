@@ -28,7 +28,8 @@ import HeaderIconButton from '../components/HeaderIconButton';
 import { useAuth } from '../context/AuthContext';
 import { userApi } from '../api/userApi';
 import { resolveAvatarUri } from '../utils/mediaUrl';
-import { SPORTS } from '../constants/sports';
+import { OTHER_SPORT_ID, cleanOtherSports } from '../constants/sports';
+import { ActivityPicker } from '../components/ActivityPicker';
 import ScreenGlow from '../components/ScreenGlow';
 import { goBack } from '../utils/navigation';
 
@@ -57,6 +58,7 @@ export default function EditProfileScreen() {
   const [bio, setBio] = useState(user?.bio || '');
   const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber || '');
   const [selectedSports, setSelectedSports] = useState<string[]>(initialSports);
+  const [otherSports, setOtherSports] = useState(user?.otherSports || '');
   const [skillLevel, setSkillLevel] = useState(user?.skillLevel ? user.skillLevel.toUpperCase() : 'BEGINNER');
   const [locationAccess, setLocationAccess] = useState(!!user?.locationAccess);
   const [weightKg, setWeightKg] = useState(user?.weightKg ? String(user.weightKg) : '');
@@ -134,6 +136,11 @@ export default function EditProfileScreen() {
       setError('Select at least one activity');
       return;
     }
+    const cleanedOther = selectedSports.includes(OTHER_SPORT_ID) ? cleanOtherSports(otherSports) : '';
+    if (selectedSports.includes(OTHER_SPORT_ID) && !cleanedOther) {
+      setError('Tell us which other activities you do');
+      return;
+    }
     const trimmedWeight = weightKg.trim();
     const parsedWeight = trimmedWeight ? Number(trimmedWeight) : undefined;
     if (trimmedWeight && (Number.isNaN(parsedWeight) || parsedWeight! < 20 || parsedWeight! > 300)) {
@@ -148,6 +155,7 @@ export default function EditProfileScreen() {
         bio: bio.trim(),
         phoneNumber: phoneNumber.trim(),
         sports: selectedSports,
+        otherSports: cleanedOther,
         skillLevel,
         locationAccess,
         weightKg: parsedWeight,
@@ -279,22 +287,13 @@ export default function EditProfileScreen() {
           {/* Sports */}
           <View style={styles.card}>
             <Text style={styles.sectionLabel}>ACTIVITIES</Text>
-            <View style={styles.chipsGrid}>
-              {SPORTS.map((sport) => {
-                const Icon = sport.icon;
-                const active = selectedSports.includes(sport.id);
-                return (
-                  <Pressable
-                    key={sport.id}
-                    style={[styles.chip, active && styles.chipActive]}
-                    onPress={() => toggleSport(sport.id)}
-                  >
-                    <Icon color={active ? colors.primary : colors.textSecondary} size={14} strokeWidth={2} />
-                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{sport.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <ActivityPicker
+              selected={selectedSports}
+              onToggle={toggleSport}
+              otherText={otherSports}
+              onOtherTextChange={setOtherSports}
+              accountType={user?.accountType === 'VENDOR' ? 'VENDOR' : 'USER'}
+            />
           </View>
 
           {/* Skill level */}

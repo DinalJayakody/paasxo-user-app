@@ -20,6 +20,9 @@ import ScreenGlow from '../components/ScreenGlow';
 import { communityApi, Community } from '../api/communityApi';
 import { resolveMediaUrl } from '../utils/mediaUrl';
 import { goBack } from '../utils/navigation';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 type Tab = 'MINE' | 'DISCOVER';
 
@@ -37,8 +40,13 @@ export default function CommunitiesScreen() {
   const [hasMore, setHasMore] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = useCallback(async (targetPage: number, append: boolean) => {
-    if (append) setLoadingMore(true); else setLoading(true);
+  // Only the newest request may apply its result — a slow "load more" can't
+  // append onto a list that a pull-to-refresh has since replaced.
+  const requestId = useRef(0);
+  // silent: pull-to-refresh keeps the current list visible while reloading.
+  const load = useCallback(async (targetPage: number, append: boolean, silent = false) => {
+    const id = ++requestId.current;
+    if (append) setLoadingMore(true); else if (!silent) setLoading(true);
     try {
       const q = query.trim();
       const result = q.length > 0
@@ -46,16 +54,20 @@ export default function CommunitiesScreen() {
         : tab === 'MINE'
           ? await communityApi.getMine(targetPage)
           : await communityApi.discover(targetPage);
+      if (id !== requestId.current) return;
       setCommunities((prev) => (append ? [...prev, ...result.content] : result.content));
       setPage(targetPage);
       setHasMore(result.hasMore);
     } catch {
-      if (!append) setCommunities([]);
+      if (id !== requestId.current) return;
+      if (!append && !silent) setCommunities([]);
       setHasMore(false);
     } finally {
-      if (append) setLoadingMore(false); else setLoading(false);
+      if (append) setLoadingMore(false); else if (!silent) setLoading(false);
     }
   }, [tab, query]);
+
+  const { refreshing, onRefresh } = usePullToRefresh(() => load(0, false, true));
 
   // Tab switch — immediate, no debounce needed.
   useEffect(() => {
@@ -162,7 +174,10 @@ export default function CommunitiesScreen() {
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
       ) : (
+        <View style={{ flex: 1 }}>
+        <PaasxoRefreshLogo refreshing={refreshing} />
         <FlatList
+          refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           data={communities}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
@@ -179,6 +194,7 @@ export default function CommunitiesScreen() {
           }
           ListFooterComponent={loadingMore ? <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} /> : null}
         />
+        </View>
       )}
     </SafeAreaView>
   );

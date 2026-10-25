@@ -20,10 +20,36 @@ export interface StoryItem {
   isBoomerang?: boolean;
   audioTrackUrl?: string;
   audioVolume?: number;
+  taggedUsers?: { firebaseUid: string; displayName: string; profileImageUrl?: string }[];
+  captionStyle?: string;
+  captionScale?: number;
+  locationName?: string;
+  locationPlaceId?: string;
+  locationLat?: number;
+  locationLng?: number;
+  locationX?: number;
+  locationY?: number;
+  effect?: string;
+  /** Video posted with its sound off. */
+  soundOff?: boolean;
+  /** You may reply to this story (it's not yours and the author allows replies). */
+  canReply?: boolean;
+  /** You're tagged and may add this story to yours. */
+  canReshare?: boolean;
+  resharedFromStoryId?: string | null;
+  resharedFromUid?: string | null;
+  resharedFromName?: string | null;
   viewCount: number;
   viewedByMe: boolean;
   createdAt: string;
   expiresAt: string;
+}
+
+export interface StorySettings {
+  repliesEnabled: boolean;
+  allowReshare: boolean;
+  hiddenFromUids: string[];
+  hiddenFrom: { firebaseUid: string; displayName: string; profileImageUrl?: string }[];
 }
 
 export interface UserStoryGroup {
@@ -53,6 +79,17 @@ export const storyApi = {
     audioTrackId?: string;
     audioTrackUrl?: string;
     audioVolume?: number;
+    taggedUserIds?: string[];
+    captionStyle?: string;
+    captionScale?: number;
+    locationName?: string;
+    locationPlaceId?: string;
+    locationLat?: number;
+    locationLng?: number;
+    locationX?: number;
+    locationY?: number;
+    effect?: string;
+    soundOff?: boolean;
   }): Promise<StoryItem> => {
     const formData = new FormData();
     formData.append('media', {
@@ -76,6 +113,21 @@ export const storyApi = {
     if (params.audioTrackId) formData.append('audioTrackId', params.audioTrackId);
     if (params.audioTrackUrl) formData.append('audioTrackUrl', params.audioTrackUrl);
     if (params.audioVolume != null) formData.append('audioVolume', String(params.audioVolume));
+    if (params.taggedUserIds?.length) formData.append('taggedUserIds', params.taggedUserIds.join(','));
+    if (params.captionText && params.captionStyle) formData.append('captionStyle', params.captionStyle);
+    if (params.captionText && params.captionScale != null) formData.append('captionScale', String(params.captionScale));
+    if (params.locationName) {
+      formData.append('locationName', params.locationName);
+      if (params.locationPlaceId) formData.append('locationPlaceId', params.locationPlaceId);
+      if (params.locationLat != null && params.locationLng != null) {
+        formData.append('locationLat', String(params.locationLat));
+        formData.append('locationLng', String(params.locationLng));
+      }
+      if (params.locationX != null) formData.append('locationX', String(params.locationX));
+      if (params.locationY != null) formData.append('locationY', String(params.locationY));
+    }
+    if (params.effect) formData.append('effect', params.effect);
+    if (params.soundOff && params.mediaType === 'VIDEO') formData.append('soundOff', 'true');
     // Boomerang processing (server-side ffmpeg) adds real time on top of the
     // upload itself, on top of the same real-network timeout issue reels had.
     // Video stories can be just as large as reels (see reelApi.ts's
@@ -94,6 +146,18 @@ export const storyApi = {
     return Array.isArray(data) ? data : [];
   },
 
+  // One live story (shared link / tag notification) — privacy-checked server-side.
+  getStory: async (storyId: string): Promise<StoryItem> => {
+    const { data } = await axiosInstance.get(`/stories/${encodeURIComponent(storyId)}`);
+    return data;
+  },
+
+  // Who has seen your own story.
+  getViewers: async (storyId: string): Promise<{ firebaseUid: string; displayName: string; profileImageUrl?: string }[]> => {
+    const { data } = await axiosInstance.get(`/stories/${encodeURIComponent(storyId)}/viewers`);
+    return Array.isArray(data) ? data : [];
+  },
+
   getMyStories: async (): Promise<StoryItem[]> => {
     const { data } = await axiosInstance.get(ENDPOINTS.STORIES.MY);
     return Array.isArray(data) ? data : [];
@@ -101,6 +165,27 @@ export const storyApi = {
 
   markViewed: async (storyId: string): Promise<void> => {
     await axiosInstance.post(ENDPOINTS.STORIES.VIEW(storyId)).catch(() => {});
+  },
+
+  getSettings: async (): Promise<StorySettings> => {
+    const { data } = await axiosInstance.get('/stories/settings');
+    return data;
+  },
+
+  updateSettings: async (patch: { repliesEnabled?: boolean; allowReshare?: boolean; hiddenFromUids?: string[] }): Promise<StorySettings> => {
+    const { data } = await axiosInstance.put('/stories/settings', patch);
+    return data;
+  },
+
+  /** Reply to someone's story — it lands in your chat with them. */
+  reply: async (storyId: string, text: string): Promise<void> => {
+    await axiosInstance.post(`/stories/${encodeURIComponent(storyId)}/reply`, { text });
+  },
+
+  /** Add a story you're tagged in to your own story. */
+  reshare: async (storyId: string): Promise<StoryItem> => {
+    const { data } = await axiosInstance.post(`/stories/${encodeURIComponent(storyId)}/reshare`);
+    return data;
   },
 
   deleteStory: async (storyId: string): Promise<void> => {

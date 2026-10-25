@@ -103,10 +103,17 @@ android {
         applicationId 'com.paasxo.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
+        versionCode 14
         versionName "1.0.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
+
+        // Google Maps SDK for Android key (react-native-maps). Supplied at build
+        // time — env var or gradle property — never committed. An empty value
+        // still lets map screens open (blank tiles) instead of crashing.
+        manifestPlaceholders = [
+            googleMapsApiKey: (System.getenv('GOOGLE_MAPS_ANDROID_API_KEY') ?: findProperty('GOOGLE_MAPS_ANDROID_API_KEY')) ?: ''
+        ]
     }
     signingConfigs {
         debug {

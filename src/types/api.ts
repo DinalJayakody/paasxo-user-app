@@ -15,6 +15,8 @@ export interface RegisterPayload {
   displayName: string;
   phoneNumber: string;
   sports: string[];
+  // Free text behind the "Other" activity chip (e.g. "Swimming, Yoga").
+  otherSports?: string;
   referralCode?: string;
   // 'USER' (Personal Account) or 'VENDOR' (Service Provider) — see
   // AuthService#register on the backend, which already fully supports both;
@@ -37,6 +39,7 @@ export interface UserProfile {
   phoneNumber: string;
   sport: string | string[];
   sports?: string[];
+  otherSports?: string | null;
   skillLevel: string;
   locationAccess: boolean;
   referralCode?: string;
@@ -86,8 +89,16 @@ export interface UserCard {
 
 // Mirrors the backend's PostResponse exactly - the shape every screen that
 // renders a post (Feed, my Profile, a friend's Profile) works with.
+/** A user tagged on a post/story. */
+export interface TaggedUser {
+  firebaseUid: string;
+  displayName: string;
+  profileImageUrl?: string;
+}
+
 export interface PostSummary {
   id: string;
+  taggedUsers?: TaggedUser[];
   authorId: string;
   authorDisplayName: string;
   authorProfileImageUrl?: string;
@@ -191,14 +202,16 @@ export interface ReelSummary {
 
 export interface CompleteProfilePayload {
   sports: string[];
+  otherSports?: string;
   referralCode?: string;
 }
 
 export type CreatePostPayload = {
   caption: string;
   media: any;
-  sport: string;
-  taggedUsers?: string[];
+  sport?: string;
+  // Firebase uids to tag — validated/filtered server-side.
+  taggedUserIds?: string[];
   latitude?: number;
   longitude?: number;
   locationName?: string;
@@ -384,6 +397,14 @@ export interface MatchInningsSummary {
   ballsInOver: number;
   batting: MatchBattingFigure[];
   bowling: MatchBowlingFigure[];
+  // Older servers omit these.
+  extrasWides?: number;
+  extrasNoBalls?: number;
+  extrasByes?: number;
+  extrasLegByes?: number;
+  fallOfWickets?: string[];
+  /** False when only innings totals were kept (no ball-by-ball entry). */
+  ballByBall?: boolean;
 }
 
 export interface MatchScorecard {
@@ -458,6 +479,9 @@ export interface MatchDetails {
   // ordinary match.
   organizerTeamId?: string;
   opponentTeamId?: string;
+  // Team Match Challenge listed openly in Explore -> Team vs Team, where any
+  // nearby same-sport team can claim the opponent spot by paying half.
+  openTeamChallenge?: boolean;
 }
 
 export interface CreateBookingPayload {
@@ -518,7 +542,9 @@ export type PaymentOrderType =
   // The challenged team's captain paying half of a Team Match Challenge's
   // totalPrice to accept it — orderId is a TeamChallengeAcceptOrder id (see
   // backend's doc comment on that entity). See TeamChallengePaymentListener.
-  | 'TEAM_CHALLENGE_ACCEPT';
+  | 'TEAM_CHALLENGE_ACCEPT'
+  // Buying a trainer's workout/diet plan or membership — orderId is a TrainerPlanOrder id.
+  | 'TRAINER_PLAN';
 
 export type PaymentTransactionStatus =
   | 'INITIATED'
@@ -577,14 +603,10 @@ export interface PaymentStatusResponse {
 // Tournaments
 // ---------------------------------------------------------------------------
 // Shapes below mirror com.pasxo.dto.booking.Tournament*Response exactly.
-// The backend supports: create/list/get tournament, create/list teams,
-// add/list team players, create/list matches. There is NO endpoint to
-// update a match score or to transition tournament/match status - those
-// fields exist on the backend entities (teamAScore/teamBScore, status) but
-// nothing writes to them yet. The frontend manages scoring + a richer
-// lifecycle locally (see src/utils/tournamentStorage.ts) until the backend
-// adds real persistence, while still trying the real REST call first so it
-// upgrades automatically the day that endpoint exists.
+// Scores, match status and the full scorecard detail are saved on the server
+// (PATCH /tournaments/{id}/matches/{id}/score, organiser only). A local
+// override (src/utils/tournamentStorage.ts) is kept only as an offline
+// fallback until the save goes through.
 
 export interface TournamentRecord {
   id: number;
@@ -595,12 +617,23 @@ export interface TournamentRecord {
   createdBy: string; // firebaseUid of the creator
   status: string; // backend always sends "ACTIVE" today
   slotIds: number[];
+  /** Public (anyone can join) vs private (invite only). */
+  isOpen?: boolean;
+  maxTeams?: number | null;
 }
+
+export type TournamentTeamStatus = 'INVITED' | 'JOINED' | 'DECLINED';
 
 export interface TournamentTeamRecord {
   id: number;
   name: string;
   playerCount: number;
+  /** Older servers omit it — treat as JOINED. */
+  status?: TournamentTeamStatus;
+  /** Linked app Team (when an existing team was invited / joined). */
+  appTeamId?: string | null;
+  logoUrl?: string | null;
+  captainFirebaseUid?: string | null;
 }
 
 export interface TournamentPlayerRecord {
@@ -620,9 +653,13 @@ export interface TournamentMatchRecord {
   slotDate?: string;
   startTime?: string;
   endTime?: string;
-  status: string; // backend always sends "SCHEDULED" today
+  status: string;
   teamAScore?: number;
   teamBScore?: number;
+  /** Scorer's full scorecard (events, innings, games, player stats). */
+  detail?: Record<string, any> | null;
+  /** Set once the server has a score — newer than any local override. */
+  scoreUpdatedAt?: string | null;
 }
 
 // Request payloads - match com.pasxo.dto.booking.Tournament*Request exactly.
@@ -635,6 +672,8 @@ export interface CreateTournamentPayload {
   // tournament is discoverable and announces itself to the organizer's
   // followers via the feed (see SocialService.createTournamentAnnouncementPost).
   isOpen?: boolean;
+  /** Joined-team cap for a public tournament. */
+  maxTeams?: number;
 }
 
 export interface CreateTournamentTeamPayload {
@@ -681,7 +720,8 @@ export interface TournamentUI extends TournamentRecord {
 // ─── Trainer domain — mirrors mobile-app-paasxo's dto.trainer.* responses exactly ──
 
 export type TrainerCategory =
-  | 'GYM' | 'CALISTHENICS' | 'DANCING' | 'YOGA' | 'CROSSFIT' | 'MARTIAL_ARTS' | 'PILATES' | 'OTHER';
+  | 'GYM' | 'CALISTHENICS' | 'DANCING' | 'YOGA' | 'CROSSFIT' | 'MARTIAL_ARTS' | 'PILATES' | 'OTHER'
+  | 'BODYBUILDING' | 'ZUMBA';
 
 export interface TrainerProfile {
   id: number;
@@ -696,6 +736,8 @@ export interface TrainerProfile {
   profileImageUrl?: string;
   coverImageUrl?: string;
   galleryImageUrls?: string[];
+  specialities?: string[];
+  media?: { url: string; mediaType: 'IMAGE' | 'VIDEO'; thumbnailUrl?: string | null }[];
   location?: string;
   latitude?: number;
   longitude?: number;
@@ -721,6 +763,7 @@ export interface TrainerSession {
   latitude?: number;
   longitude?: number;
   price: number;
+  promotion?: import('../utils/promotion').Promotion | null;
   durationMinutes: number;
   capacity: number;
   daysOfWeek: DayOfWeekName[];
@@ -827,7 +870,9 @@ export interface SendChallengePayload {
 // com.pasxo.dto.team.TeamMatchChallengeResponse / TeamMatchChallengeStatus.
 // ---------------------------------------------------------------------------
 
-export type TeamMatchChallengeStatus = 'PENDING_PAYMENT' | 'ACCEPTED' | 'DECLINED';
+// EXPIRED: another team took the spot first, the organizer closed the open
+// listing, or the match was cancelled — a late payment is refunded automatically.
+export type TeamMatchChallengeStatus = 'PENDING_PAYMENT' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED';
 
 export interface TeamMatchChallenge {
   id: string;
@@ -837,8 +882,110 @@ export interface TeamMatchChallenge {
   challengedTeamId: string;
   challengedTeamName?: string;
   status: TeamMatchChallengeStatus;
+  // true = the challenged team picked this match from the open listing itself.
+  openJoin?: boolean;
   totalPrice: number;
   amountDue: number;
   createdAt: string;
   respondedAt?: string;
+  // Match summary (so a requests list needs no extra fetch per challenge).
+  organizerTeamLogoUrl?: string;
+  challengedTeamLogoUrl?: string;
+  sport?: string;
+  venueName?: string;
+  locationName?: string;
+  slotDate?: string;
+  startTime?: string;
+  endTime?: string;
+  // Accepting (paying) is only possible once the venue has confirmed the booking.
+  venueConfirmed?: boolean;
+}
+
+// One open Team Match Challenge in Explore -> Team vs Team. Mirrors
+// com.pasxo.dto.team.OpenTeamMatchResponse.
+export interface OpenTeamMatch {
+  bookingId: number;
+  title?: string;
+  sport: string;
+  organizerTeamId: string;
+  organizerTeamName: string;
+  organizerTeamLogoUrl?: string;
+  organizerTeamMemberCount: number;
+  futsalId?: number;
+  venueName?: string;
+  locationName?: string;
+  imageUrl?: string;
+  latitude?: number;
+  longitude?: number;
+  distanceKm?: number | null;
+  slotDate: string;   // YYYY-MM-DD
+  startTime: string;  // HH:mm[:ss]
+  endTime?: string;
+  totalPrice: number;
+  amountDue: number;  // half of totalPrice — what the joining team pays
+  isMine: boolean;    // caller is on the organizing team
+}
+
+// Mirrors com.pasxo.dto.team.OpenJoinOrderResponse.
+export interface OpenJoinOrder {
+  challengeId: string;
+  paymentOrderId: number; // -> paymentApi.initiateCheckout('TEAM_CHALLENGE_ACCEPT', ...)
+  amountDue: number;
+  totalPrice: number;
+}
+
+// ─── Trainer plans (T4 workout, T5 diet, T6 membership) ───────────────────────
+export type TrainerPlanType = 'WORKOUT' | 'DIET' | 'MEMBERSHIP';
+
+export interface TrainerPlan {
+  id: number;
+  trainerFirebaseUid: string;
+  trainerDisplayName?: string;
+  type: TrainerPlanType;
+  title: string;
+  summary?: string | null;
+  /** Only sent to buyers (and the trainer). */
+  content?: string | null;
+  price?: number | null;
+  durationWeeks?: number | null;
+  billingPeriod?: 'MONTHLY' | 'ANNUAL' | null;
+  active: boolean;
+  purchased?: boolean;
+  accessUntil?: string | null;
+  /** WORKOUT/DIET: the trainer writes each client their own plan after purchase. */
+  personalised?: boolean;
+  /** Viewer's own purchase id (when purchased). */
+  myPurchaseId?: number | null;
+  /** The plan the trainer wrote for the viewer. */
+  personalContent?: string | null;
+  personalUpdatedAt?: string | null;
+  /** What the viewer told the trainer (goals, allergies…). */
+  clientNote?: string | null;
+}
+
+export interface TrainerPlanPurchase {
+  id: number;
+  planId: number;
+  planType: TrainerPlanType;
+  planTitle: string;
+  trainerFirebaseUid: string;
+  trainerDisplayName?: string;
+  pricePaid: number;
+  status: 'ACTIVE' | 'CANCELLED';
+  startsAt: string;
+  expiresAt: string;
+  purchasedAt: string;
+  refundable?: boolean;
+  personalContent?: string | null;
+  personalUpdatedAt?: string | null;
+  clientNote?: string | null;
+  assignedByTrainer?: boolean;
+  personalised?: boolean | null;
+}
+
+export interface TrainerPlanOrderResponse {
+  purchased: boolean;
+  paymentOrderId?: number | null;
+  amountDue?: number | null;
+  message?: string;
 }

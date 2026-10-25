@@ -1,8 +1,14 @@
+import { OpponentPickerSheet } from '@/src/components/team/OpponentPickerSheet';
+import { resolveMediaUrl } from '@/src/utils/mediaUrl';
+import * as Location from 'expo-location';
+import { clearChallengeOpponent, rememberChallengeOpponent } from '@/src/utils/pendingTeamChallenge';
+import { localYMD } from '@/src/utils/localDate';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -12,10 +18,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-  ArrowLeft, Search, MapPin, Calendar, Clock, Swords, ChevronRight, X, Shield, Users,
+  ArrowLeft, Search, MapPin, Calendar, Clock, Swords, ChevronRight, X, Shield, Users, Globe, Target,
 } from 'lucide-react-native';
 import { ThemeColors, Colors } from '@/src/styles/colors';
 import { useTheme } from '@/src/context/ThemeContext';
@@ -29,6 +35,9 @@ import { teamMatchApi } from '@/src/api/teamMatchApi';
 import { Team } from '@/src/types/api';
 import { extractApiError } from '@/src/utils/apiError';
 import { goBack } from '@/src/utils/navigation';
+import { isTeamMatchSport, teamMatchSportLabel } from '@/src/constants/teamMatchSports';
+
+type OpponentMode = 'DIRECT' | 'OPEN';
 
 function nextDays(count: number): { ymd: string; label: string; dow: string }[] {
   const out = [];
@@ -37,7 +46,7 @@ function nextDays(count: number): { ymd: string; label: string; dow: string }[] 
     const d = new Date(now);
     d.setDate(now.getDate() + i);
     out.push({
-      ymd: d.toISOString().split('T')[0],
+      ymd: localYMD(d),
       label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : String(d.getDate()),
       dow: d.toLocaleDateString(undefined, { weekday: 'short' }),
     });
@@ -51,6 +60,11 @@ export default function CreateTeamChallengeMatchScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
   const { user } = useAuth();
+  const params = useLocalSearchParams<{ mode?: string; teamId?: string; opponentTeamId?: string; opponentName?: string }>();
+  // DIRECT: pick one team to challenge after paying. OPEN: list it in
+  // Explore -> Team vs Team for any nearby same-sport team to take on.
+  const [opponentMode, setOpponentMode] = useState<OpponentMode>(params.mode === 'open' ? 'OPEN' : 'DIRECT');
+  const [ineligibleTeamCount, setIneligibleTeamCount] = useState(0);
 
   const [loadingTeams, setLoadingTeams] = useState(true);
   const [myCaptainedTeams, setMyCaptainedTeams] = useState<Team[]>([]);
@@ -69,14 +83,37 @@ export default function CreateTeamChallengeMatchScreen() {
   const [pricePerSlot, setPricePerSlot] = useState<number | null>(null);
 
   const [title, setTitle] = useState('');
+  // Chosen BEFORE paying, so the challenge goes out automatically afterwards.
+  const [opponent, setOpponent] = useState<Team | null>(null);
+  const [opponentPickerVisible, setOpponentPickerVisible] = useState(false);
+  const [near, setNear] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  useEffect(() => {
+    // Best effort, never prompts: only used to sort suggestions by distance.
+    Location.getForegroundPermissionsAsync()
+      .then((p) => (p.granted ? Location.getLastKnownPositionAsync() : null))
+      .then((pos) => { if (pos) setNear({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!params.opponentTeamId) return;
+    teamApi.getTeam(String(params.opponentTeamId)).then(setOpponent).catch(() => {});
+  }, [params.opponentTeamId]);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     teamApi.getMyTeams()
       .then((teams) => {
-        const captained = teams.filter((t) => t.captainFirebaseUid === user?.firebaseUid);
+        const allCaptained = teams.filter((t) => t.captainFirebaseUid === user?.firebaseUid);
+        // Team matches only exist for Futsal/Cricket/Pickleball/Paddleball (enforced server-side too).
+        const captained = allCaptained.filter((t) => isTeamMatchSport(t.sport));
+        setIneligibleTeamCount(allCaptained.length - captained.length);
         setMyCaptainedTeams(captained);
-        if (captained.length === 1) setOrganizerTeamId(captained[0].id);
+        // Opened from a team page: that team (if I captain it) organises.
+        const preferred = params.teamId && captained.find((t) => t.id === params.teamId);
+        if (preferred) setOrganizerTeamId(preferred.id);
+        else if (captained.length === 1) setOrganizerTeamId(captained[0].id);
       })
       .catch(() => setMyCaptainedTeams([]))
       .finally(() => setLoadingTeams(false));
@@ -141,7 +178,13 @@ export default function CreateTeamChallengeMatchScreen() {
   const totalCost = (pricePerSlot ?? 0) * selectedSlotIds.length;
   const organizerTeam = myCaptainedTeams.find((t) => t.id === organizerTeamId) || null;
 
-  const canSubmit = !!organizerTeamId && !!selectedVenue && !!selectedDate && selectedSlotIds.length > 0 && !submitting;
+  // An opponent of a different sport can't be challenged — drop it if the organising team changes.
+  useEffect(() => {
+    if (opponent && organizerTeam && opponent.sport !== organizerTeam.sport) setOpponent(null);
+  }, [organizerTeam, opponent]);
+
+  const canSubmit = !!organizerTeamId && !!selectedVenue && !!selectedDate && selectedSlotIds.length > 0
+    && (opponentMode === 'OPEN' || !!opponent) && !submitting;
 
   const handleSubmit = async () => {
     if (!canSubmit || !organizerTeamId || !selectedVenue) return;
@@ -155,8 +198,16 @@ export default function CreateTeamChallengeMatchScreen() {
         title: title.trim() || `${organizerTeam?.name ?? 'Team'} Match Challenge`,
         sport: organizerTeam?.sport,
         date: selectedDate,
+        openChallenge: opponentMode === 'OPEN',
       });
       const bookingId = booking?.id ?? booking?.data?.id;
+      // Challenge started from an opponent's team page: carry that opponent
+      // across payment so it's one tap to send the challenge afterwards.
+      if (opponentMode === 'DIRECT' && opponent) {
+        await rememberChallengeOpponent(opponent.id, opponent.name);
+      } else {
+        await clearChallengeOpponent();
+      }
       router.replace(`/checkout/${bookingId}` as any);
     } catch (err) {
       Alert.alert('Could not create match', extractApiError(err, 'Please try again.'));
@@ -169,15 +220,16 @@ export default function CreateTeamChallengeMatchScreen() {
     <SafeAreaView style={styles.flex1} edges={['top']}>
       <ScreenGlow />
       <View style={styles.header}>
-        <HeaderIconButton onPress={() => goBack(router)} style={styles.headerIconBtn} hitSlop={8}>
-          <ArrowLeft color={colors.white} size={20} strokeWidth={2.2} />
-        </HeaderIconButton>
-        <Text style={styles.title}>Challenge a Team</Text>
-        <View style={styles.headerIconBtn} />
+        {/* Gradient first — it was drawn over the back button and title. */}
         <LinearGradient
           colors={[colors.primaryAccent, colors.primary, colors.primaryDark]}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill}
         />
+        <HeaderIconButton onPress={() => goBack(router)} style={styles.headerIconBtn} hitSlop={8} accessibilityLabel="Back">
+          <ArrowLeft color={colors.white} size={20} strokeWidth={2.2} />
+        </HeaderIconButton>
+        <Text style={styles.title}>{opponentMode === 'OPEN' ? 'Post an Open Challenge' : 'Challenge a Team'}</Text>
+        <View style={styles.headerIconBtn} />
       </View>
 
       {loadingTeams ? (
@@ -186,7 +238,11 @@ export default function CreateTeamChallengeMatchScreen() {
         <View style={styles.center}>
           <Swords color={colors.neutral300} size={44} strokeWidth={1.5} />
           <Text style={styles.emptyTitle}>You need a team first</Text>
-          <Text style={styles.emptyText}>Create a team and you'll be its captain — only captains can book a Team Match Challenge.</Text>
+          <Text style={styles.emptyText}>
+            {ineligibleTeamCount > 0
+              ? "Team matches are for Futsal, Cricket, Pickleball and Paddleball teams. Create one of those from your Profile — you'll be its captain."
+              : "Create a team and you'll be its captain — only captains can book a Team Match Challenge."}
+          </Text>
           <Pressable style={styles.primaryBtn} onPress={() => router.push('/create-team' as any)}>
             <Text style={styles.primaryBtnText}>Create a Team</Text>
           </Pressable>
@@ -207,6 +263,57 @@ export default function CreateTeamChallengeMatchScreen() {
                   </Pressable>
                 ))}
               </ScrollView>
+            </View>
+          )}
+
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>FIND AN OPPONENT</Text>
+            <View style={styles.modeRow}>
+              {([
+                { id: 'DIRECT', Icon: Target, title: 'Challenge a team', sub: 'Pick the team now — they get the challenge when you pay' },
+                { id: 'OPEN', Icon: Globe, title: 'Open challenge', sub: 'Any nearby team can take it on' },
+              ] as const).map(({ id, Icon, title, sub }) => {
+                const active = opponentMode === id;
+                return (
+                  <Pressable
+                    key={id}
+                    style={[styles.modeCard, active && styles.modeCardActive]}
+                    onPress={() => setOpponentMode(id)}
+                  >
+                    <Icon color={active ? colors.primary : colors.textMuted} size={18} strokeWidth={2.2} />
+                    <Text style={[styles.modeTitle, active && styles.modeTitleActive]}>{title}</Text>
+                    <Text style={styles.modeSub}>{sub}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          {opponentMode === 'DIRECT' && (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>OPPONENT</Text>
+              <Pressable style={styles.venueCard} onPress={() => setOpponentPickerVisible(true)} accessibilityRole="button">
+                {opponent ? (
+                  <>
+                    {resolveMediaUrl(opponent.logoUrl) ? (
+                      <Image source={{ uri: resolveMediaUrl(opponent.logoUrl)! }} style={styles.opponentLogo} />
+                    ) : (
+                      <View style={styles.venueIconWrap}><Shield color={colors.primary} size={18} strokeWidth={2} /></View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.venueName} numberOfLines={1}>{opponent.name}</Text>
+                      <Text style={styles.venueLocation} numberOfLines={1}>{opponent.members?.length ?? 0} players · tap to change</Text>
+                    </View>
+                    <ChevronRight color={colors.neutral400} size={18} />
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.venueIconWrap}><Users color={colors.primary} size={18} strokeWidth={2} /></View>
+                    <Text style={styles.venuePlaceholder}>Choose a team to challenge</Text>
+                    <ChevronRight color={colors.neutral400} size={18} />
+                  </>
+                )}
+              </Pressable>
             </View>
           )}
 
@@ -299,7 +406,9 @@ export default function CreateTeamChallengeMatchScreen() {
                 <Text style={styles.summaryTotal}>LKR {totalCost.toFixed(2)}</Text>
               </View>
               <Text style={styles.summaryHint}>
-                After payment, you'll choose which team to challenge — they'll pay half (LKR {(totalCost / 2).toFixed(2)}) to accept.
+                {opponentMode === 'OPEN'
+                  ? `Once the venue confirms, your match is listed in Explore › Team vs Team for nearby ${teamMatchSportLabel(organizerTeam?.sport)} teams. The first team to pay half (LKR ${(totalCost / 2).toFixed(2)}) takes it on, and that half is refunded to you automatically. If no team joins, you keep your booking — cancel more than 48h before kickoff for a full refund.`
+                  : `Once you pay, ${opponent?.name ?? 'the team you picked'} gets your challenge. They pay half (LKR ${(totalCost / 2).toFixed(2)}) to accept, and that half is refunded to you automatically.`}
               </Text>
             </View>
           )}
@@ -320,6 +429,16 @@ export default function CreateTeamChallengeMatchScreen() {
           </Pressable>
         </ScrollView>
       )}
+
+      <OpponentPickerSheet
+        visible={opponentPickerVisible}
+        onClose={() => setOpponentPickerVisible(false)}
+        onPick={setOpponent}
+        sport={organizerTeam?.sport}
+        myTeamIds={myCaptainedTeams.map((t) => t.id)}
+        myUid={user?.firebaseUid}
+        near={near}
+      />
 
       <Modal visible={venueModalVisible} animationType="slide" transparent onRequestClose={() => setVenueModalVisible(false)}>
         <View style={styles.modalOverlay}>
@@ -386,6 +505,16 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   section: { marginBottom: 20 },
   sectionLabel: { fontSize: 10.5, fontWeight: '800', letterSpacing: 1.2, color: colors.neutral500, marginBottom: 10 },
 
+  modeRow: { flexDirection: 'row', gap: 10 },
+  modeCard: {
+    flex: 1, gap: 4, padding: 12, borderRadius: 14,
+    backgroundColor: colors.cardBg, borderWidth: 1.5, borderColor: colors.neutral200,
+  },
+  modeCardActive: { borderColor: colors.primary, backgroundColor: colors.primary + '0A' },
+  modeTitle: { fontSize: 13.5, fontWeight: '800', color: colors.textSecondary, marginTop: 2 },
+  modeTitleActive: { color: colors.primary },
+  modeSub: { fontSize: 11.5, color: colors.textMuted, lineHeight: 15 },
+
   teamChip: {
     paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, marginRight: 8,
     backgroundColor: colors.cardBg, borderWidth: 1.5, borderColor: colors.neutral200,
@@ -399,6 +528,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.cardBg, borderRadius: 16, padding: 14,
     borderWidth: 1.5, borderColor: colors.neutral200,
   },
+  opponentLogo: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.neutral100 },
   venueIconWrap: {
     width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.primary + '14',

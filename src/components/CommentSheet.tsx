@@ -24,6 +24,8 @@ import { postInteractionStore } from '../stores/postInteractionStore';
 import { GifPickerSheet } from './GifPickerSheet';
 import { ActionMenuSheet } from './ActionMenuSheet';
 import { ReportSheet } from './ReportSheet';
+import { useRouter } from 'expo-router';
+import { openProfile } from '../utils/openProfile';
 
 interface CommentSheetProps {
   postId: string;
@@ -32,6 +34,7 @@ interface CommentSheetProps {
 }
 
 export function CommentSheet({ postId, visible, onClose }: CommentSheetProps) {
+  const router = useRouter();
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const { user } = useAuth();
@@ -140,21 +143,26 @@ export function CommentSheet({ postId, visible, onClose }: CommentSheetProps) {
               renderItem={({ item }) => {
                 const avatarUri = parseMediaUrl(item.profileImageUrl);
                 const isOwnComment = !!user?.firebaseUid && user.firebaseUid === item.firebaseUid;
+                // The sheet is a modal: close it, then open the commenter's profile.
+                const goToAuthor = () => { onClose(); openProfile(router, item.firebaseUid, user?.firebaseUid); };
                 return (
                   <Pressable
                     style={styles.commentRow}
                     onLongPress={() => !isOwnComment && setMenuComment(item)}
                     delayLongPress={350}
                   >
-                    {avatarUri ? (
-                      <Image source={{ uri: avatarUri }} style={styles.avatar} />
-                    ) : (
-                      <View style={[styles.avatar, styles.avatarFallback]}>
-                        <Text style={styles.avatarInitial}>{(item.displayName || 'U')[0].toUpperCase()}</Text>
-                      </View>
-                    )}
+                    <Pressable onPress={goToAuthor} hitSlop={4} accessibilityRole="button"
+                      accessibilityLabel={`Open ${item.displayName}'s profile`}>
+                      {avatarUri ? (
+                        <Image source={{ uri: avatarUri }} style={styles.avatar} />
+                      ) : (
+                        <View style={[styles.avatar, styles.avatarFallback]}>
+                          <Text style={styles.avatarInitial}>{(item.displayName || 'U')[0].toUpperCase()}</Text>
+                        </View>
+                      )}
+                    </Pressable>
                     <View style={styles.commentBody}>
-                      <Text style={styles.commentAuthor}>{item.displayName}</Text>
+                      <Text style={styles.commentAuthor} onPress={goToAuthor} suppressHighlighting>{item.displayName}</Text>
                       {item.gifUrl ? (
                         <Image source={{ uri: item.gifUrl }} style={styles.commentGif} resizeMode="cover" />
                       ) : (

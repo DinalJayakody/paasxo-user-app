@@ -17,7 +17,8 @@ import {
   Switch,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { discountedPrice, promotionAppliesOn } from '../src/utils/promotion';
 import {
   ArrowLeft,
   Search,
@@ -68,9 +69,9 @@ const SPORTS = [
   { id: 'CRICKET',          label: 'Cricket',     emoji: '🏏', color: Colors.cricket,     grad: [Colors.cricket, '#1A5FA0'] as [string,string] },
   { id: 'PICKLEBALL',       label: 'Pickleball',  emoji: '🏓', color: Colors.pickleball,  grad: [Colors.pickleball, '#2977C2'] as [string,string] },
   { id: 'PADDLEBALL',       label: 'Paddleball',  emoji: '🎾', color: Colors.paddleball,  grad: [Colors.paddleball, '#6D28D9'] as [string,string] },
-  { id: 'TRAINER_GYM',      label: 'Trainer',     emoji: '💪', color: Colors.trainer,     grad: [Colors.trainer, Colors.primaryDark] as [string,string] },
-  { id: 'WALKING_RUNNING',  label: 'Walk / Run',  emoji: '🏃', color: (Colors as any).walkRun ?? '#059669', grad: ['#059669', '#047857'] as [string,string] },
 ];
+// Matches are only for real playable sports — Trainer sessions and Walk/Run
+// have their own dedicated flows and are deliberately not offered here.
 
 // ─── Animated Sport Tile ──────────────────────────────────────────────────────
 
@@ -122,7 +123,7 @@ const createSportTileStyles = (colors: ThemeColors) => StyleSheet.create({
 
 // ─── Radial Sport Picker ──────────────────────────────────────────────────────
 
-// 6 sports, 60° each (360/6), 2° gap on each side → 56° visible arc per segment.
+// One equal slice per sport (360/n), 2° gap on each side of every slice.
 const SP_SIZE = 300;
 const SP_CX   = SP_SIZE / 2;
 const SP_CY   = SP_SIZE / 2;
@@ -131,9 +132,10 @@ const SP_INNER = 48;
 const SP_LABEL_R = 90; // label placement radius
 
 // Distribute sports evenly starting from the top (-90°)
+const SP_STEP = 360 / SPORTS.length;
 const SPORT_SEGS = SPORTS.map((s, i) => {
-  const center = -90 + i * 60;
-  return { ...s, startDeg: center - 28, endDeg: center + 28, midDeg: center };
+  const center = -90 + i * SP_STEP;
+  return { ...s, startDeg: center - (SP_STEP / 2 - 2), endDeg: center + (SP_STEP / 2 - 2), midDeg: center };
 });
 
 function sportArcPath(startDeg: number, endDeg: number): string {
@@ -662,6 +664,33 @@ export default function CreateMatch() {
     setPricePerSlot(p != null ? Number(p).toFixed(2) : '');
   };
 
+  // The venue's discount (V6) for the chosen date — the server charges the same.
+  const venuePromo = selectedVenue?.promotion ?? null;
+  const promoOnDate = !!selectedDate && promotionAppliesOn(venuePromo, selectedDate);
+  useEffect(() => {
+    if (venuePrice == null) return;
+    const p = discountedPrice(Number(venuePrice), venuePromo, selectedDate || null);
+    if (p != null) setPricePerSlot(p.toFixed(2));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [venuePrice, selectedDate, selectedVenue?.id]);
+
+  // Opened from a venue page ("Book a slot") — preselect that venue.
+  const { venueId: venueIdParam } = useLocalSearchParams<{ venueId?: string }>();
+  useEffect(() => {
+    if (!venueIdParam) return;
+    let cancelled = false;
+    futsalApi.getById(venueIdParam)
+      .then((v) => {
+        if (cancelled || !v?.id) return;
+        handleVenueSelect(v);
+        const sports: string[] = Array.isArray(v.sports) ? v.sports : [];
+        if (sports.length && !sports.includes(selectedSport)) setSelectedSport(sports[0]);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [venueIdParam]);
+
   const handleDateSelect = async (date: string) => {
     setSelectedDate(date);
     if (selectedVenue?.id) await fetchSlots(selectedVenue.id, date);
@@ -678,6 +707,16 @@ export default function CreateMatch() {
   const handleCreateEvent = async () => {
     if (!selectedVenue || !selectedDate || selectedSlotIds.length === 0) {
       alert('Please select venue, date, and at least one slot before continuing.');
+      return;
+    }
+    const maxN = parseInt(maxCapacity, 10);
+    if (!Number.isFinite(maxN) || maxN < 2 || maxN > 100) {
+      alert('Max players must be between 2 and 100.');
+      return;
+    }
+    const minN = minPlayers ? parseInt(minPlayers, 10) : NaN;
+    if (minPlayers && (!Number.isFinite(minN) || minN < 1 || minN > maxN)) {
+      alert('Min players must be at least 1 and no more than max players.');
       return;
     }
     if (!rulesAccepted) {
@@ -918,6 +957,11 @@ export default function CreateMatch() {
                   onChangeText={setPricePerSlot}
                 />
               </View>
+              {promoOnDate && (
+                <Text style={[styles.fieldGuide, { color: colors.success, fontWeight: '800' }]}>
+                  {venuePromo.discountPercent}% off applied{venuePromo.label ? ` · ${venuePromo.label}` : ''} (was LKR {Number(venuePrice).toFixed(2)} per slot)
+                </Text>
+              )}
               <Text style={styles.fieldGuide}>
                 Total venue cost for all selected slots. Each player pays an equal share when they join.
               </Text>

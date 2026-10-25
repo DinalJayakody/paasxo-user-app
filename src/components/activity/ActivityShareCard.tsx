@@ -3,6 +3,7 @@ import { View, Text, Image, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StoredActivity, ActivityType } from '../../api/activityApi';
 import { formatTime, formatDist, distUnit, formatPace } from '../../utils/activityMath';
+import { RouteTrace } from './RouteTrace';
 
 // Two supported canvas sizes shared by every template below: 'post' (4:5)
 // reads cleanly in-feed and for a general external share, while 'story'
@@ -256,6 +257,11 @@ export const ActivityShareCard = React.forwardRef<View, ActivityShareCardProps>(
               {formatDist(activity.distanceMeters)}
               <Text style={bold.giantUnit}>{distUnit(activity.distanceMeters)}</Text>
             </Text>
+            {(activity.routeCoordinates?.length ?? 0) > 1 && (
+              <View style={{ marginVertical: 14 }}>
+                <RouteTrace coords={activity.routeCoordinates} width={dim.width * 0.62} height={dim.height * 0.24} strokeWidth={5} />
+              </View>
+            )}
             <View style={bold.subStatsRow}>
               <Text style={bold.subStat}>{formatTime(activity.durationSeconds)}</Text>
               <View style={bold.subStatDivider} />
@@ -305,6 +311,13 @@ export const ActivityShareCard = React.forwardRef<View, ActivityShareCardProps>(
             <Text style={styles.prBadgeText} numberOfLines={1}>
               🏆 {records.length > 1 ? `${records.length} NEW RECORDS` : 'NEW PERSONAL RECORD'}
             </Text>
+          </View>
+        )}
+
+        {/* On a photo background the map isn't visible, so draw the route itself. */}
+        {template === 'photo' && photoImage && (activity.routeCoordinates?.length ?? 0) > 1 && (
+          <View style={{ position: 'absolute', right: 18, top: dim.height * 0.16 }} pointerEvents="none">
+            <RouteTrace coords={activity.routeCoordinates} width={dim.width * 0.34} height={dim.width * 0.34} strokeWidth={4} />
           </View>
         )}
 

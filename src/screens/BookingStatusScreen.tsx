@@ -21,6 +21,9 @@ import { MatchDetails } from '../types/api';
 import { parseMatchDetails } from '../utils/parseMatch';
 import { LoadingScreen } from '../components/LoadingScreen';
 import ScreenGlow from '../components/ScreenGlow';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface BookingStatusScreenProps {
   matchId: string;
@@ -115,14 +118,19 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
   const pulseOpacity = useRef(new Animated.Value(0.5)).current;
 
   // forcePending: freshly created match — always pending until vendor explicitly accepts
-  const isPendingVendor =
-    forcePending ||
-    match?.vendorStatus === 'PENDING_VENDOR' ||
-    match?.status === 'PENDING_VENDOR' ||
-    match?.status === 'PENDING';
+  // The ?pending=true route hint only covers the moment before the booking has
+  // loaded; once real data is here it decides — otherwise a booking the venue has
+  // since approved would keep showing "awaiting approval" even after a refresh.
+  const rawPending = match
+    ? (match.vendorStatus === 'PENDING_VENDOR' || match.status === 'PENDING_VENDOR' || match.status === 'PENDING')
+    : forcePending;
+  // A Public Match at a public space never needs venue approval — the server
+  // activates it as soon as payment lands, so never show "awaiting venue".
+  const isPendingVendor = rawPending && !match?.isPublicSpaceMatch;
 
-  const loadMatch = useCallback(async () => {
-    setLoading(true);
+  // silent: pull-to-refresh updates the status in place (no full-screen reload/animation replay).
+  const loadMatch = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const data = await bookingApi.getById(matchId);
       setMatch(parseMatchDetails(data));
@@ -134,6 +142,16 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
   }, [matchId]);
 
   useEffect(() => { loadMatch(); }, [loadMatch]);
+
+  // Public-space match seen a moment before the server finished activating it:
+  // re-check briefly so the screen lands on the confirmed state by itself.
+  const activationPolls = useRef(0);
+  useEffect(() => {
+    if (!match?.isPublicSpaceMatch || !rawPending || activationPolls.current >= 6) return;
+    const t = setTimeout(() => { activationPolls.current += 1; loadMatch(true); }, 2000);
+    return () => clearTimeout(t);
+  }, [match, rawPending, loadMatch]);
+  const { refreshing, onRefresh } = usePullToRefresh(() => loadMatch(true));
 
   useEffect(() => {
     if (loading) return;
@@ -241,10 +259,12 @@ export default function BookingStatusScreen({ matchId, forcePending = false }: B
           { opacity: contentOpacity, transform: [{ translateY: contentSlide }] },
         ]}
       >
+      <PaasxoRefreshLogo refreshing={refreshing} />
       <ScrollView
         style={styles.sheetScroll}
         contentContainerStyle={styles.sheetScrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {/* Booking ID badge */}
         <View style={[styles.bookingIdBadge, isPendingVendor && { backgroundColor: '#EA580C15' }]}>

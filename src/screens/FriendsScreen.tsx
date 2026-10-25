@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -363,8 +364,25 @@ export default function FriendsScreen() {
         </View>
       );
     }
+    // Pull-to-refresh reloads this tab's list from page 0 and, from any other
+    // tab, the Requests list too, so its badge count is never stale.
+    const refreshTab = () => {
+      list.reload();
+      if (list !== requestsList) requestsList.reload();
+    };
     if (list.data.length === 0) {
-      return renderEmptyState(emptyIllustration, emptyTitle, emptySub);
+      return (
+        <View style={styles.refreshableArea}>
+          <PaasxoRefreshLogo refreshing={list.loading} />
+          <ScrollView
+            contentContainerStyle={{ flexGrow: 1 }}
+            showsVerticalScrollIndicator={false}
+            refreshControl={<PaasxoRefreshControl refreshing={list.loading} onRefresh={refreshTab} />}
+          >
+            {renderEmptyState(emptyIllustration, emptyTitle, emptySub)}
+          </ScrollView>
+        </View>
+      );
     }
     return (
       <View style={styles.refreshableArea}>
@@ -375,7 +393,7 @@ export default function FriendsScreen() {
           renderItem={({ item }) => renderRow(item)}
           contentContainerStyle={[styles.listContent, { paddingBottom: navBarHeight + 38 }]}
           showsVerticalScrollIndicator={false}
-          refreshControl={<PaasxoRefreshControl refreshing={list.loading} onRefresh={list.reload} />}
+          refreshControl={<PaasxoRefreshControl refreshing={list.loading} onRefresh={refreshTab} />}
           onEndReachedThreshold={0.5}
           onEndReached={() => {
             if (!list.momentumRef.current) {

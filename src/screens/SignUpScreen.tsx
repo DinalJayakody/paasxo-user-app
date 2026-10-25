@@ -42,7 +42,8 @@ import AuthTabBar from '../components/AuthTabBar';
 import { useContext, useRef, useEffect } from 'react';
 import { AuthContext, useAuth } from '../context/AuthContext';
 import { RegisterPayload } from '../types/api';
-import { SPORTS } from '../constants/sports';
+import { OTHER_SPORT_ID, cleanOtherSports, isPersonalOnlyActivity } from '../constants/sports';
+import { ActivityPicker } from '../components/ActivityPicker';
 import { GOOGLE_CLIENT_IDS, GOOGLE_CONFIGURED } from '../config/googleAuth';
 import { getFirebaseAuth, FIREBASE_CONFIGURED } from '../config/firebase';
 import { APPLE_SIGN_IN_AVAILABLE, performAppleSignIn } from '../utils/appleSignIn';
@@ -88,6 +89,7 @@ export default function SignUpScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [selectedSports, setSelectedSports] = useState<string[]>(['FUTSAL']);
+  const [otherSports, setOtherSports] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -150,6 +152,14 @@ export default function SignUpScreen() {
     setSelectedSports((prev) =>
       prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
     );
+    setErrors((e) => ({ ...e, sports: '', otherSports: '' }));
+  };
+
+  // Service Providers don't list Walking/Running — drop them if the user
+  // picked them before switching account type.
+  const chooseAccountType = (type: 'USER' | 'VENDOR') => {
+    setAccountType(type);
+    if (type === 'VENDOR') setSelectedSports((prev) => prev.filter((id) => !isPersonalOnlyActivity(id)));
   };
 
   const validate = () => {
@@ -163,7 +173,10 @@ export default function SignUpScreen() {
     else if (password.length < 8) errs.password = 'Password must be at least 8 characters';
     if (!confirmPassword) errs.confirmPassword = 'Please confirm your password';
     else if (password !== confirmPassword) errs.confirmPassword = 'Passwords do not match';
-    if (selectedSports.length === 0) errs.sports = 'Select at least one sport';
+    if (selectedSports.length === 0) errs.sports = 'Select at least one activity';
+    else if (selectedSports.includes(OTHER_SPORT_ID) && !cleanOtherSports(otherSports)) {
+      errs.otherSports = 'Tell us which other activities you do';
+    }
     if (!termsAccepted) errs.terms = 'Please accept the Terms of Service and Privacy Policy to continue';
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -182,12 +195,14 @@ export default function SignUpScreen() {
     if (!validate()) return;
     setLoading(true);
 
+const cleanedOther = selectedSports.includes(OTHER_SPORT_ID) ? cleanOtherSports(otherSports) : '';
 const payload: RegisterPayload = {
-  email,
+  email: email.trim().toLowerCase(),
   password,
-  displayName: fullName,
-  phoneNumber: phone,
+  displayName: fullName.trim(),
+  phoneNumber: phone.trim(),
   sports: selectedSports,
+  otherSports: cleanedOther || undefined,
   referralCode: referralCode || undefined,
   accountType,
   profileImage: avatarUri
@@ -215,7 +230,13 @@ const payload: RegisterPayload = {
         router.push('/post-verification'); // optional welcome screen after registration
       }
     } catch (err: any) {
-      setErrors({ general: err.message ?? 'Registration failed. Try again.' });
+      const code = err?.response?.data?.code;
+      const message = err?.message ?? 'Registration failed. Try again.';
+      // Point the message at the field it's about, as well as the banner.
+      if (typeof code === 'string' && code.startsWith('EMAIL_EXISTS')) setErrors({ email: 'This email is already in use', general: message });
+      else if (code === 'INVALID_EMAIL') setErrors({ email: message, general: message });
+      else if (code === 'WEAK_PASSWORD') setErrors({ password: message, general: message });
+      else setErrors({ general: message });
     } finally {
       setLoading(false);
     }
@@ -300,12 +321,8 @@ const payload: RegisterPayload = {
     quality: 0.8,
   });
 
-  console.log("Picker result:", result);
-
   if (!result.canceled && result.assets?.length > 0) {
-    const uri = result.assets[0].uri;
-    console.log("Setting avatar URI:", uri);
-    setAvatarUri(uri);
+    setAvatarUri(result.assets[0].uri);
   }
 };
 
@@ -327,14 +344,18 @@ const payload: RegisterPayload = {
             <TouchableOpacity onPress={() => goBack(router)} style={styles.backBtn} activeOpacity={0.7}>
               <ArrowLeft color={colors.primary} size={22} strokeWidth={2.5} />
             </TouchableOpacity>
-            <AdaptiveLogo style={{ width: 40, height: 40 }} />
             <View style={{ width: 40 }} />
           </View>
 
+          {/* Logo on its own, large enough to read in both themes. */}
+          <View style={{ alignItems: 'center', marginTop: -36, marginBottom: 8 }}>
+            <AdaptiveLogo style={{ width: 92, height: 92 }} />
+          </View>
+
           {/* Hero text */}
-          <Text style={styles.title}>Join the Movement.</Text>
+          <Text style={styles.title}>Begin your Journey</Text>
           <Text style={styles.subtitle}>
-            Create your profile and Start your Journey
+            Grow and make friends along the way
           </Text>
 
           {/* Account type */}
@@ -343,7 +364,7 @@ const payload: RegisterPayload = {
             <View style={styles.accountTypeRow}>
               <TouchableOpacity
                 style={[styles.accountTypeOption, accountType === 'USER' && styles.accountTypeOptionActive]}
-                onPress={() => setAccountType('USER')}
+                onPress={() => chooseAccountType('USER')}
                 activeOpacity={0.85}
               >
                 <User color={accountType === 'USER' ? colors.primary : colors.textSecondary} size={22} strokeWidth={2} />
@@ -354,7 +375,7 @@ const payload: RegisterPayload = {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.accountTypeOption, accountType === 'VENDOR' && styles.accountTypeOptionActive]}
-                onPress={() => setAccountType('VENDOR')}
+                onPress={() => chooseAccountType('VENDOR')}
                 activeOpacity={0.85}
               >
                 <Briefcase color={accountType === 'VENDOR' ? colors.primary : colors.textSecondary} size={22} strokeWidth={2} />
@@ -500,31 +521,14 @@ const payload: RegisterPayload = {
             {errors.sports ? (
               <Text style={styles.fieldError}>{errors.sports}</Text>
             ) : null}
-            <View style={styles.sportsGrid}>
-              {SPORTS.map((sport) => {
-                const Icon = sport.icon;
-                const active = selectedSports.includes(sport.id);
-                return (
-                  <TouchableOpacity
-                    key={sport.id}
-                    style={[styles.sportTag, active && styles.sportTagActive]}
-                    onPress={() => toggleSport(sport.id)}
-                    activeOpacity={0.8}
-                  >
-                    <Icon
-                      color={active ? colors.primary : colors.textSecondary}
-                      size={14}
-                      strokeWidth={2}
-                    />
-                    <Text
-                      style={[styles.sportTagText, active && styles.sportTagTextActive]}
-                    >
-                      {sport.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            <ActivityPicker
+              selected={selectedSports}
+              onToggle={toggleSport}
+              otherText={otherSports}
+              onOtherTextChange={(t) => { setOtherSports(t); setErrors((e) => ({ ...e, otherSports: '' })); }}
+              accountType={accountType}
+              otherError={errors.otherSports || undefined}
+            />
           </View>
 
           {/* Referral card */}

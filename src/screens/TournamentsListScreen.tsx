@@ -44,7 +44,7 @@ export default function TournamentsListScreen() {
             return {
               ...t,
               date: record.date,
-              lifecycle: deriveTournamentLifecycle(matchesUI),
+              lifecycle: deriveTournamentLifecycle(matchesUI, record.date),
             };
           } catch {
             return { ...t, lifecycle: 'UPCOMING' as TournamentLifecycle };

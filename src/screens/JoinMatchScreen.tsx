@@ -42,6 +42,9 @@ import { LoadingScreen } from '../components/LoadingScreen';
 import HeaderIconButton from '../components/HeaderIconButton';
 import ScreenGlow from '../components/ScreenGlow';
 import { goBack } from '../utils/navigation';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -217,8 +220,10 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
 
   const [showInviteSheet, setShowInviteSheet] = useState(false);
 
-  const loadMatch = useCallback(async () => {
-    setLoading(true);
+  // silent: pull-to-refresh keeps the match on screen while reloading it
+  // (spots left, players, price can all change after you first opened it).
+  const loadMatch = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const raw = await bookingApi.getById(matchId);
       setMatch(parseMatchDetails(raw));
@@ -241,6 +246,8 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
       } catch { /* silent */ }
     })();
   }, [loadMatch]);
+
+  const { refreshing, onRefresh } = usePullToRefresh(() => loadMatch(true));
 
   // Enrich participant profiles — same logic as MatchDetailsScreen
   useEffect(() => {
@@ -342,7 +349,12 @@ export default function JoinMatchScreen({ matchId }: JoinMatchScreenProps) {
   return (
     <SafeAreaView style={styles.flex1} edges={['top']}>
       <ScreenGlow />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 + insets.bottom }}>
+      <PaasxoRefreshLogo refreshing={refreshing} />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 130 + insets.bottom }}
+        refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
 
         {/* Hero */}
         <View style={styles.heroContainer}>

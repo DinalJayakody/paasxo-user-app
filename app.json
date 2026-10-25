@@ -12,12 +12,13 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "buildNumber": "10",
+      "buildNumber": "14",
       "infoPlist": {
         "NSCameraUsageDescription": "Allow access to camera",
         "NSPhotoLibraryUsageDescription": "Allow access to photos",
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": ["remote-notification", "location"],
+        "NSLocationWhenInUseUsageDescription": "Paasxo uses your location to track your walk, run or cycling distance, pace and route, and to show nearby matches and venues.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "PaasXO tracks your walk, run, or cycling route in the background so it keeps recording distance and time even while your phone is locked.",
         "NSMotionUsageDescription": "PaasXO uses motion data to count your steps during a tracked walk, run, or cycling activity."
       },
@@ -55,6 +56,14 @@
           "isAndroidBackgroundLocationEnabled": true
         }
       ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "The app accesses your photos to let you share them with your friends.",
+          "savePhotosPermission": "Paasxo saves your stories and photos to your photo library when you tap Save.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
       "expo-router",
       "expo-font",
       "expo-web-browser",
@@ -70,7 +79,6 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_LOCATION",
         "ACTIVITY_RECOGNITION"

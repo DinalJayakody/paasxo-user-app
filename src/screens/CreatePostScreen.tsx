@@ -51,6 +51,7 @@ import ScreenGlow from '../components/ScreenGlow';
 import { goBack } from '../utils/navigation';
 import { prepareImageForUpload } from '../utils/mediaCompression';
 import { Play } from 'lucide-react-native';
+import { TagPeopleSheet, TaggedPerson } from '../components/TagPeopleSheet';
 
 // Platform-gated, matches the same native-only-module convention used by
 // CaptureFlow.tsx (Reels/Stories) - no web target for this.
@@ -99,7 +100,7 @@ export default function CreatePostScreen() {
     useState('');
 
   const [taggedUsers, setTaggedUsers] =
-    useState<any[]>([]);
+    useState<TaggedPerson[]>([]);
 
   const [searchResults, setSearchResults] =
     useState<any[]>([]);
@@ -124,6 +125,9 @@ export default function CreatePostScreen() {
           ImagePicker.MediaTypeOptions.All,
         videoMaxDuration: MAX_POST_VIDEO_SECONDS,
         quality: 0.8,
+        // iOS converts on-device (hardware encoder) to 1080p H.264 — plays
+        // everywhere, uploads fast, and the server only has to remux it.
+        videoExportPreset: ImagePicker.VideoExportPreset.H264_1920x1080,
       });
 
     if (!result.canceled) {
@@ -148,6 +152,9 @@ export default function CreatePostScreen() {
           ImagePicker.MediaTypeOptions.All,
         videoMaxDuration: MAX_POST_VIDEO_SECONDS,
         quality: 0.8,
+        // iOS converts on-device (hardware encoder) to 1080p H.264 — plays
+        // everywhere, uploads fast, and the server only has to remux it.
+        videoExportPreset: ImagePicker.VideoExportPreset.H264_1920x1080,
       });
 
     if (!result.canceled) {
@@ -200,6 +207,15 @@ export default function CreatePostScreen() {
 
   const applyPickedAsset = async (asset: ImagePicker.ImagePickerAsset) => {
     if (asset.type === 'video') {
+      // The library picker doesn't trim, so enforce the limit here.
+      if (asset.duration && asset.duration / 1000 > MAX_POST_VIDEO_SECONDS + 1) {
+        Alert.alert('Video too long', `Pick a video up to ${MAX_POST_VIDEO_SECONDS} seconds long, or post it as a Reel.`);
+        return;
+      }
+      if (asset.fileSize && asset.fileSize > 190 * 1024 * 1024) {
+        Alert.alert('Video too large', 'Please pick a shorter video (max 190 MB).');
+        return;
+      }
       await applyPickedVideo(asset);
     } else {
       await applyPickedImage(asset);
@@ -253,11 +269,10 @@ export default function CreatePostScreen() {
         media: selectedImage,
         thumbnail: mediaType === 'VIDEO' ? videoThumbnail : undefined,
         mediaType,
-        sport: 'CRICKET',
+        // Omitted: the server defaults to the author's own primary sport
+        // (this used to hard-code CRICKET for every post).
         visibility,
-        taggedUsers: taggedUsers.map(
-          (u) => u.id
-        ),
+        taggedUserIds: taggedUsers.map((u) => u.firebaseUid),
         locationName:
           selectedLocation?.name,
         latitude:
@@ -462,9 +477,11 @@ export default function CreatePostScreen() {
             <Text
               style={styles.optionSubtitle}
             >
-              {taggedUsers.length > 0
-                ? `${taggedUsers.length} players tagged`
-                : 'Add friends or teammates'}
+              {taggedUsers.length === 0
+                ? 'Add friends or teammates'
+                : taggedUsers.length === 1
+                ? `${taggedUsers[0].displayName} tagged`
+                : `${taggedUsers[0].displayName} and ${taggedUsers.length - 1} other${taggedUsers.length > 2 ? 's' : ''} tagged`}
             </Text>
           </View>
 
@@ -635,100 +652,13 @@ export default function CreatePostScreen() {
 
 {/* TAG PLAYER MODAL */}
 
-<Modal
-  visible={tagModalVisible}
-  animationType="fade"
-  transparent
->
-  {/* BACKDROP */}
-  <View style={styles.tagOverlay}>
-    
-    {/* POPUP CARD */}
-    <View style={styles.tagPopup}>
-
-      {/* HEADER */}
-      <View style={styles.tagPopupHeader}>
-        <Text style={styles.tagPopupTitle}>
-          Tag Players
-        </Text>
-
-        <TouchableOpacity
-          onPress={() => setTagModalVisible(false)}
-        >
-          <X size={22} color={colors.text} />
-        </TouchableOpacity>
-      </View>
-
-      {/* SEARCH */}
-      <View style={{ marginTop: 10 }}>
-        <SearchBar
-          value={searchText}
-          onChangeText={setSearchText}
-          placeholder="Search players..."
-        />
-      </View>
-
-      {/* LOADING */}
-      {loading && (
-        <ActivityIndicator
-          size="small"
-          color={colors.primary}
-          style={{ marginTop: 10 }}
-        />
-      )}
-
-      {/* DROPDOWN LIST */}
-      <FlatList
-        data={searchResults}
-        keyExtractor={(item) => item.id?.toString()}
-        keyboardShouldPersistTaps="handled"
-        style={{ maxHeight: 260, marginTop: 10 }}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => {
-          const isTagged = taggedUsers.some(
-            (u) => u.id === item.id
-          );
-
-          return (
-            <TouchableOpacity
-              style={styles.tagPopupItem}
-              onPress={() => {
-                if (!isTagged) {
-                  setTaggedUsers((prev) => [
-                    ...prev,
-                    item,
-                  ]);
-                }
-              }}
-            >
-              <Image
-                source={{ uri: resolveAvatarUri(item.profileImageUrl, item.displayName) }}
-                style={styles.tagPopupAvatar}
-              />
-
-              <View style={{ flex: 1 }}>
-                <Text style={styles.tagPopupName}>
-                  {item.displayName}
-                </Text>
-                <Text style={styles.tagPopupSub}>
-                  @{item.username || 'player'}
-                </Text>
-              </View>
-
-              {isTagged ? (
-                <Text style={styles.taggedBadge}>
-                  Tagged
-                </Text>
-              ) : (
-                <ChevronRight size={18} color={colors.textMuted} />
-              )}
-            </TouchableOpacity>
-          );
-        }}
+<TagPeopleSheet
+        visible={tagModalVisible}
+        selected={taggedUsers}
+        onChange={setTaggedUsers}
+        onClose={() => setTagModalVisible(false)}
+        title="Tag players"
       />
-    </View>
-  </View>
-</Modal>
 
       {/* LOCATION MODAL */}
 

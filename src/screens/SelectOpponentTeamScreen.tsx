@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { takeChallengeOpponent } from '../utils/pendingTeamChallenge';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Search, Shield, Swords, MapPin, X } from 'lucide-react-native';
+import { ArrowLeft, Search, Shield, Swords, MapPin, X, Globe, ChevronRight } from 'lucide-react-native';
 import { ThemeColors, Colors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import HeaderIconButton from '../components/HeaderIconButton';
@@ -24,6 +25,9 @@ import { Team } from '../types/api';
 import { resolveMediaUrl } from '../utils/mediaUrl';
 import { extractApiError } from '../utils/apiError';
 import { goBack } from '../utils/navigation';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface Props {
   bookingId: string;
@@ -47,14 +51,39 @@ export default function SelectOpponentTeamScreen({ bookingId }: Props) {
   const [loadingNearby, setLoadingNearby] = useState(true);
   const [searching, setSearching] = useState(false);
   const [challengingTeamId, setChallengingTeamId] = useState<string | null>(null);
+  const [listingOpen, setListingOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
+  const loadNearby = useCallback(() =>
     teamMatchApi.getNearbyTeams(bookingId)
       .then(setNearbyTeams)
       .catch(() => setNearbyTeams([]))
-      .finally(() => setLoadingNearby(false));
-  }, [bookingId]);
+      .finally(() => setLoadingNearby(false)), [bookingId]);
+
+  useEffect(() => { loadNearby(); }, [loadNearby]);
+
+  // Came from "Challenge" on that team's page: offer it straight away.
+  const offeredRef = useRef(false);
+  useEffect(() => {
+    if (offeredRef.current) return;
+    offeredRef.current = true;
+    // The opponent was chosen before paying — send it straight away.
+    takeChallengeOpponent().then((p) => {
+      if (!p) return;
+      teamApi.getTeam(p.teamId)
+        .then((team) => sendTo(team))
+        .catch(() => {});
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Refreshes whichever list is on screen: name-search results, or nearby teams.
+  const { refreshing, onRefresh } = usePullToRefresh(() => {
+    const q = query.trim();
+    return q
+      ? teamApi.searchTeams(q).then(setSearchResults).catch(() => {})
+      : loadNearby();
+  });
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -77,25 +106,52 @@ export default function SelectOpponentTeamScreen({ bookingId }: Props) {
   const listData = isSearching ? searchResults : nearbyTeams;
   const loading = isSearching ? searching : loadingNearby;
 
+  const sendTo = async (team: Team) => {
+    setChallengingTeamId(team.id);
+    try {
+      await teamMatchApi.sendChallenge(bookingId, team.id);
+      Alert.alert('Challenge sent!', `Waiting for ${team.name} to accept.`, [
+        { text: 'OK', onPress: () => router.replace(`/match/${bookingId}` as any) },
+      ]);
+    } catch (err) {
+      Alert.alert('Could not send challenge', extractApiError(err, 'Please pick a team below.'));
+    } finally {
+      setChallengingTeamId(null);
+    }
+  };
+
   const handleChallenge = (team: Team) => {
     Alert.alert('Challenge this team?', `Send a match challenge to ${team.name}. They'll need to pay half the booking cost to accept.`, [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Challenge', onPress: async () => {
-          setChallengingTeamId(team.id);
-          try {
-            await teamMatchApi.sendChallenge(bookingId, team.id);
-            Alert.alert('Challenge sent!', `Waiting for ${team.name} to accept.`, [
-              { text: 'OK', onPress: () => router.replace(`/match/${bookingId}` as any) },
-            ]);
-          } catch (err) {
-            Alert.alert('Could not send challenge', extractApiError(err, 'Please try again.'));
-          } finally {
-            setChallengingTeamId(null);
-          }
-        },
-      },
+      { text: 'Challenge', onPress: () => { sendTo(team); } },
     ]);
+  };
+
+  // Can't find (or don't want to pick) a specific team — list the match in
+  // Explore -> Team vs Team so any nearby same-sport team can take it on.
+  const handleOpenChallenge = () => {
+    Alert.alert(
+      'Post as an open challenge?',
+      "Your match will be listed in Explore › Team vs Team once the venue confirms it. The first nearby team to pay half takes it on, and that half is refunded to you.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Post it', onPress: async () => {
+            setListingOpen(true);
+            try {
+              await teamMatchApi.openListing(bookingId);
+              Alert.alert('Challenge posted!', 'Nearby teams can now find and take on your match.', [
+                { text: 'OK', onPress: () => router.replace(`/match/${bookingId}` as any) },
+              ]);
+            } catch (err) {
+              Alert.alert('Could not post challenge', extractApiError(err, 'Please try again.'));
+            } finally {
+              setListingOpen(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -130,6 +186,19 @@ export default function SelectOpponentTeamScreen({ bookingId }: Props) {
       </View>
 
       {!isSearching && (
+        <Pressable style={styles.openCard} onPress={handleOpenChallenge} disabled={listingOpen || !!challengingTeamId}>
+          <View style={styles.openCardIcon}>
+            {listingOpen ? <ActivityIndicator color={colors.primary} size="small" /> : <Globe color={colors.primary} size={18} strokeWidth={2.2} />}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.name}>Post as an open challenge</Text>
+            <Text style={styles.sub}>Let any nearby team take it on from Explore</Text>
+          </View>
+          <ChevronRight color={colors.neutral400} size={18} strokeWidth={2} />
+        </Pressable>
+      )}
+
+      {!isSearching && (
         <View style={styles.sectionHeaderRow}>
           <MapPin color={colors.textMuted} size={13} strokeWidth={2.2} />
           <Text style={styles.sectionHeaderText}>Teams within 20km of your venue</Text>
@@ -139,7 +208,10 @@ export default function SelectOpponentTeamScreen({ bookingId }: Props) {
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
       ) : (
+        <View style={{ flex: 1 }}>
+        <PaasxoRefreshLogo refreshing={refreshing} />
         <FlatList
+          refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           data={listData}
           keyExtractor={(t) => t.id}
           contentContainerStyle={styles.listContent}
@@ -172,6 +244,7 @@ export default function SelectOpponentTeamScreen({ bookingId }: Props) {
             </View>
           }
         />
+        </View>
       )}
     </SafeAreaView>
   );
@@ -197,6 +270,15 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 14, color: colors.text },
 
+  openCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    marginHorizontal: 16, marginTop: 14, padding: 12, borderRadius: 16,
+    backgroundColor: colors.primary + '0A', borderWidth: 1.5, borderColor: colors.primary + '33',
+  },
+  openCardIcon: {
+    width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary + '14',
+  },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: 16, marginTop: 16, marginBottom: 4 },
   sectionHeaderText: { fontSize: 11.5, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.3 },
 

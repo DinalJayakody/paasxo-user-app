@@ -36,7 +36,7 @@ type AuthContextShape = {
   // completeSocialSignIn is the lower-level helper kept for future providers.
   completeSocialSignIn: (provider: 'google' | 'apple', token: string, appleUser?: any) => Promise<void>;
   // Saves the activity + referral code collected by CompleteProfileModal.
-  completeProfile: (sports: string[], referralCode?: string) => Promise<void>;
+  completeProfile: (sports: string[], referralCode?: string, otherSports?: string) => Promise<void>;
   // Applies a fresh profile object (e.g. the response from an avatar upload
   // or an Edit Profile save) to both in-memory state and cached storage,
   // without a full network refetch.
@@ -49,6 +49,21 @@ type AuthContextShape = {
 };
 
 export const AuthContext = createContext<AuthContextShape>({} as AuthContextShape);
+
+/**
+ * The backend refuses a Service Provider (vendor) account in this app with a
+ * 403 + code. Its own message is written for the Vendor app, so rephrase it
+ * for someone who just tried to use that email/Google account as a player.
+ */
+function explainVendorRefusal(error: any) {
+  const code = error?.response?.data?.code;
+  if (error?.response?.status === 403 && (code === 'PENDING_VERIFICATION' || code === 'DEACTIVATED')) {
+    error.message = code === 'PENDING_VERIFICATION'
+      ? 'This email is registered as a Paasxo Service Provider account that is still under review. Service Provider accounts use the Paasxo Vendor app — please use a different email or Google account for your personal Paasxo account.'
+      : 'This email belongs to a Paasxo Service Provider account that has been deactivated. Please contact Paasxo support, or use a different email for your personal account.';
+  }
+  return error;
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -147,7 +162,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await persistTokens(response);
       setUser(response.user ?? null);
     } catch (error) {
-      throw error;
+      throw explainVendorRefusal(error);
     }
   };
 
@@ -204,7 +219,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await persistTokens(response);
       setUser(response.user ?? null);
     } catch (error) {
-      throw error;
+      throw explainVendorRefusal(error);
     } finally {
       setLoading(false);
     }
@@ -222,7 +237,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await persistTokens(response);
       setUser(response.user ?? null);
     } catch (error) {
-      throw error;
+      throw explainVendorRefusal(error);
     } finally {
       setLoading(false);
     }
@@ -271,7 +286,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await persistTokens(authResponse);
       if (authResponse.user) setUser(authResponse.user);
     } catch (error) {
-      throw error;
+      throw explainVendorRefusal(error);
     } finally {
       setLoading(false);
     }
@@ -279,8 +294,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // ─── Complete profile (post-Google-signup popup) ─────────────────────────
 
-  const completeProfile = async (sports: string[], referralCode?: string): Promise<void> => {
-    const updated = await authApi.completeProfile({ sports, referralCode });
+  const completeProfile = async (sports: string[], referralCode?: string, otherSports?: string): Promise<void> => {
+    const updated = await authApi.completeProfile({ sports, referralCode, otherSports });
     setUser(updated);
     await AsyncStorage.setItem('user', JSON.stringify(updated));
   };

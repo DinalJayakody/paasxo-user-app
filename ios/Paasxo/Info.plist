@@ -33,7 +33,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>7</string>
+	<string>14</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSMinimumSystemVersion</key>
@@ -52,11 +52,13 @@
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>PaasXO tracks your walk, run, or cycling route in the background so it keeps recording distance and time even while your phone is locked.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>The app accesses your location to let you share your location with your friends and find nearby matches.</string>
+	<string>Paasxo uses your location to track your walk, run or cycling distance, pace and route, and to show nearby matches and venues.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your microphone</string>
 	<key>NSMotionUsageDescription</key>
 	<string>PaasXO uses motion data to count your steps during a tracked walk, run, or cycling activity.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Paasxo saves your stories and photos to your photo library when you tap Save.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>The app accesses your photos to let you share them with your friends.</string>
 	<key>NSUserActivityTypes</key>

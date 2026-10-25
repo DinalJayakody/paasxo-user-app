@@ -2,11 +2,14 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Animated,
   Dimensions,
+  Easing,
   Image,
   Keyboard,
   LayoutAnimation,
+  Linking,
   PanResponder,
   Platform,
   Pressable,
@@ -27,10 +30,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ArrowLeft,
   Camera,
   CheckCircle,
+  Download,
+  MapPin,
+  Sparkles,
+  Trash2,
   FlipHorizontal,
   Image as ImageIcon,
   Music,
@@ -39,15 +47,42 @@ import {
   RefreshCw,
   Smile,
   Type as TypeIcon,
+  UserPlus,
   Video,
+  Volume2,
+  VolumeX,
   X,
   Zap,
+  ZapOff,
+  Settings2,
+  MicOff,
 } from 'lucide-react-native';
 import { ThemeColors } from '../../styles/colors';
 import { useTheme } from '../../context/ThemeContext';
 import { audioApi, AudioTrack } from '../../api/audioApi';
 import { goBack } from '../../utils/navigation';
-import { prepareImageForUpload } from '../../utils/mediaCompression';
+import { prepareImageForUpload, prepareStoryImage } from '../../utils/mediaCompression';
+import { saveMediaToDevice } from '../../utils/saveMedia';
+import { useStoryFonts } from '../story/storyFonts';
+import { StoryCaption, CaptionStyleKey } from '../story/captionStyles';
+import { CaptionEditor, CaptionValue } from '../story/CaptionEditor';
+import { StickerSheet } from '../story/StickerSheet';
+import { LocationSheet } from '../story/LocationSheet';
+import { EffectsSheet } from '../story/EffectsSheet';
+import { GradeStrip } from '../story/GradeStrip';
+import { GradeLayers, GRADES_SUPPORTED } from '../story/grades';
+import { StoryEffectLayer } from '../story/effects';
+import { LocationSticker } from '../story/LocationSticker';
+import type { StoryPlace } from '../../api/placeApi';
+import Svg, { Circle } from 'react-native-svg';
+import { TagPeopleSheet, TaggedPerson } from '../TagPeopleSheet';
+import { StorySettingsSheet } from '../story/StorySettingsSheet';
+
+const MIC_PROMPT_OFF_KEY = 'paasxo.capture.micPromptOff';
+/** Boomerang captures are short bursts (the server bounces the first few seconds). */
+const BOOMERANG_CAPTURE_SECONDS = 3;
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 // Platform-safe camera / native-module imports
 let CameraView: any = null;
@@ -91,14 +126,6 @@ export const CAPTURE_FILTERS = [
   { name: 'GREEN', label: 'Nature', overlay: 'rgba(50,200,100,0.18)', labelColor: '#66CC88' },
 ];
 
-const EMOJIS = [
-  '😀', '😂', '😍', '🥳', '🔥', '❤️', '👏', '🙌', '💪', '⚽',
-  '🏏', '🏓', '🏆', '🎉', '😎', '🤩', '😅', '👍', '💯', '✨',
-  '🥇', '⭐', '😭', '🤣', '👀', '🙏', '💥', '🚀', '🎯', '☀️',
-];
-
-const CAPTION_COLORS = ['#FFFFFF', '#111111', '#FF3B30', '#FFCC00', '#34C759', '#0A84FF'];
-
 const EXTENSION_MIME: Record<string, string> = {
   mov: 'video/quicktime',
   mp4: 'video/mp4',
@@ -141,6 +168,20 @@ export interface CaptureFlowPayload {
   audioTrackId?: string;
   audioTrackUrl?: string;
   audioVolume?: number;
+  /** Firebase uids of tagged people (only when allowTags). */
+  taggedUserIds?: string[];
+  // Story-only decorations (storyMode).
+  captionStyle?: string;
+  captionScale?: number;
+  locationName?: string;
+  locationPlaceId?: string;
+  locationLat?: number;
+  locationLng?: number;
+  locationX?: number;
+  locationY?: number;
+  effect?: string;
+  /** Video posted with its sound turned off. */
+  soundOff?: boolean;
 }
 
 interface CaptureFlowProps {
@@ -159,22 +200,35 @@ interface CaptureFlowProps {
   allowBoomerang?: boolean;
   /** Background music picker — available to both Reels and Stories. */
   allowMusic?: boolean;
+  /** "Tag people" — search Paasxo players and tag them (stories). */
+  allowTags?: boolean;
+  /** Stories: caption styles, colour grades, location, effects, save-to-device, full-screen photo crop. */
+  storyMode?: boolean;
   onSubmit: (payload: CaptureFlowPayload) => Promise<void>;
 }
 
 type FlowMode = 'CAMERA' | 'PREVIEW';
 type StickerKind = 'CAPTION' | 'EMOJI' | null;
 
-const STICKER_LONG_PRESS_MS = 500;
-// Below this many px of finger movement, a gesture still counts as a
-// long-press-to-remove rather than a drag.
-const STICKER_DRAG_THRESHOLD = 4;
+// Below this many px of finger movement, a touch is a tap (edit) not a drag.
+const STICKER_DRAG_THRESHOLD = 6;
+// Drop a sticker on the bin at the bottom centre to remove it.
+const TRASH_Y = 0.86;
+const TRASH_HALF_W = 0.14;
+const inTrash = (x: number, y: number) => y >= TRASH_Y && Math.abs(x - 0.5) <= TRASH_HALF_W;
+
+// Recording progress ring drawn just outside the 80px capture button.
+const RING_SIZE = 92;
+const RING_R = 43;
+const RING_C = 2 * Math.PI * RING_R;
 
 function DraggableSticker({
   initialX,
   initialY,
   onPositionChange,
   onRemove,
+  onTap,
+  onDragChange,
   children,
   styles,
 }: {
@@ -182,28 +236,24 @@ function DraggableSticker({
   initialY: number;
   onPositionChange: (x: number, y: number) => void;
   onRemove: () => void;
+  onTap?: () => void;
+  /** dragging / hovering over the bin — drives the bin UI in the parent. */
+  onDragChange?: (dragging: boolean, overTrash: boolean) => void;
   children: React.ReactNode;
   styles: ReturnType<typeof createStyles>;
 }) {
+  // `pan` is the sticker's CENTRE (stored normalised) — viewers draw it centred
+  // on the same point, so what you place is what people see.
   const pan = useRef(new Animated.ValueXY({ x: initialX * W, y: initialY * H })).current;
-  // Previously this sticker's touch target was a child <Pressable> nested
-  // inside this Animated.View's PanResponder — React Native's responder
-  // negotiation gives a child's own responder (Pressable/Touchable) first
-  // claim on a touch-start over an ancestor PanResponder that only defines
-  // the bubble-phase onStartShouldSetPanResponder, so the child silently ate
-  // every touch and the sticker could never actually be dragged. Long-press-
-  // to-remove is folded into this same responder instead (tracked via a
-  // timer + movement threshold below) so there's exactly one responder and
-  // both gestures — drag and long-press — work reliably.
-  const movedRef = useRef(false);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearLongPressTimer = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  };
+  const scale = useRef(new Animated.Value(1)).current;
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  // One responder handles drag AND tap (a nested Pressable would steal the
+  // touch and the sticker could never be dragged). Callbacks via refs so the
+  // responder created once always calls the latest ones.
+  const cb = useRef({ onPositionChange, onRemove, onTap, onDragChange });
+  cb.current = { onPositionChange, onRemove, onTap, onDragChange };
+  const moved = useRef(false);
+  const overTrash = useRef(false);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -211,31 +261,47 @@ function DraggableSticker({
       onStartShouldSetPanResponderCapture: () => true,
       onMoveShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: () => {
-        movedRef.current = false;
+        moved.current = false;
+        overTrash.current = false;
         pan.setOffset({ x: (pan.x as any)._value, y: (pan.y as any)._value });
         pan.setValue({ x: 0, y: 0 });
-        clearLongPressTimer();
-        longPressTimer.current = setTimeout(() => {
-          if (!movedRef.current) onRemove();
-        }, STICKER_LONG_PRESS_MS);
       },
-      onPanResponderMove: (evt, gesture) => {
-        if (!movedRef.current && (Math.abs(gesture.dx) > STICKER_DRAG_THRESHOLD || Math.abs(gesture.dy) > STICKER_DRAG_THRESHOLD)) {
-          movedRef.current = true;
-          clearLongPressTimer();
+      onPanResponderMove: (evt, g) => {
+        if (!moved.current && (Math.abs(g.dx) > STICKER_DRAG_THRESHOLD || Math.abs(g.dy) > STICKER_DRAG_THRESHOLD)) {
+          moved.current = true;
+          cb.current.onDragChange?.(true, false);
         }
-        Animated.event([null, { dx: pan.x, dy: pan.y }], { useNativeDriver: false })(evt, gesture);
+        if (!moved.current) return;
+        pan.setValue({ x: g.dx, y: g.dy });
+        const over = inTrash(g.moveX / W, g.moveY / H);
+        if (over !== overTrash.current) {
+          overTrash.current = over;
+          cb.current.onDragChange?.(true, over);
+          Animated.spring(scale, { toValue: over ? 0.55 : 1, useNativeDriver: false, speed: 30 }).start();
+        }
       },
       onPanResponderRelease: () => {
-        clearLongPressTimer();
         pan.flattenOffset();
-        const x = Math.min(Math.max((pan.x as any)._value / W, 0), 1);
-        const y = Math.min(Math.max((pan.y as any)._value / H, 0), 1);
-        onPositionChange(x, y);
+        if (!moved.current) {
+          cb.current.onTap?.();
+          return;
+        }
+        cb.current.onDragChange?.(false, false);
+        if (overTrash.current) {
+          cb.current.onRemove();
+          return;
+        }
+        const x = Math.min(Math.max((pan.x as any)._value / W, 0.02), 0.98);
+        const y = Math.min(Math.max((pan.y as any)._value / H, 0.04), 0.96);
+        pan.setValue({ x: x * W, y: y * H });
+        cb.current.onPositionChange(x, y);
       },
       onPanResponderTerminate: () => {
-        clearLongPressTimer();
+        pan.flattenOffset();
+        if (moved.current) cb.current.onDragChange?.(false, false);
+        scale.setValue(1);
       },
     })
   ).current;
@@ -243,7 +309,17 @@ function DraggableSticker({
   return (
     <Animated.View
       {...panResponder.panHandlers}
-      style={[styles.stickerWrap, { transform: pan.getTranslateTransform() }]}
+      onLayout={(e) => {
+        const { width, height } = e.nativeEvent.layout;
+        if (!size || Math.abs(size.w - width) > 0.5 || Math.abs(size.h - height) > 0.5) setSize({ w: width, h: height });
+      }}
+      style={[
+        styles.stickerWrap,
+        {
+          left: -(size?.w ?? 0) / 2, top: -(size?.h ?? 0) / 2, opacity: size ? 1 : 0,
+          transform: [...pan.getTranslateTransform(), { scale }],
+        },
+      ]}
     >
       {children}
     </Animated.View>
@@ -261,14 +337,18 @@ function PreviewMedia({ uri, mediaType, muted }: { uri: string; mediaType: 'IMAG
   if (mediaType === 'IMAGE' || !useVideoPlayer || !VideoView) {
     return <Image source={{ uri }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />;
   }
-  // eslint-disable-next-line react-hooks/rules-of-hooks
+  return <LoopingPreviewVideo uri={uri} muted={muted} />;
+}
+
+/** The recorded/picked clip, replaying on a loop until you post or retake. */
+function LoopingPreviewVideo({ uri, muted }: { uri: string; muted: boolean }) {
   const player = useVideoPlayer({ uri }, (p: any) => {
     p.loop = true;
     p.muted = muted;
     p.play();
   });
   useEffect(() => {
-    if (player) player.muted = muted;
+    player.muted = muted;
   }, [muted, player]);
   return <VideoView player={player} style={StyleSheet.absoluteFillObject} contentFit="cover" nativeControls={false} />;
 }
@@ -285,11 +365,14 @@ export function CaptureFlow({
   accentColors,
   allowBoomerang = false,
   allowMusic = false,
+  allowTags = false,
+  storyMode = false,
   onSubmit,
 }: CaptureFlowProps) {
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
-  const resolvedAccentColors = accentColors ?? ['#E91E63', '#7B1FA2', colors.primaryDark];
+  // Paasxo brand blues by default (court-line cyan → brand blue → deep navy).
+  const resolvedAccentColors = accentColors ?? ['#22D3EE', '#2977C2', '#1E3A8A'];
   const router = useRouter();
   const cameraRef = useRef<any>(null);
 
@@ -335,14 +418,55 @@ export function CaptureFlow({
   // Sticker editing
   const [activeSticker, setActiveSticker] = useState<StickerKind>(null);
   const [captionText, setCaptionText] = useState('');
-  const [captionColor, setCaptionColor] = useState(CAPTION_COLORS[0]);
+  const [captionColor, setCaptionColor] = useState('#FFFFFF');
   const [captionPos, setCaptionPos] = useState({ x: 0.5, y: 0.4 });
   const [emoji, setEmoji] = useState<string | null>(null);
   const [emojiPos, setEmojiPos] = useState({ x: 0.5, y: 0.6 });
-  const [draftText, setDraftText] = useState('');
+  const [captionStyle, setCaptionStyle] = useState<CaptionStyleKey>('CLASSIC');
+  const [captionScale, setCaptionScale] = useState(1);
+  const fontsReady = useStoryFonts();
+
+  // Story decorations
+  const [gradeKey, setGradeKey] = useState('NORMAL');
+  const [effect, setEffect] = useState<string | null>(null);
+  const [place, setPlace] = useState<StoryPlace | null>(null);
+  const [placePos, setPlacePos] = useState({ x: 0.5, y: 0.66 });
+  const [sheet, setSheet] = useState<null | 'LOCATION' | 'EFFECTS'>(null);
+  const [drag, setDrag] = useState<{ dragging: boolean; overTrash: boolean }>({ dragging: false, overTrash: false });
+  const onDragChange = useCallback((dragging: boolean, overTrash: boolean) => setDrag({ dragging, overTrash }), []);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2200);
+  }, []);
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
+  // Tagged people (stories).
+  const [taggedPeople, setTaggedPeople] = useState<TaggedPerson[]>([]);
+  const [tagSheetVisible, setTagSheetVisible] = useState(false);
 
   // Boomerang (stories) — bounce forward/reverse loop, processed server-side.
   const [isBoomerang, setIsBoomerang] = useState(false);
+  // Boomerang chosen on the camera before capturing (tap = a short bounce).
+  const [boomerangMode, setBoomerangMode] = useState(false);
+  // Flashlight (torch) for the back camera — on before a photo or recording.
+  const [flashOn, setFlashOn] = useState(false);
+  // Video sound on/off for the post.
+  const [soundOff, setSoundOff] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Microphone off: ask once per session what to do (settings / no sound),
+  // unless "don't show again" was chosen.
+  const [micSheet, setMicSheet] = useState(false);
+  const [micDontShow, setMicDontShow] = useState(false);
+  const micPromptOff = useRef(false);
+  const recordWithoutSound = useRef(false);
+  useEffect(() => {
+    AsyncStorage.getItem(MIC_PROMPT_OFF_KEY).then((v) => { micPromptOff.current = v === '1'; }).catch(() => {});
+  }, []);
 
   // Background music
   const [showMusicPicker, setShowMusicPicker] = useState(false);
@@ -447,25 +571,58 @@ export function CaptureFlow({
   }, []);
 
   const camPerm = useCameraPermissions ? useCameraPermissions() : [{ granted: false }, async () => {}];
-  const micPerm = useMicrophonePermissions ? useMicrophonePermissions() : [{ granted: false }, async () => {}];
+  const micPerm = useMicrophonePermissions ? useMicrophonePermissions() : [{ granted: false }, async () => ({ granted: false }), async () => ({ granted: false })];
   const [cameraPermission, requestCameraPermission] = camPerm;
-  const [, requestMicPermission] = micPerm;
+  const [micPermission, requestMicPermission, getMicPermission] = micPerm;
+  const micGranted = !!micPermission?.granted;
+  // Back from Settings with the microphone switched on → record with sound again.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') getMicPermission?.().catch?.(() => {});
+    });
+    return () => sub.remove();
+  }, [getMicPermission]);
+  const recordLimitSeconds = boomerangMode ? Math.min(BOOMERANG_CAPTURE_SECONDS, maxVideoSeconds) : maxVideoSeconds;
+
+  // expo-camera: on iOS one 'video'-mode session can take photos AND record,
+  // so it stays in video mode (instant hold-to-record). On Android picture
+  // and video are separate camera bindings — it sits in picture mode and only
+  // switches for a recording, waiting for the camera to re-bind first.
+  const canStayInVideoMode = Platform.OS === 'ios' || !allowPhoto;
+  const [cameraMode, setCameraMode] = useState<'picture' | 'video'>(canStayInVideoMode ? 'video' : 'picture');
+  const cameraReadyWaiter = useRef<(() => void) | null>(null);
+  const handleCameraReady = useCallback(() => {
+    cameraReadyWaiter.current?.();
+  }, []);
+  const waitForCameraReady = (timeoutMs: number) => new Promise<void>((resolve) => {
+    const t = setTimeout(() => { cameraReadyWaiter.current = null; resolve(); }, timeoutMs);
+    cameraReadyWaiter.current = () => { clearTimeout(t); cameraReadyWaiter.current = null; resolve(); };
+  });
 
   const recordProgress = useRef(new Animated.Value(0)).current;
   const recordAnim = useRef<Animated.CompositeAnimation | null>(null);
-  // Instagram-style pulsing red ring while recording.
+  // Instagram-style pulsing ring while recording.
   const ringPulse = useRef(new Animated.Value(1)).current;
   const ringPulseAnim = useRef<Animated.CompositeAnimation | null>(null);
   // Tap-vs-hold disambiguation for the capture button — a plain onLongPress
   // gesture recognizer gets cancelled by the smallest finger movement on a
-  // real device (fine with a mouse click in an emulator, unreliable on
-  // actual hardware), so press state is tracked manually instead.
+  // real device, so press state is tracked manually instead.
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const recordingStartedRef = useRef(false);
+  // Refs, not state: the press handlers, the max-length timer and the
+  // in-flight recordAsync all need the live values, never a stale render's.
+  const recordingBusy = useRef(false);   // a hold is being handled (setup → recording → saved)
+  const recorderActive = useRef(false);  // recordAsync is running and can be stopped
+  const stopRequested = useRef(false);   // finger lifted (or limit hit)
+  const recordStartedAt = useRef(0);
+  const takingPhoto = useRef(false);
+  const unmounted = useRef(false);
 
   useEffect(() => {
     return () => {
+      unmounted.current = true;
       if (recordTimer.current) clearInterval(recordTimer.current);
+      if (holdTimer.current) clearTimeout(holdTimer.current);
+      if (recorderActive.current) cameraRef.current?.stopRecording?.();
     };
   }, []);
 
@@ -481,10 +638,15 @@ export function CaptureFlow({
 
   // ── Camera actions ──────────────────────────────────────────────────────
   const takePicture = async () => {
-    if (!cameraRef.current) return;
+    if (!cameraRef.current || takingPhoto.current || recordingBusy.current) return;
+    takingPhoto.current = true;
     try {
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.9, base64: false });
-      const prepared = await prepareImageForUpload(photo.uri, photo.width, photo.height);
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.9, base64: false, shutterSound: false });
+      if (!photo?.uri) throw new Error('No photo');
+      const prepared = storyMode
+        ? await prepareStoryImage(photo.uri, photo.width, photo.height, W / H)
+        : await prepareImageForUpload(photo.uri, photo.width, photo.height);
+      if (unmounted.current) return;
       setCapturedUri(prepared.uri);
       setCapturedMime('image/jpeg');
       setCapturedType('IMAGE');
@@ -492,99 +654,159 @@ export function CaptureFlow({
       setThumbnailUri(undefined);
       setMode('PREVIEW');
     } catch {
-      Alert.alert('Error', 'Failed to take photo');
+      Alert.alert('Couldn’t take the photo', 'Please try again.');
+    } finally {
+      takingPhoto.current = false;
     }
   };
 
-  const startRecording = async () => {
-    if (!cameraRef.current || isRecording) return;
-    recordingStartedRef.current = true;
-    setIsRecording(true);
-    setRecordSeconds(0);
-    recordProgress.setValue(0);
-
-    recordAnim.current = Animated.timing(recordProgress, {
-      toValue: 1,
-      duration: maxVideoSeconds * 1000,
-      useNativeDriver: false,
-    });
-    recordAnim.current.start(({ finished }) => {
-      if (finished) stopRecording();
-    });
-
+  const stopRecordingUi = () => {
+    if (recordTimer.current) { clearInterval(recordTimer.current); recordTimer.current = null; }
+    recordAnim.current?.stop();
+    if (ringPulseAnim.current) { ringPulseAnim.current.stop(); ringPulseAnim.current = null; }
     ringPulse.setValue(1);
-    ringPulseAnim.current = Animated.loop(
-      Animated.sequence([
-        Animated.timing(ringPulse, { toValue: 1.12, duration: 500, useNativeDriver: true }),
-        Animated.timing(ringPulse, { toValue: 1, duration: 500, useNativeDriver: true }),
-      ])
-    );
-    ringPulseAnim.current.start();
+    recordProgress.setValue(0);
+    setIsRecording(false);
+  };
 
-    recordTimer.current = setInterval(() => {
-      setRecordSeconds((s) => {
-        if (s + 1 >= maxVideoSeconds) stopRecording();
-        return s + 1;
-      });
-    }, 1000);
+  /** Finger lifted / time limit reached. Safe to call at any point of a hold. */
+  const stopRecording = useCallback(() => {
+    stopRequested.current = true;
+    if (recorderActive.current) {
+      cameraRef.current?.stopRecording?.();
+      // A stop that lands before the native recorder has actually started is
+      // ignored by the camera — repeat it once so a quick release still ends.
+      setTimeout(() => { if (recorderActive.current) cameraRef.current?.stopRecording?.(); }, 500);
+    }
+    // Otherwise startRecording is still setting up and will see stopRequested.
+  }, []);
 
+  const startRecording = async () => {
+    if (!cameraRef.current || recordingBusy.current || takingPhoto.current) return;
+    recordingBusy.current = true;
+    stopRequested.current = false;
+    let switchedMode = false;
     try {
-      const video = await cameraRef.current.recordAsync({
-        maxDuration: maxVideoSeconds,
-        quality: '720p',
+      // Microphone: the system asks the first time you hold (that dialog takes
+      // the touch, so the hold ends there). If it's off, we ask what to do —
+      // Settings, or record without sound — instead of a dead-end warning.
+      // The choice holds for the session; "don't show again" silences it.
+      // (A boomerang is silent anyway — never ask about the microphone for one.)
+      if (!micGranted && !recordWithoutSound.current && !boomerangMode) {
+        if (micPermission?.canAskAgain !== false) {
+          const res: any = await requestMicPermission();
+          if (res?.granted) return; // next hold records with sound
+          if (res?.canAskAgain !== false) return; // dismissed — ask again next time
+        }
+        if (!micPromptOff.current) {
+          setMicDontShow(false);
+          setMicSheet(true);
+          return;
+        }
+        recordWithoutSound.current = true;
+      }
+      if (stopRequested.current && !boomerangMode) return;
+
+      if (cameraMode !== 'video') {
+        const ready = waitForCameraReady(1500);
+        setCameraMode('video');
+        switchedMode = true;
+        await ready;
+        if (stopRequested.current || unmounted.current) return;
+      }
+
+      setIsRecording(true);
+      setRecordSeconds(0);
+      recordProgress.setValue(0);
+      recordAnim.current = Animated.timing(recordProgress, {
+        toValue: 1,
+        duration: recordLimitSeconds * 1000,
+        easing: Easing.linear,
+        useNativeDriver: false,
       });
-      const durationSec = Math.min(maxVideoSeconds, recordSeconds + 1);
+      recordAnim.current.start(({ finished }) => { if (finished) stopRecording(); });
+      ringPulse.setValue(1);
+      ringPulseAnim.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(ringPulse, { toValue: 1.1, duration: 500, useNativeDriver: true }),
+          Animated.timing(ringPulse, { toValue: 1, duration: 500, useNativeDriver: true }),
+        ]),
+      );
+      ringPulseAnim.current.start();
+      recordStartedAt.current = Date.now();
+      recordTimer.current = setInterval(() => {
+        setRecordSeconds(Math.min(recordLimitSeconds, Math.floor((Date.now() - recordStartedAt.current) / 1000)));
+      }, 250);
+
+      recorderActive.current = true;
+      // H.264 at a bounded bitrate: the server can then store the clip as-is
+      // (lossless remux) instead of re-encoding it.
+      const recording = cameraRef.current.recordAsync(
+        Platform.OS === 'ios' ? { maxDuration: recordLimitSeconds, codec: 'avc1' } : { maxDuration: recordLimitSeconds },
+      );
+      // Released in the instant between setup and the recorder starting
+      // (a boomerang always runs its full short burst).
+      if (stopRequested.current && !boomerangMode) stopRecording();
+      const video = await recording;
+      recorderActive.current = false;
+      const elapsedMs = Date.now() - recordStartedAt.current;
+      if (unmounted.current) return;
+      if (!video?.uri) throw new Error('No video');
+      if (elapsedMs < 400 && !boomerangMode) {
+        // A stray touch, not a clip — Instagram treats this as nothing too.
+        return;
+      }
       setCapturedUri(video.uri);
-      setCapturedMime('video/mp4');
+      setCapturedMime(/\.mov$/i.test(video.uri) ? 'video/quicktime' : 'video/mp4');
       setCapturedType('VIDEO');
-      setCapturedDuration(durationSec);
+      setCapturedDuration(Math.max(1, Math.min(recordLimitSeconds, Math.round(elapsedMs / 1000))));
+      setThumbnailUri(undefined);
+      setIsBoomerang(boomerangMode);
+      setSoundOff(false);
       setMode('PREVIEW');
       generateThumbnail(video.uri);
     } catch {
-      setIsRecording(false);
+      if (!unmounted.current && !stopRequested.current) {
+        Alert.alert('Recording stopped', 'The video couldn’t be recorded. Please try again.');
+      }
     } finally {
-      recordingStartedRef.current = false;
+      recorderActive.current = false;
+      recordingBusy.current = false;
+      if (!unmounted.current) {
+        stopRecordingUi();
+        if (switchedMode) setCameraMode('picture');
+      }
     }
   };
 
-  const stopRecording = useCallback(() => {
-    if (!isRecording) return;
-    setIsRecording(false);
-    if (recordTimer.current) { clearInterval(recordTimer.current); recordTimer.current = null; }
-    if (recordAnim.current) recordAnim.current.stop();
-    if (ringPulseAnim.current) { ringPulseAnim.current.stop(); ringPulseAnim.current = null; }
-    ringPulse.setValue(1);
-    cameraRef.current?.stopRecording?.();
-  }, [isRecording]);
-
-  // ── Capture button press handling (tap = photo, hold = video) ────────────
+  // ── Capture button (tap = photo, hold = video, release = stop) ───────────
   const handleCapturePressIn = () => {
-    if (isRecording) return;
+    if (recordingBusy.current) return;
+    if (boomerangMode) {
+      // Tap (or hold) captures a short burst that stops by itself.
+      startRecording();
+      return;
+    }
     if (!allowPhoto) {
-      // Reels have no photo mode — hold isn't even required, start immediately.
+      // Reels have no photo mode — recording starts on touch.
       startRecording();
       return;
     }
     holdTimer.current = setTimeout(() => {
       holdTimer.current = null;
       startRecording();
-    }, 350);
+    }, 300);
   };
 
   const handleCapturePressOut = () => {
-    if (isRecording) {
-      stopRecording();
-      return;
-    }
     if (holdTimer.current) {
-      // Released before the hold threshold fired — treat as a tap (photo).
+      // Released before the hold threshold — a tap: take a photo.
       clearTimeout(holdTimer.current);
       holdTimer.current = null;
-      if (allowPhoto) takePicture();
+      takePicture();
+      return;
     }
-    // If holdTimer is already null here, startRecording() already fired (or
-    // is in flight) from handleCapturePressIn — recordAsync's own await will
-    // resolve once stopRecording (triggered above, next press) completes it.
+    if (recordingBusy.current && !boomerangMode) stopRecording();
   };
 
   // ── Gallery picker ────────────────────────────────────────────────────────
@@ -601,13 +823,22 @@ export function CaptureFlow({
         quality: 0.8,
         videoMaxDuration: maxVideoSeconds,
         exif: false,
+        // On-device 1080p H.264 conversion (iOS) — keeps uploads small and
+        // the server's ffmpeg to a quick remux.
+        videoExportPreset: ImagePicker.VideoExportPreset.H264_1920x1080,
       });
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
       let uri = asset.uri;
       const isVid = asset.type === 'video';
+      if (isVid && asset.duration && asset.duration / 1000 > maxVideoSeconds + 1) {
+        Alert.alert('Video too long', `Pick a video up to ${maxVideoSeconds} seconds long.`);
+        return;
+      }
       if (!isVid) {
-        const prepared = await prepareImageForUpload(uri, asset.width, asset.height);
+        const prepared = storyMode
+          ? await prepareStoryImage(uri, asset.width, asset.height, W / H)
+          : await prepareImageForUpload(uri, asset.width, asset.height);
         uri = prepared.uri;
       }
       setCapturedUri(uri);
@@ -622,6 +853,8 @@ export function CaptureFlow({
       setCapturedType(isVid ? 'VIDEO' : 'IMAGE');
       setCapturedDuration(isVid && asset.duration ? Math.min(Math.ceil(asset.duration / 1000), maxVideoSeconds) : 5);
       setThumbnailUri(undefined);
+      setSoundOff(false);
+      setIsBoomerang(false);
       setMode('PREVIEW');
       if (isVid) generateThumbnail(uri);
     } catch {
@@ -630,13 +863,26 @@ export function CaptureFlow({
   };
 
   // ── Sticker helpers ───────────────────────────────────────────────────────
-  const openTextEditor = () => {
-    setDraftText(captionText);
-    setActiveSticker('CAPTION');
-  };
-  const confirmCaptionText = () => {
-    setCaptionText(draftText.trim());
+  const openTextEditor = () => setActiveSticker('CAPTION');
+  const confirmCaption = (v: CaptionValue) => {
+    setCaptionText(v.text);
+    setCaptionColor(v.color);
+    setCaptionStyle(v.style);
+    setCaptionScale(v.scale);
     setActiveSticker(null);
+  };
+  const pickPlace = (p: StoryPlace) => {
+    setPlace(p);
+    setSheet(null);
+  };
+  const handleSave = async () => {
+    if (!capturedUri || saving) return;
+    setSaving(true);
+    const res = await saveMediaToDevice(capturedUri, capturedType === 'VIDEO');
+    setSaving(false);
+    if (res === 'saved') showToast(capturedType === 'VIDEO' ? 'Video saved to your gallery' : 'Photo saved to your gallery');
+    else if (res === 'denied') Alert.alert('Allow Photos access', 'To save, allow Paasxo to add photos in your phone’s Settings.');
+    else if (res === 'failed') showToast('Couldn’t save — please try again');
   };
   const pickEmoji = (e: string) => {
     setEmoji(e);
@@ -660,7 +906,7 @@ export function CaptureFlow({
         mimeType: capturedMime,
         mediaType: capturedType,
         durationSeconds: capturedDuration,
-        filterName: selectedFilter.name,
+        filterName: storyMode ? gradeKey : selectedFilter.name,
         caption: caption.trim() || undefined,
         captionText: captionText || undefined,
         captionColor: captionText ? captionColor : undefined,
@@ -671,9 +917,22 @@ export function CaptureFlow({
         emojiY: emoji ? emojiPos.y : undefined,
         thumbnailUri,
         isBoomerang: allowBoomerang && capturedType === 'VIDEO' ? isBoomerang : undefined,
+        soundOff: capturedType === 'VIDEO' && !isBoomerang ? soundOff : undefined,
         audioTrackId: selectedTrack?.id,
         audioTrackUrl: selectedTrack?.url,
         audioVolume: selectedTrack ? 0.85 : undefined,
+        taggedUserIds: allowTags && taggedPeople.length ? taggedPeople.map((p) => p.firebaseUid) : undefined,
+        ...(storyMode ? {
+          captionStyle: captionText ? captionStyle : undefined,
+          captionScale: captionText ? captionScale : undefined,
+          locationName: place?.name,
+          locationPlaceId: place?.placeId ?? undefined,
+          locationLat: place?.latitude ?? undefined,
+          locationLng: place?.longitude ?? undefined,
+          locationX: place ? placePos.x : undefined,
+          locationY: place ? placePos.y : undefined,
+          effect: effect ?? undefined,
+        } : {}),
       });
       setUploadDone(true);
       setTimeout(() => goBack(router), 1200);
@@ -737,29 +996,60 @@ export function CaptureFlow({
 
   // ── Preview mode ──────────────────────────────────────────────────────────
   if (mode === 'PREVIEW' && capturedUri) {
+    const busy = uploading || uploadDone;
+    const previewThumb = capturedType === 'IMAGE' ? capturedUri : thumbnailUri;
+    const tools: { key: string; label: string; icon: React.ReactNode; onPress: () => void; active?: boolean; show: boolean }[] = [
+      { key: 'text', label: 'Text', icon: <TypeIcon color="#fff" size={20} strokeWidth={2.4} />, onPress: openTextEditor, active: !!captionText, show: true },
+      { key: 'sticker', label: 'Stickers', icon: <Smile color="#fff" size={20} strokeWidth={2.4} />, onPress: () => setActiveSticker('EMOJI'), active: !!emoji, show: true },
+      { key: 'place', label: 'Location', icon: <MapPin color="#fff" size={20} strokeWidth={2.4} />, onPress: () => setSheet('LOCATION'), active: !!place, show: storyMode },
+      { key: 'fx', label: 'Effects', icon: <Sparkles color="#fff" size={20} strokeWidth={2.4} />, onPress: () => setSheet('EFFECTS'), active: !!effect, show: storyMode },
+      { key: 'music', label: 'Music', icon: <Music color="#fff" size={20} strokeWidth={2.4} />, onPress: openMusicPicker, active: !!selectedTrack, show: allowMusic },
+      { key: 'tag', label: 'Tag', icon: <UserPlus color="#fff" size={20} strokeWidth={2.4} />, onPress: () => setTagSheetVisible(true), active: taggedPeople.length > 0, show: allowTags },
+      {
+        key: 'sound', label: soundOff ? 'Sound off' : 'Sound on',
+        icon: soundOff ? <VolumeX color="#fff" size={20} strokeWidth={2.4} /> : <Volume2 color="#fff" size={20} strokeWidth={2.4} />,
+        onPress: () => setSoundOff((v) => !v), active: soundOff, show: capturedType === 'VIDEO' && !isBoomerang,
+      },
+      { key: 'boomerang', label: 'Boomerang', icon: <RefreshCw color="#fff" size={20} strokeWidth={2.4} />, onPress: () => setIsBoomerang((b) => !b), active: isBoomerang, show: allowBoomerang && capturedType === 'VIDEO' },
+      {
+        key: 'save', label: 'Save',
+        icon: saving ? <ActivityIndicator color="#fff" size="small" /> : <Download color="#fff" size={20} strokeWidth={2.4} />,
+        onPress: handleSave, show: storyMode,
+      },
+    ];
+
     return (
       <View style={styles.previewContainer}>
         <StatusBar hidden />
-        <PreviewMedia uri={capturedUri} mediaType={capturedType} muted={!!selectedTrack} />
-        {selectedFilter.overlay && (
-          <View
-            style={[StyleSheet.absoluteFillObject, { backgroundColor: selectedFilter.overlay }]}
-            pointerEvents="none"
-          />
-        )}
-        <LinearGradient colors={['rgba(0,0,0,0.55)', 'transparent']} style={styles.previewTopGrad} pointerEvents="none" />
-        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.65)']} style={styles.previewBottomGrad} pointerEvents="none" />
+        {/* Media + colour grade, blended in their own isolated group. */}
+        <View style={styles.mediaGroup}>
+          <PreviewMedia uri={capturedUri} mediaType={capturedType} muted={!!selectedTrack || soundOff || isBoomerang} />
+          {storyMode ? (
+            <GradeLayers gradeKey={gradeKey} />
+          ) : selectedFilter.overlay ? (
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: selectedFilter.overlay }]} pointerEvents="none" />
+          ) : null}
+        </View>
+        {storyMode && <StoryEffectLayer effectKey={effect} fontsReady={fontsReady} />}
+        <LinearGradient colors={['rgba(0,0,0,0.5)', 'transparent']} style={styles.previewTopGrad} pointerEvents="none" />
+        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.7)']} style={styles.previewBottomGrad} pointerEvents="none" />
 
-        {/* Draggable stickers — drag to reposition, hold still to remove. */}
+        {/* Stickers: drag to move, tap to edit, drop on the bin to remove. */}
         {!!captionText && (
           <DraggableSticker
             initialX={captionPos.x}
             initialY={captionPos.y}
             onPositionChange={(x, y) => setCaptionPos({ x, y })}
             onRemove={removeCaptionText}
+            onTap={openTextEditor}
+            onDragChange={onDragChange}
             styles={styles}
           >
-            <Text style={[styles.stickerCaptionText, { color: captionColor }]}>{captionText}</Text>
+            {storyMode ? (
+              <StoryCaption text={captionText} color={captionColor} styleKey={captionStyle} scale={captionScale} fontsReady={fontsReady} maxWidth={W - 40} />
+            ) : (
+              <Text style={[styles.stickerCaptionText, { color: captionColor }]}>{captionText}</Text>
+            )}
           </DraggableSticker>
         )}
         {!!emoji && (
@@ -768,175 +1058,197 @@ export function CaptureFlow({
             initialY={emojiPos.y}
             onPositionChange={(x, y) => setEmojiPos({ x, y })}
             onRemove={removeEmoji}
+            onTap={() => setActiveSticker('EMOJI')}
+            onDragChange={onDragChange}
             styles={styles}
           >
-            <Text style={styles.stickerEmoji}>{emoji}</Text>
+            <Text style={styles.stickerEmoji} allowFontScaling={false}>{emoji}</Text>
+          </DraggableSticker>
+        )}
+        {storyMode && !!place && (
+          <DraggableSticker
+            key={place.name}
+            initialX={placePos.x}
+            initialY={placePos.y}
+            onPositionChange={(x, y) => setPlacePos({ x, y })}
+            onRemove={() => setPlace(null)}
+            onTap={() => setSheet('LOCATION')}
+            onDragChange={onDragChange}
+            styles={styles}
+          >
+            <LocationSticker name={place.name} fontsReady={fontsReady} maxWidth={W - 60} />
           </DraggableSticker>
         )}
 
-        {/* Top row */}
-        <SafeAreaView style={styles.previewTop} edges={['top']}>
-          <TouchableOpacity style={styles.previewBackBtn} onPress={() => setMode('CAMERA')} activeOpacity={0.8}>
-            <ArrowLeft color="#fff" size={22} strokeWidth={2.5} />
-          </TouchableOpacity>
-          <View style={styles.previewTopRight}>
-            {capturedType === 'VIDEO' && (
-              <View style={styles.videoBadge}>
-                <Video color="#fff" size={12} strokeWidth={2.5} fill="#fff" />
-                <Text style={styles.videoBadgeText}>{capturedDuration}s</Text>
-              </View>
-            )}
-            {allowBoomerang && capturedType === 'VIDEO' && (
-              <TouchableOpacity
-                style={[styles.previewToolBtn, isBoomerang && styles.previewToolBtnActive]}
-                onPress={() => setIsBoomerang((b) => !b)}
-                activeOpacity={0.8}
-              >
-                <RefreshCw color={isBoomerang ? '#000' : '#fff'} size={18} strokeWidth={2.5} />
-              </TouchableOpacity>
-            )}
-            {allowMusic && (
-              <TouchableOpacity
-                style={[styles.previewToolBtn, !!selectedTrack && styles.previewToolBtnActive]}
-                onPress={openMusicPicker}
-                activeOpacity={0.8}
-              >
-                <Music color={selectedTrack ? '#000' : '#fff'} size={18} strokeWidth={2.5} />
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity style={styles.previewToolBtn} onPress={openTextEditor} activeOpacity={0.8}>
-              <TypeIcon color="#fff" size={18} strokeWidth={2.5} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.previewToolBtn} onPress={() => setActiveSticker('EMOJI')} activeOpacity={0.8}>
-              <Smile color="#fff" size={18} strokeWidth={2.5} />
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-
-        {isBoomerang && (
-          <View style={styles.boomerangBadge} pointerEvents="none">
-            <RefreshCw color="#000" size={12} strokeWidth={2.5} />
-            <Text style={styles.boomerangBadgeText}>Boomerang</Text>
+        {/* Bin — shown while dragging a sticker. */}
+        {drag.dragging && (
+          <View style={styles.trashWrap} pointerEvents="none">
+            <View style={[styles.trash, drag.overTrash && styles.trashActive]}>
+              <Trash2 color="#fff" size={drag.overTrash ? 26 : 22} strokeWidth={2.4} />
+            </View>
+            <Text style={styles.trashText}>{drag.overTrash ? 'Release to remove' : 'Drag here to remove'}</Text>
           </View>
         )}
 
-        {!!selectedTrack && (
+        {/* Top-left: back + badges */}
+        {!drag.dragging && (
+          <SafeAreaView style={styles.previewTop} edges={['top']} pointerEvents="box-none">
+            <TouchableOpacity style={styles.previewBackBtn} onPress={() => setMode('CAMERA')} activeOpacity={0.8} disabled={busy} accessibilityLabel="Retake">
+              <ArrowLeft color="#fff" size={22} strokeWidth={2.5} />
+            </TouchableOpacity>
+            <View style={styles.badgeRow}>
+              {capturedType === 'VIDEO' && (
+                <View style={styles.videoBadge}>
+                  <Video color="#fff" size={12} strokeWidth={2.5} fill="#fff" />
+                  <Text style={styles.videoBadgeText}>{capturedDuration}s</Text>
+                </View>
+              )}
+              {isBoomerang && (
+                <View style={[styles.videoBadge, { backgroundColor: '#fff' }]}>
+                  <RefreshCw color="#000" size={12} strokeWidth={2.5} />
+                  <Text style={[styles.videoBadgeText, { color: '#000' }]}>Boomerang</Text>
+                </View>
+              )}
+            </View>
+          </SafeAreaView>
+        )}
+
+        {/* Right: tool rail */}
+        {!drag.dragging && (
+          <SafeAreaView style={styles.toolRail} edges={['top']} pointerEvents="box-none">
+            {tools.filter((t) => t.show).map((t) => (
+              <TouchableOpacity
+                key={t.key}
+                style={styles.toolItem}
+                onPress={t.onPress}
+                activeOpacity={0.8}
+                disabled={busy}
+                accessibilityLabel={t.label}
+              >
+                <View style={[styles.toolBtn, t.active && styles.toolBtnActive]}>{t.icon}</View>
+                <Text style={styles.toolLabel}>{t.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </SafeAreaView>
+        )}
+
+        {!!selectedTrack && !drag.dragging && (
           <TouchableOpacity style={styles.musicBadge} onPress={openMusicPicker} activeOpacity={0.85}>
             <Music color="#fff" size={12} strokeWidth={2.5} />
             <Text style={styles.musicBadgeText} numberOfLines={1}>{selectedTrack.title} · {selectedTrack.artist}</Text>
           </TouchableOpacity>
         )}
 
-        {/* Filter row */}
-        <View style={styles.filtersWrap}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filtersScroll}>
-            {CAPTURE_FILTERS.map((f) => {
-              const active = selectedFilter.name === f.name;
-              return (
-                <TouchableOpacity key={f.name} style={styles.filterItem} onPress={() => setSelectedFilter(f)} activeOpacity={0.8}>
-                  <View style={[styles.filterSwatch, { backgroundColor: f.overlay ?? '#555', borderColor: active ? '#fff' : 'rgba(255,255,255,0.3)' }]}>
-                    {f.overlay === null && <Text style={{ color: '#fff', fontSize: 11 }}>✓</Text>}
-                  </View>
-                  <Text style={[styles.filterLabel, { color: active ? f.labelColor : 'rgba(255,255,255,0.55)' }]}>{f.label}</Text>
-                  {active && <View style={styles.filterActiveDot} />}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        {/* Bottom: optional caption input + share — lifted above the keyboard
-            (see keyboardOffset below) so the share button never ends up
-            hidden behind it once the caption field is focused. */}
-        <SafeAreaView style={[styles.previewBottom, { bottom: keyboardOffset }]} edges={['bottom']}>
-          {allowCaption && (
-            <TextInput
-              style={styles.captionInput}
-              placeholder={captionPlaceholder}
-              placeholderTextColor="rgba(255,255,255,0.6)"
-              value={caption}
-              onChangeText={setCaption}
-              maxLength={280}
-              multiline
-              returnKeyType="done"
-              blurOnSubmit
-              onSubmitEditing={() => Keyboard.dismiss()}
-            />
-          )}
-          <TouchableOpacity style={styles.shareBtn} onPress={handleSubmit} disabled={uploading || uploadDone} activeOpacity={0.88}>
-            {uploadDone ? (
-              <View style={styles.shareBtnInner}>
-                <CheckCircle color="#fff" size={22} strokeWidth={2.5} />
-                <Text style={styles.shareBtnText}>{doneLabel}</Text>
-              </View>
-            ) : uploading ? (
-              <View style={styles.shareBtnInner}>
-                <ActivityIndicator color="#fff" size="small" />
-                <Text style={styles.shareBtnText}>{submittingLabel}</Text>
-              </View>
-            ) : (
-              <LinearGradient colors={resolvedAccentColors} style={styles.shareBtnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Zap color="#fff" size={18} strokeWidth={2.5} fill="#fff" />
-                <Text style={styles.shareBtnText}>{submitLabel}</Text>
-              </LinearGradient>
+        {/* Bottom: tags, colour grades, caption, share */}
+        {!drag.dragging && (
+          <SafeAreaView style={[styles.previewBottom, { bottom: keyboardOffset }]} edges={['bottom']} pointerEvents="box-none">
+            {allowTags && taggedPeople.length > 0 && (
+              <TouchableOpacity style={styles.tagSummary} onPress={() => setTagSheetVisible(true)} activeOpacity={0.85}>
+                <UserPlus color="#fff" size={13} strokeWidth={2.5} />
+                <Text style={styles.tagSummaryText} numberOfLines={1}>
+                  {taggedPeople.length === 1
+                    ? `With ${taggedPeople[0].displayName}`
+                    : `With ${taggedPeople[0].displayName} +${taggedPeople.length - 1}`}
+                </Text>
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
-        </SafeAreaView>
+            {keyboardOffset === 0 && (
+              storyMode ? (GRADES_SUPPORTED &&
+                <View style={styles.gradeWrap}>
+                  <GradeStrip thumbUri={previewThumb} value={gradeKey} onChange={setGradeKey} />
+                </View>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filtersScroll} style={styles.gradeWrap}>
+                  {CAPTURE_FILTERS.map((f) => {
+                    const active = selectedFilter.name === f.name;
+                    return (
+                      <TouchableOpacity key={f.name} style={styles.filterItem} onPress={() => setSelectedFilter(f)} activeOpacity={0.8}>
+                        <View style={[styles.filterSwatch, { backgroundColor: f.overlay ?? '#555', borderColor: active ? '#fff' : 'rgba(255,255,255,0.3)' }]}>
+                          {f.overlay === null && <Text style={{ color: '#fff', fontSize: 11 }}>✓</Text>}
+                        </View>
+                        <Text style={[styles.filterLabel, { color: active ? f.labelColor : 'rgba(255,255,255,0.55)' }]}>{f.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )
+            )}
+            <View style={styles.bottomInner}>
+              {allowCaption && (
+                <TextInput
+                  style={styles.captionInput}
+                  placeholder={captionPlaceholder}
+                  placeholderTextColor="rgba(255,255,255,0.6)"
+                  value={caption}
+                  onChangeText={setCaption}
+                  maxLength={280}
+                  multiline
+                  returnKeyType="done"
+                  blurOnSubmit
+                  onSubmitEditing={() => Keyboard.dismiss()}
+                />
+              )}
+              <TouchableOpacity style={styles.shareBtn} onPress={handleSubmit} disabled={busy} activeOpacity={0.88}>
+                {uploadDone ? (
+                  <View style={styles.shareBtnInner}>
+                    <CheckCircle color="#fff" size={22} strokeWidth={2.5} />
+                    <Text style={styles.shareBtnText}>{doneLabel}</Text>
+                  </View>
+                ) : uploading ? (
+                  <View style={[styles.shareBtnInner, { backgroundColor: 'rgba(41,119,194,0.9)' }]}>
+                    <ActivityIndicator color="#fff" size="small" />
+                    <Text style={styles.shareBtnText}>{submittingLabel}</Text>
+                  </View>
+                ) : (
+                  <LinearGradient colors={resolvedAccentColors} style={styles.shareBtnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                    <Zap color="#fff" size={18} strokeWidth={2.5} fill="#fff" />
+                    <Text style={styles.shareBtnText}>{submitLabel}</Text>
+                  </LinearGradient>
+                )}
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        )}
 
-        {/* Text-sticker editor */}
-        {activeSticker === 'CAPTION' && (
-          <View style={styles.editorOverlay}>
-            <SafeAreaView style={styles.editorSafe} edges={['top', 'bottom']}>
-              <View style={styles.editorHeader}>
-                <TouchableOpacity onPress={() => setActiveSticker(null)}>
-                  <X color="#fff" size={22} strokeWidth={2.5} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={confirmCaptionText}>
-                  <Text style={styles.editorDoneText}>Done</Text>
-                </TouchableOpacity>
-              </View>
-              <TextInput
-                style={[styles.editorTextInput, { color: captionColor }]}
-                placeholder="Type something..."
-                placeholderTextColor="rgba(255,255,255,0.5)"
-                value={draftText}
-                onChangeText={setDraftText}
-                autoFocus
-                multiline
-                maxLength={60}
-              />
-              <View style={styles.colorRow}>
-                {CAPTION_COLORS.map((c) => (
-                  <TouchableOpacity
-                    key={c}
-                    style={[styles.colorSwatch, { backgroundColor: c }, captionColor === c && styles.colorSwatchActive]}
-                    onPress={() => setCaptionColor(c)}
-                  />
-                ))}
-              </View>
-            </SafeAreaView>
+        {!!toast && (
+          <View style={styles.toast} pointerEvents="none">
+            <CheckCircle color="#22D3EE" size={16} strokeWidth={2.6} />
+            <Text style={styles.toastText}>{toast}</Text>
           </View>
         )}
 
-        {/* Emoji sticker picker */}
+        {/* ── Editors & sheets ── */}
+        {activeSticker === 'CAPTION' && (
+          <CaptionEditor
+            initial={{ text: captionText, color: captionColor, style: storyMode ? captionStyle : 'CLASSIC', scale: storyMode ? captionScale : 1 }}
+            fontsReady={fontsReady}
+            allowStyles={storyMode}
+            onDone={confirmCaption}
+            onCancel={() => setActiveSticker(null)}
+          />
+        )}
         {activeSticker === 'EMOJI' && (
-          <View style={styles.editorOverlay}>
-            <SafeAreaView style={styles.editorSafe} edges={['top', 'bottom']}>
-              <View style={styles.editorHeader}>
-                <Text style={styles.editorTitle}>Add an emoji</Text>
-                <TouchableOpacity onPress={() => setActiveSticker(null)}>
-                  <X color="#fff" size={22} strokeWidth={2.5} />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.emojiGrid}>
-                {EMOJIS.map((e) => (
-                  <TouchableOpacity key={e} style={styles.emojiCell} onPress={() => pickEmoji(e)}>
-                    <Text style={styles.emojiCellText}>{e}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </SafeAreaView>
-          </View>
+          <StickerSheet onPick={pickEmoji} onClose={() => setActiveSticker(null)} />
+        )}
+        {storyMode && sheet === 'LOCATION' && (
+          <LocationSheet
+            current={place?.name ?? null}
+            onPick={pickPlace}
+            onRemove={() => { setPlace(null); setSheet(null); }}
+            onClose={() => setSheet(null)}
+          />
+        )}
+        {storyMode && sheet === 'EFFECTS' && (
+          <EffectsSheet value={effect} onChange={setEffect} onClose={() => setSheet(null)} />
+        )}
+        {allowTags && (
+          <TagPeopleSheet
+            visible={tagSheetVisible}
+            selected={taggedPeople}
+            onChange={setTaggedPeople}
+            onClose={() => setTagSheetVisible(false)}
+            title="Tag people in your story"
+          />
         )}
 
         {/* Background-music picker */}
@@ -1013,9 +1325,12 @@ export function CaptureFlow({
         ref={cameraRef}
         style={StyleSheet.absoluteFillObject}
         facing={facing}
-        mode={isRecording ? 'video' : 'picture'}
-        videoQuality="720p"
-        enableTorch={false}
+        mode={cameraMode}
+        mute={!micGranted}
+        videoQuality="1080p"
+        videoBitrate={5_000_000}
+        enableTorch={flashOn && facing === 'back'}
+        onCameraReady={handleCameraReady}
       />
 
       <SafeAreaView style={styles.camTopBar} edges={['top']}>
@@ -1025,7 +1340,7 @@ export function CaptureFlow({
         {isRecording && (
           <View style={styles.recordInfo}>
             <View style={styles.recDot} />
-            <Text style={styles.recTimer}>{recordSeconds}s / {maxVideoSeconds}s</Text>
+            <Text style={styles.recTimer}>{recordSeconds}s / {recordLimitSeconds}s</Text>
             <Animated.View
               style={[
                 styles.recProgressTrack,
@@ -1034,13 +1349,38 @@ export function CaptureFlow({
             />
           </View>
         )}
-        <TouchableOpacity
-          style={styles.camIconBtn}
-          onPress={() => setFacing((f) => (f === 'back' ? 'front' : 'back'))}
-          activeOpacity={0.8}
-        >
-          <FlipHorizontal color="#fff" size={22} strokeWidth={2} />
-        </TouchableOpacity>
+        <View style={styles.camTopRight}>
+          {facing === 'back' && !isRecording && (
+            <TouchableOpacity
+              style={[styles.camIconBtn, flashOn && styles.camIconBtnOn]}
+              onPress={() => setFlashOn((v) => !v)}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={flashOn ? 'Turn flashlight off' : 'Turn flashlight on'}
+            >
+              {flashOn ? <Zap color="#000" size={20} strokeWidth={2.4} fill="#000" /> : <ZapOff color="#fff" size={20} strokeWidth={2.2} />}
+            </TouchableOpacity>
+          )}
+          {storyMode && !isRecording && (
+            <TouchableOpacity
+              style={styles.camIconBtn}
+              onPress={() => setSettingsOpen(true)}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Story settings"
+            >
+              <Settings2 color="#fff" size={21} strokeWidth={2.2} />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.camIconBtn}
+            onPress={() => { setFacing((f) => (f === 'back' ? 'front' : 'back')); }}
+            activeOpacity={0.8}
+            accessibilityLabel="Flip camera"
+          >
+            <FlipHorizontal color="#fff" size={22} strokeWidth={2} />
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
 
       <SafeAreaView style={styles.camBottomBar} edges={['bottom']}>
@@ -1050,7 +1390,14 @@ export function CaptureFlow({
         </TouchableOpacity>
 
         <View style={styles.captureWrap}>
-          <Pressable onPressIn={handleCapturePressIn} onPressOut={handleCapturePressOut}>
+          <Pressable
+            onPressIn={handleCapturePressIn}
+            onPressOut={handleCapturePressOut}
+            // Keep the hold alive if the finger drifts while recording.
+            pressRetentionOffset={{ top: H, bottom: 200, left: W, right: W }}
+            accessibilityRole="button"
+            accessibilityLabel={allowPhoto ? 'Capture. Tap for a photo, hold to record a video' : 'Hold to record'}
+          >
             <Animated.View
               style={[
                 styles.captureOuter,
@@ -1061,15 +1408,103 @@ export function CaptureFlow({
               <View style={[styles.captureInner, isRecording && styles.captureRecording]}>
                 {isRecording && <View style={styles.captureStopSquare} />}
               </View>
+              {isRecording && (
+                <Svg width={RING_SIZE} height={RING_SIZE} style={styles.captureRing} pointerEvents="none">
+                  <AnimatedCircle
+                    cx={RING_SIZE / 2}
+                    cy={RING_SIZE / 2}
+                    r={RING_R}
+                    stroke={resolvedAccentColors[0]}
+                    strokeWidth={5}
+                    strokeLinecap="round"
+                    fill="none"
+                    strokeDasharray={`${RING_C} ${RING_C}`}
+                    strokeDashoffset={recordProgress.interpolate({ inputRange: [0, 1], outputRange: [RING_C, 0] })}
+                    transform={`rotate(-90 ${RING_SIZE / 2} ${RING_SIZE / 2})`}
+                  />
+                </Svg>
+              )}
             </Animated.View>
           </Pressable>
           <Text style={styles.captureHint}>
-            {isRecording ? 'Tap to stop' : allowPhoto ? 'Tap photo · Hold video' : 'Hold to record'}
+            {boomerangMode
+              ? (isRecording ? 'Capturing boomerang…' : 'Tap for a Boomerang')
+              : isRecording ? 'Release to stop' : allowPhoto ? 'Tap for photo · Hold for video' : 'Hold to record'}
           </Text>
         </View>
 
-        <View style={styles.sideBtn} />
+        {allowBoomerang ? (
+          <TouchableOpacity
+            style={styles.sideBtn}
+            onPress={() => setBoomerangMode((v) => !v)}
+            disabled={isRecording}
+            activeOpacity={0.8}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: boomerangMode }}
+            accessibilityLabel="Boomerang"
+          >
+            <View style={[styles.boomBtn, boomerangMode && styles.boomBtnOn]}>
+              <RefreshCw color={boomerangMode ? '#000' : '#fff'} size={22} strokeWidth={2.2} />
+            </View>
+            <Text style={styles.sideBtnLabel}>Boomerang</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.sideBtn} />
+        )}
       </SafeAreaView>
+
+      {settingsOpen && <StorySettingsSheet onClose={() => setSettingsOpen(false)} />}
+
+      {micSheet && (
+        <View style={styles.micOverlay}>
+          <View style={styles.micCard}>
+            <View style={styles.micIcon}><MicOff color="#fff" size={26} strokeWidth={2.2} /></View>
+            <Text style={styles.micTitle}>Microphone is off</Text>
+            <Text style={styles.micBody}>Paasxo can’t record sound. Turn the microphone on in Settings, or record this video without sound.</Text>
+            <TouchableOpacity
+              style={styles.micPrimary}
+              onPress={() => {
+                if (micDontShow) { micPromptOff.current = true; AsyncStorage.setItem(MIC_PROMPT_OFF_KEY, '1').catch(() => {}); }
+                setMicSheet(false);
+                Linking.openSettings().catch(() => {});
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.micPrimaryText}>Open Settings</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.micSecondary}
+              onPress={() => {
+                if (micDontShow) { micPromptOff.current = true; AsyncStorage.setItem(MIC_PROMPT_OFF_KEY, '1').catch(() => {}); }
+                recordWithoutSound.current = true;
+                setMicSheet(false);
+                showToast(boomerangMode ? 'Tap the button to record' : 'Hold the button to record without sound');
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.micSecondaryText}>Record without sound</Text>
+            </TouchableOpacity>
+            <Pressable
+              style={styles.micCheckRow}
+              onPress={() => setMicDontShow((v) => !v)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: micDontShow }}
+            >
+              <View style={[styles.micCheck, micDontShow && styles.micCheckOn]}>
+                {micDontShow && <CheckCircle color="#fff" size={14} strokeWidth={3} />}
+              </View>
+              <Text style={styles.micCheckText}>Don’t show this again</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {!!toast && (
+        <View style={styles.toast} pointerEvents="none">
+          <CheckCircle color="#22D3EE" size={16} strokeWidth={2.6} />
+          <Text style={styles.toastText}>{toast}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -1078,6 +1513,26 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#000' },
 
   cameraContainer: { flex: 1, backgroundColor: '#000' },
+  camTopRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  camIconBtnOn: { backgroundColor: '#FDE68A' },
+  boomBtn: {
+    width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)',
+  },
+  boomBtnOn: { backgroundColor: '#fff', borderColor: '#fff' },
+  micOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  micCard: { width: '100%', maxWidth: 360, backgroundColor: '#0F1A2C', borderRadius: 24, padding: 22, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  micIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#2977C2', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  micTitle: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  micBody: { color: 'rgba(255,255,255,0.75)', fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 8, marginBottom: 18 },
+  micPrimary: { alignSelf: 'stretch', height: 50, borderRadius: 14, backgroundColor: '#2977C2', alignItems: 'center', justifyContent: 'center' },
+  micPrimaryText: { color: '#fff', fontSize: 15.5, fontWeight: '900' },
+  micSecondary: { alignSelf: 'stretch', height: 50, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', marginTop: 10 },
+  micSecondaryText: { color: '#fff', fontSize: 15.5, fontWeight: '800' },
+  micCheckRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16, paddingVertical: 4 },
+  micCheck: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)', alignItems: 'center', justifyContent: 'center' },
+  micCheckOn: { backgroundColor: '#2977C2', borderColor: '#2977C2' },
+  micCheckText: { color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: '600' },
   camTopBar: {
     position: 'absolute', top: 0, left: 0, right: 0,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -1107,6 +1562,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   captureOuterRecording: { borderColor: '#FF3B3B' },
   captureInner: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#fff' },
   captureRecording: { backgroundColor: '#FF3B3B' },
+  captureRing: { position: 'absolute', top: -10, left: -10 },
   captureStopSquare: { width: 22, height: 22, borderRadius: 4, backgroundColor: '#fff' },
   captureHint: { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '500' },
 
@@ -1121,12 +1577,41 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   recProgressTrack: { height: 2, backgroundColor: '#FF3B3B', borderRadius: 1, position: 'absolute', bottom: 0, left: 0 },
 
   previewContainer: { flex: 1, backgroundColor: '#000' },
+  mediaGroup: { ...StyleSheet.absoluteFillObject, isolation: 'isolate', overflow: 'hidden' },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 10 },
+  toolRail: { position: 'absolute', top: 0, right: 10, alignItems: 'center', gap: 8, paddingTop: 6 },
+  toolItem: { alignItems: 'center', gap: 3 },
+  toolBtn: {
+    width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(8,12,20,0.5)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
+  },
+  toolBtnActive: { backgroundColor: 'rgba(41,119,194,0.85)', borderColor: '#22D3EE' },
+  toolLabel: {
+    color: '#fff', fontSize: 9.5, fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.7)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3,
+  },
+  trashWrap: { position: 'absolute', left: 0, right: 0, bottom: H * (1 - 0.93), alignItems: 'center', gap: 6 },
+  trash: {
+    width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)', borderWidth: 2, borderColor: 'rgba(255,255,255,0.8)',
+  },
+  trashActive: { backgroundColor: '#EF4444', borderColor: '#fff', transform: [{ scale: 1.15 }] },
+  trashText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  gradeWrap: { marginBottom: 12 },
+  bottomInner: { paddingHorizontal: 20, gap: 10 },
+  toast: {
+    position: 'absolute', alignSelf: 'center', top: H * 0.45,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(8,12,20,0.88)', borderRadius: 18, paddingHorizontal: 16, paddingVertical: 10,
+    borderWidth: 1, borderColor: 'rgba(34,211,238,0.5)',
+  },
+  toastText: { color: '#fff', fontSize: 13.5, fontWeight: '800' },
   previewTopGrad: { position: 'absolute', top: 0, left: 0, right: 0, height: 120 },
   previewBottomGrad: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 260 },
   previewTop: {
-    position: 'absolute', top: 0, left: 0, right: 0,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingTop: 4,
+    position: 'absolute', top: 0, left: 0,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingTop: 6,
   },
   previewBackBtn: {
     width: 42, height: 42, borderRadius: 21,
@@ -1159,6 +1644,14 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 6,
   },
   musicBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  tagSummary: {
+    alignSelf: 'flex-start', marginLeft: 16, marginBottom: 10, maxWidth: W - 32,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(41,119,194,0.6)', borderRadius: 14,
+    borderWidth: 1, borderColor: 'rgba(107,182,255,0.55)',
+    paddingHorizontal: 11, paddingVertical: 6,
+  },
+  tagSummaryText: { color: '#fff', fontSize: 12, fontWeight: '700', flexShrink: 1 },
 
   trackListWrap: { flex: 1, marginTop: 90, paddingHorizontal: 4 },
   trackEmptyText: { color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center', marginTop: 40 },
@@ -1182,7 +1675,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   filterLabel: { fontSize: 10, fontWeight: '700' },
   filterActiveDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#fff', position: 'absolute', bottom: -2 },
 
-  previewBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 24, paddingBottom: 16, gap: 10 },
+  previewBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingBottom: 16 },
   captionInput: {
     color: '#fff', fontSize: 14, backgroundColor: 'rgba(255,255,255,0.15)',
     borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, maxHeight: 80,
@@ -1195,12 +1688,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   shareBtnText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
 
-  stickerWrap: { position: 'absolute' },
+  stickerWrap: { position: 'absolute', maxWidth: W - 32, alignItems: 'center' },
   stickerCaptionText: {
-    fontSize: 22, fontWeight: '800', textAlign: 'center',
+    fontSize: 24, fontWeight: '800', textAlign: 'center',
     textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
   },
-  stickerEmoji: { fontSize: 44 },
+  stickerEmoji: { fontSize: 48 },
 
   editorOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.85)' },
   editorSafe: { flex: 1, paddingHorizontal: 20, justifyContent: 'center' },

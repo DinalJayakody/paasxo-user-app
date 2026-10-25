@@ -99,6 +99,11 @@ export const reelApi = {
     return data;
   },
 
+  // Delete your own reel (server checks ownership; removes the stored video too).
+  deleteReel: async (reelId: string): Promise<void> => {
+    await axiosInstance.delete(`/reels/${encodeURIComponent(reelId)}`);
+  },
+
   recordView: async (reelId: string): Promise<void> => {
     await axiosInstance.post(ENDPOINTS.REELS.VIEW(reelId)).catch(() => {});
   },

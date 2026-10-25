@@ -1,3 +1,4 @@
+import { useActivityLocationGate } from '../components/activity/ActivityLocationGate';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
@@ -122,6 +123,7 @@ const AnimatedStatCard = ({ label, value, delay }: { label: string; value: strin
 
 export default function ActivityHistoryScreen() {
   const router = useRouter();
+  const { launch: launchActivity, gate: activityGate } = useActivityLocationGate();
   const [activities, setActivities] = useState<StoredActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -181,7 +183,7 @@ export default function ActivityHistoryScreen() {
           <Text style={styles.headerSub}>{activities.length} total recorded</Text>
         </View>
         <TouchableOpacity
-          onPress={() => router.push('/activity-tracker' as any)}
+          onPress={() => launchActivity('/activity-tracker')}
           style={styles.startBtn}
         >
           <Text style={styles.startBtnText}>+ Start</Text>
@@ -260,7 +262,7 @@ export default function ActivityHistoryScreen() {
             </Text>
             <TouchableOpacity
               style={styles.emptyStartBtn}
-              onPress={() => router.push('/activity-tracker' as any)}
+              onPress={() => launchActivity('/activity-tracker')}
             >
               <LinearGradient colors={['#059669', '#047857']} style={styles.emptyStartGrad}>
                 <Text style={styles.emptyStartText}>Start First Activity</Text>
@@ -287,6 +289,7 @@ export default function ActivityHistoryScreen() {
         ))}
       </ScrollView>
       </View>
+      {activityGate}
     </SafeAreaView>
   );
 }

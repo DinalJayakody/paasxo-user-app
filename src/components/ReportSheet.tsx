@@ -212,5 +212,5 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     marginTop: 16, height: 46, paddingHorizontal: 32, borderRadius: 23,
     backgroundColor: colors.neutral900, alignItems: 'center', justifyContent: 'center',
   },
-  doneBtnText: { color: colors.white, fontSize: 14, fontWeight: '700' },
+  doneBtnText: { color: colors.background, fontSize: 14, fontWeight: '700' },
 });

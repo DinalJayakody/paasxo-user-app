@@ -256,16 +256,12 @@ export default function SignInScreen() {
 
           {/* Colorful gradient hero with logo */}
           <Animated.View style={{ opacity: heroFade, transform: [{ translateY: heroSlide }] }}>
-            <LinearGradient
-              colors={[colors.primaryLight, colors.background]}
-              style={styles.heroGradient}
-            >
-              <View style={styles.heroContainer}>
-                <Animated.View style={[styles.heroLogoWrap, { transform: [{ scale: logoPulse }] }]}>
-                  <AdaptiveLogo style={styles.heroLogo} />
-                </Animated.View>
-              </View>
-            </LinearGradient>
+            {/* Just the logo — no card/box behind it (blue in light mode, white in dark). */}
+            <View style={[styles.heroContainer, styles.heroPlain]}>
+              <Animated.View style={[styles.heroLogoWrap, { transform: [{ scale: logoPulse }] }]}>
+                <AdaptiveLogo style={styles.heroLogo} />
+              </Animated.View>
+            </View>
           </Animated.View>
 
           <Text style={styles.title}>Welcome Back</Text>
@@ -424,6 +420,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  heroPlain: { marginBottom: 18, marginTop: -8 },
   heroLogo: {
     width: 110,
     height: 110,

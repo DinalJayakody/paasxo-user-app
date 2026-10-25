@@ -14,7 +14,7 @@ export const socialMediaApi = {
         locationName: payload.locationName,
         latitude: payload.latitude,
         longitude: payload.longitude,
-        taggedUsers: payload.taggedUsers,
+        taggedUserIds: payload.taggedUserIds,
     };
 
     formData.append('request', JSON.stringify(requestPayload));
@@ -69,6 +69,30 @@ export const socialMediaApi = {
     return Array.isArray(data) ? data
       : Array.isArray(data?.data) ? data.data
       : [];
+  },
+
+// Delete your own post (server checks ownership; comments + unused media go too).
+deletePost: async (postId: string): Promise<void> => {
+    await axiosInstance.delete(`/social/posts/${encodeURIComponent(postId)}`);
+  },
+
+// Posts other people tagged this user in — the profile's Tagged tab.
+getTaggedPosts: async (userId: string, page: number = 0, size: number = 30) => {
+    const res = await axiosInstance.get(`/social/users/${encodeURIComponent(userId)}/tagged?page=${page}&size=${size}`);
+    return normalizePage(res.data);
+  },
+
+// Remove yourself from a post you were tagged in.
+removeMyTag: async (postId: string) => {
+    const res = await axiosInstance.delete(`/social/posts/${encodeURIComponent(postId)}/tags/me`);
+    return res.data;
+  },
+
+// A single post by id (e.g. a notification about an older post that isn't on
+// the first page of the author's grid).
+getPost: async (postId: string) => {
+    const res = await axiosInstance.get(`/social/posts/${encodeURIComponent(postId)}`);
+    return res.data;
   },
 
 getPosts: async (page: number = 0, size: number = 10) => {

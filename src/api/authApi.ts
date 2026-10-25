@@ -19,6 +19,7 @@ const request = {
   displayName: payload.displayName,
   phoneNumber: payload.phoneNumber,
   sports: payload.sports,
+  otherSports: payload.otherSports,
   referralCode: payload.referralCode,
   accountType: payload.accountType,
 };

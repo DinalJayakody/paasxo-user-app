@@ -47,6 +47,13 @@ import {
 } from 'lucide-react-native';
 import { PlayerSearchSheet } from '../components/PlayerSearchSheet';
 import { teamApi } from '../api/teamApi';
+import { teamMatchApi } from '../api/teamMatchApi';
+import { teamMatchSportLabel } from '../constants/teamMatchSports';
+import { TeamMatchLineup, useMatchTeams } from '../components/team/TeamMatchLineup';
+import { openAcceptChallenge } from '../utils/teamChallengeActions';
+import { openProfile } from '../utils/openProfile';
+import { InvitationCard } from '../components/InvitationCard';
+import { Team } from '../types/api';
 import ShareToCommunityModal from '../components/ShareToCommunityModal';
 import { invitationApi, InvitationResponse } from '../api/invitationApi';
 import { extractApiError } from '../utils/apiError';
@@ -191,41 +198,108 @@ function MapPreview({ match, height = 130 }: { match: MatchDetails; height?: num
 // one-shot team-name lookup on render, not a poll, since this only matters
 // while the screen is open. Waiting-for-opponent vs confirmed is purely
 // opponentTeamId's presence; no separate status field needed on MatchDetails.
-function TeamChallengeBanner({ match }: { match: MatchDetails }) {
+// For the organizer it also carries the next step: taking an open listing
+// down, or finding an opponent if they never picked one after paying.
+function TeamChallengeBanner({ match, organizerTeam, opponentTeam, isOwner = false, isTeammate = false, challengedTeamName, hasPendingChallenge = false, onChanged }: {
+  match: MatchDetails;
+  organizerTeam: Team | null;
+  opponentTeam: Team | null;
+  isOwner?: boolean;
+  // On the hosting team but not the person who booked it.
+  isTeammate?: boolean;
+  // Set only when the viewer captains the directly-challenged team.
+  challengedTeamName?: string;
+  // A direct challenge is already out — don't offer to pick another opponent.
+  hasPendingChallenge?: boolean;
+  onChanged?: () => void;
+}) {
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
-  const [organizerName, setOrganizerName] = useState<string | null>(null);
-  const [opponentName, setOpponentName] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (match.organizerTeamId) {
-      teamApi.getTeam(match.organizerTeamId).then((t) => setOrganizerName(t.name)).catch(() => {});
-    }
-    if (match.opponentTeamId) {
-      teamApi.getTeam(match.opponentTeamId).then((t) => setOpponentName(t.name)).catch(() => {});
-    }
-  }, [match.organizerTeamId, match.opponentTeamId]);
+  const router = useRouter();
+  const [closing, setClosing] = useState(false);
+  const organizerName = organizerTeam?.name ?? null;
+  const opponentName = opponentTeam?.name ?? null;
 
   if (!match.organizerTeamId) return null;
 
-  return match.opponentTeamId ? (
-    <View style={[styles.vendorBanner, { backgroundColor: colors.success + '12', borderColor: colors.success + '30' }]}>
-      <View style={[styles.vendorBannerIcon, { backgroundColor: colors.success + '20' }]}>
-        <Swords color={colors.success} size={20} strokeWidth={2} />
+  if (match.opponentTeamId) {
+    return (
+      <View style={[styles.teamBanner, { backgroundColor: colors.success + '14', borderColor: colors.success + '40' }]}>
+        <View style={[styles.teamBannerIcon, { backgroundColor: colors.success + '22' }]}>
+          <Swords color={colors.success} size={20} strokeWidth={2} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.teamBannerTitle, { color: colors.success }]}>Team Match Confirmed</Text>
+          <Text style={styles.teamBannerText}>{organizerName || 'Home team'} vs {opponentName || 'Away team'}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Cancelled matches already get their own cancellation/refund banners.
+  if (match.status === 'CANCELLED') return null;
+
+  const awaitingVenue = match.vendorStatus === 'PENDING_VENDOR';
+  const half = match.totalPrice != null ? `LKR ${(match.totalPrice / 2).toFixed(2)}` : 'half the cost';
+  const sportLabel = teamMatchSportLabel(match.sportType);
+
+  const handleCloseListing = () => {
+    Alert.alert(
+      'Take down your open challenge?',
+      'Teams will no longer be able to find or join this match. You can then challenge a specific team instead.',
+      [
+        { text: 'Keep it listed', style: 'cancel' },
+        {
+          text: 'Take it down', style: 'destructive', onPress: async () => {
+            setClosing(true);
+            try {
+              await teamMatchApi.closeListing(match.id);
+              onChanged?.();
+            } catch (err) {
+              Alert.alert('Could not take it down', extractApiError(err, 'Please try again.'));
+            } finally {
+              setClosing(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const text = match.openTeamChallenge
+    ? awaitingVenue
+      ? 'Open challenge — it goes live in Explore › Team vs Team as soon as the venue confirms the booking.'
+      : isOwner
+        ? `Listed in Explore › Team vs Team. The first nearby ${sportLabel} team to pay ${half} takes it on — that half is refunded to you.`
+        : isTeammate
+          ? `Your team's open challenge — the first ${sportLabel} team to pay ${half} takes it on.`
+          : `Any ${sportLabel} team can take this on — their captain pays ${half}.`
+    : challengedTeamName
+      ? `${organizerName ?? 'A team'} challenged ${challengedTeamName}. Check the details and both teams below, then accept by paying your half — or decline.`
+      : isOwner
+        ? 'Waiting for the team you challenged to accept and pay their half.'
+        : 'Waiting for the challenged team to accept and pay their half.';
+
+  return (
+    <View style={[styles.teamBanner, { backgroundColor: colors.primary + '12', borderColor: colors.primary + '38' }]}>
+      <View style={[styles.teamBannerIcon, { backgroundColor: colors.primary + '22' }]}>
+        <Swords color={colors.primary} size={20} strokeWidth={2} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.vendorBannerTitle, { color: colors.success }]}>Team Match Confirmed</Text>
-        <Text style={styles.vendorBannerText}>{organizerName || 'Team A'} vs {opponentName || 'Team B'}</Text>
-      </View>
-    </View>
-  ) : (
-    <View style={styles.vendorBanner}>
-      <View style={styles.vendorBannerIcon}>
-        <Swords color="#EA580C" size={20} strokeWidth={2} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.vendorBannerTitle}>Team Match Challenge</Text>
-        <Text style={styles.vendorBannerText}>Waiting for the challenged team to accept and pay their half.</Text>
+        <Text style={[styles.teamBannerTitle, { color: colors.primary }]}>
+          {match.openTeamChallenge ? 'Open Team Challenge' : challengedTeamName ? 'Your team has been challenged' : 'Team Match Challenge'}
+        </Text>
+        <Text style={styles.teamBannerText}>{text}</Text>
+        {isOwner && match.openTeamChallenge && (
+          <Pressable onPress={handleCloseListing} disabled={closing} hitSlop={6}>
+            <Text style={[styles.infoLink, { marginTop: 6 }]}>{closing ? 'Taking down…' : 'Take down listing'}</Text>
+          </Pressable>
+        )}
+        {isOwner && !match.openTeamChallenge && match.paymentStatus === 'PAID' && !hasPendingChallenge && (
+          <Pressable onPress={() => router.push(`/select-opponent-team/${match.id}` as any)} hitSlop={6}>
+            <Text style={[styles.infoLink, { marginTop: 6 }]}>Find an opponent</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
@@ -359,9 +433,11 @@ function ParticipantsModal({
 
 interface MatchDetailsScreenProps {
   matchId: string;
+  // Opened from an invitation notification/push — shows the invitation card.
+  invitationId?: string;
 }
 
-export default function MatchDetailsScreen({ matchId }: MatchDetailsScreenProps) {
+export default function MatchDetailsScreen({ matchId, invitationId }: MatchDetailsScreenProps) {
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
@@ -512,6 +588,7 @@ export default function MatchDetailsScreen({ matchId }: MatchDetailsScreenProps)
           <JoinerView
             match={match}
             matchId={matchId}
+            invitationId={invitationId}
             hasJoined={hasJoined}
             router={router}
             onChanged={loadMatch}
@@ -535,6 +612,7 @@ export default function MatchDetailsScreen({ matchId }: MatchDetailsScreenProps)
 function JoinerView({
   match,
   matchId,
+  invitationId,
   hasJoined,
   router,
   onChanged,
@@ -543,6 +621,7 @@ function JoinerView({
 }: {
   match: MatchDetails;
   matchId: string;
+  invitationId?: string;
   hasJoined: boolean;
   router: ReturnType<typeof useRouter>;
   onChanged: () => void;
@@ -553,16 +632,18 @@ function JoinerView({
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const [showInviteSheet, setShowInviteSheet] = useState(false);
+  const myUid = useContext(AuthContext).user?.firebaseUid;
   const [joinRequestBusy, setJoinRequestBusy] = useState(false);
   const [joinRequestSent, setJoinRequestSent] = useState(false);
   const [showCommunityShare, setShowCommunityShare] = useState(false);
-  const { score, displaySeconds } = useLiveMatchScore(matchId);
-  const { scorecard } = useMatchScorecard(matchId, score?.status === 'LIVE' || score?.status === 'PAUSED');
+  const { score, displaySeconds, refresh: refreshScore } = useLiveMatchScore(matchId);
+  const { scorecard, refresh: refreshScorecard } = useMatchScorecard(matchId, score?.status === 'LIVE' || score?.status === 'PAUSED');
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await onChanged();
+      // Match (and, via the new match object, both team rosters) + live score.
+      await Promise.all([onChanged(), refreshScore(), refreshScorecard()]);
     } finally {
       setRefreshing(false);
     }
@@ -600,12 +681,28 @@ function JoinerView({
   }, [match.creatorId, matchId, joinRequestBusy, joinRequestSent]);
 
   const joinedCount = playerProfiles.length || match.participants?.length || 0;
+  // A public game opens for requests once its organiser has paid the PAASXO fee.
+  const publicNotLive = !!match.isPublicSpaceMatch
+    && (match.status === 'PENDING_VENDOR' || match.status === 'PENDING' || match.vendorStatus === 'PENDING_VENDOR');
   const spotsLeftKnown = match.spotsLeft != null;
   const totalSpots = match.maxSpots ?? (spotsLeftKnown ? joinedCount + match.spotsLeft! : undefined);
   const isFull = spotsLeftKnown
     ? match.spotsLeft! <= 0
     : match.maxSpots != null && joinedCount >= match.maxSpots;
   const isCancelled = match.status === 'CANCELLED';
+  // A Team Match is joined as a whole TEAM (captain pays half) — never by an
+  // individual player — and only while it's an open, venue-confirmed listing.
+  const isTeamMatch = !!match.organizerTeamId;
+  const { organizerTeam, opponentTeam, pendingChallenge, challengedTeam } = useMatchTeams(match);
+  // Captain of a team this match's organizer directly challenged — they review it
+  // here and Accept (pay half) / Decline.
+  const isChallengedCaptain = !!myUid && !!pendingChallenge && challengedTeam?.captainFirebaseUid === myUid;
+  // Someone on either roster is already in this match through their team — they
+  // can never take it on themselves (the server enforces this too).
+  const isOnATeam = !!myUid && [organizerTeam, opponentTeam].some((t) =>
+    !!t && (t.captainFirebaseUid === myUid || (t.members || []).some((m) => m.firebaseUid === myUid)));
+  const teamMatchJoinable = isTeamMatch && !!organizerTeam && !isOnATeam && !!match.openTeamChallenge
+    && !match.opponentTeamId && !isCancelled && match.vendorStatus === 'ACTIVE_MATCH';
   const spotLabel = totalSpots != null ? `${joinedCount}/${totalSpots} joined` : `${joinedCount} joined`;
   const amenities = (match.venue.amenities || []).map((key) => key.toLowerCase());
 
@@ -622,7 +719,18 @@ function JoinerView({
           {match.images && match.images.length > 0 ? (
             <Image source={{ uri: match.images[0] }} style={styles.heroImage} resizeMode="cover" />
           ) : (
-            <View style={[styles.heroImage, styles.heroPlaceholder]} />
+            match.venue.latitude != null && match.venue.longitude != null ? (
+              // No venue photo (e.g. a public game) — show where it's being played.
+              <MapView
+                style={styles.heroImage}
+                pointerEvents="none"
+                initialRegion={{ latitude: match.venue.latitude, longitude: match.venue.longitude, latitudeDelta: 0.008, longitudeDelta: 0.008 }}
+              >
+                <Marker coordinate={{ latitude: match.venue.latitude, longitude: match.venue.longitude }} />
+              </MapView>
+            ) : (
+              <View style={[styles.heroImage, styles.heroPlaceholder]} />
+            )
           )}
           <SafeAreaView style={styles.heroOverlay} edges={['top']}>
             <HeaderIconButton style={styles.circleBtn} onPress={() => goBack(router)}>
@@ -649,14 +757,31 @@ function JoinerView({
 
           <Text style={styles.title}>{match.title}</Text>
 
-          <TeamChallengeBanner match={match} />
+          {!!invitationId && (
+            <InvitationCard
+              invitationId={invitationId}
+              bookingId={matchId}
+              myUid={myUid}
+              organizerUid={match.creatorId}
+              organizerName={match.organizer?.name}
+              onChanged={onChanged}
+            />
+          )}
+
+          <TeamChallengeBanner
+            match={match}
+            organizerTeam={organizerTeam}
+            opponentTeam={opponentTeam}
+            isTeammate={isOnATeam}
+            challengedTeamName={isChallengedCaptain ? challengedTeam?.name : undefined}
+          />
 
           {score && SCOREABLE_SPORTS.has((match.sportType || '').toUpperCase()) && (
             <View style={styles.scoreboardWrap}>
               <LiveScoreboard score={score} displaySeconds={displaySeconds} scorecard={scorecard} />
               {score.status !== 'NOT_STARTED' && (
                 <Pressable style={styles.scorecardLink} onPress={() => router.push(`/match/${matchId}/scorecard` as any)}>
-                  <Text style={styles.scorecardLinkText}>View Full Scorecard →</Text>
+                  <Text style={styles.scorecardLinkText}>{score.status === 'COMPLETED' ? 'View full scorecard' : 'Live scorecard'}</Text>
                 </Pressable>
               )}
             </View>
@@ -676,8 +801,21 @@ function JoinerView({
             </View>
           </View>
 
+          {/* Public game: the organiser paid PAASXO's fee — joining is free */}
+          {match.isPublicSpaceMatch && (
+            <View style={styles.infoRow}>
+              <View style={styles.infoIconWrap}>
+                <ShieldCheck color={colors.primary} size={18} strokeWidth={2} />
+              </View>
+              <View style={styles.flex1}>
+                <Text style={styles.infoPrimary}>Free to join</Text>
+                <Text style={styles.infoSecondary}>Request to join — the organiser approves players</Text>
+              </View>
+            </View>
+          )}
+
           {/* Price info row — total cost + per-player split */}
-          {(match.totalPrice != null || match.pricePerSlot != null) && (() => {
+          {!match.isPublicSpaceMatch && (match.totalPrice != null || match.pricePerSlot != null) && (() => {
             const sym = match.currencySymbol ?? 'LKR ';
             const total = match.totalPrice ?? match.pricePerSlot ?? 0;
             const slotCount = match.slotCount ?? 1;
@@ -709,8 +847,8 @@ function JoinerView({
               <MapPin color={colors.primary} size={18} strokeWidth={2} />
             </View>
             <View style={styles.flex1}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={styles.infoPrimary}>{match.venue.name}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                <Text style={[styles.infoPrimary, { flexShrink: 1 }]}>{match.venue.name}</Text>
                 {match.isPublicSpaceMatch && (
                   <View style={styles.publicSpaceBadge}>
                     <Text style={styles.publicSpaceBadgeText}>PUBLIC SPACE</Text>
@@ -726,10 +864,16 @@ function JoinerView({
             </View>
           </View>
 
-          {match.organizer && (
+          {match.organizer && !isTeamMatch && (
             <>
               <Text style={styles.sectionLabel}>ORGANIZER</Text>
               <View style={styles.organizerRow}>
+                <Pressable
+                  style={({ pressed }) => [{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }, pressed && { opacity: 0.6 }]}
+                  onPress={() => openProfile(router, match.creatorId, myUid)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${match.organizer.name}'s profile`}
+                >
                 <View style={styles.organizerAvatar}>
                   <Image
                     source={{ uri: resolveAvatarUri(match.organizer.avatarUrl, match.organizer.name) }}
@@ -747,6 +891,7 @@ function JoinerView({
                     </View>
                   )}
                 </View>
+                </Pressable>
                 <Pressable style={styles.messageBtn}>
                   <MessageCircle color={colors.primary} size={14} strokeWidth={2.5} />
                   <Text style={styles.messageBtnText}>Message</Text>
@@ -775,6 +920,22 @@ function JoinerView({
             <Text style={styles.placeholderText}>Amenities aren't listed for this venue yet.</Text>
           )}
 
+          {isTeamMatch ? (
+            <>
+              <Text style={styles.sectionLabel}>TEAMS</Text>
+              <TeamMatchLineup
+                match={match}
+                organizerTeam={organizerTeam}
+                opponentTeam={opponentTeam}
+                pendingChallenge={pendingChallenge}
+                challengedTeam={challengedTeam}
+                isChallengedCaptain={isChallengedCaptain}
+                onChanged={onChanged}
+                canTakeOn={teamMatchJoinable}
+              />
+            </>
+          ) : (
+          <>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionLabel}>PARTICIPANTS</Text>
             <Text style={styles.sectionLinkText}>{spotLabel}</Text>
@@ -794,9 +955,22 @@ function JoinerView({
           ) : (
             <Text style={styles.placeholderText}>No participants yet.</Text>
           )}
+          </>
+          )}
+
+          {hasJoined && !isCancelled && (
+            <Pressable
+              style={styles.matchChatBtn}
+              onPress={() => router.push(`/chat/match/${matchId}` as any)}
+              accessibilityRole="button"
+            >
+              <MessageCircle color={colors.white} size={17} strokeWidth={2.4} />
+              <Text style={styles.matchChatBtnText}>Match chat</Text>
+            </Pressable>
+          )}
 
           {/* Joined players can invite others as long as the match isn't full or cancelled */}
-          {hasJoined && !isFull && !isCancelled && (
+          {hasJoined && !isFull && !isCancelled && !isTeamMatch && (
             <Pressable style={styles.invitePlayersBtn} onPress={() => setShowInviteSheet(true)}>
               <UserPlus color={colors.primary} size={16} strokeWidth={2} />
               <Text style={styles.invitePlayersTxt}>Invite Players</Text>
@@ -814,15 +988,23 @@ function JoinerView({
 
       <View style={[styles.bottomBar, { paddingBottom: (Platform.OS === 'ios' ? 24 : 16) + insets.bottom }]}>
         <View>
-          <Text style={styles.bottomBarLabel}>TOTAL PRICE</Text>
+          <Text style={styles.bottomBarLabel}>{match.isPublicSpaceMatch ? 'PUBLIC GAME' : 'TOTAL PRICE'}</Text>
           <Text style={styles.bottomBarPrice}>
-            {match.totalPrice != null
+            {match.isPublicSpaceMatch
+              ? 'Free'
+              : match.totalPrice != null
               ? `${match.currencySymbol ?? 'LKR '}${match.totalPrice.toFixed(2)}`
               : match.pricePerSlot != null
               ? `${match.currencySymbol ?? 'LKR '}${match.pricePerSlot.toFixed(2)}`
               : 'TBD'}
           </Text>
-          {match.isPublicSpaceMatch ? (
+          {match.organizerTeamId ? (
+            match.totalPrice != null ? (
+              <Text style={styles.bottomBarPerPlayer}>
+                {`${match.currencySymbol ?? 'LKR '}${(match.totalPrice / 2).toFixed(2)} / team`}
+              </Text>
+            ) : null
+          ) : match.isPublicSpaceMatch ? (
             <Text style={styles.bottomBarPerPlayer}>Free to join</Text>
           ) : (() => {
             const total = match.totalPrice ?? match.pricePerSlot;
@@ -841,21 +1023,35 @@ function JoinerView({
         <Pressable
           style={[
             styles.joinButton,
-            (hasJoined || isFull || (match.isPublicSpaceMatch && joinRequestSent)) && styles.joinButtonDisabled,
+            (hasJoined || isFull || (match.isPublicSpaceMatch && (joinRequestSent || publicNotLive))
+              || (isTeamMatch && !teamMatchJoinable && !isChallengedCaptain)) && styles.joinButtonDisabled,
           ]}
-          disabled={hasJoined || isFull || (match.isPublicSpaceMatch ? joinRequestBusy || joinRequestSent : false)}
+          disabled={hasJoined || isFull || (isTeamMatch && !teamMatchJoinable && !isChallengedCaptain)
+            || (match.isPublicSpaceMatch ? joinRequestBusy || joinRequestSent || publicNotLive : false)}
           onPress={() => {
-            if (match.isPublicSpaceMatch) handleRequestToJoinPublicMatch();
+            if (isChallengedCaptain && pendingChallenge) openAcceptChallenge(router, pendingChallenge);
+            else if (isTeamMatch) router.push(`/team-match-join/${matchId}` as any);
+            else if (match.isPublicSpaceMatch) handleRequestToJoinPublicMatch();
             else router.push(`/checkout/${matchId}` as any);
           }}
         >
           <Text style={styles.joinButtonText}>
-            {hasJoined
-              ? 'Already Joined'
+            {isChallengedCaptain
+              ? 'Accept · Pay Half'
+              : hasJoined || isOnATeam
+              ? isTeamMatch ? "Your Team's Match" : 'Already Joined'
+              : isTeamMatch
+              ? teamMatchJoinable
+                ? 'Take It On'
+                : match.opponentTeamId
+                ? 'Teams Confirmed'
+                : 'Team Match'
               : isFull
               ? 'Match Full'
               : match.isPublicSpaceMatch
-              ? joinRequestSent
+              ? publicNotLive
+                ? 'Not open yet'
+                : joinRequestSent
                 ? 'Request Sent'
                 : joinRequestBusy
                 ? 'Sending…'
@@ -913,8 +1109,9 @@ function OwnerView({
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const [cancelling, setCancelling] = useState(false);
   const [showInviteSheet, setShowInviteSheet] = useState(false);
-  const { score, displaySeconds } = useLiveMatchScore(matchId);
-  const { scorecard } = useMatchScorecard(matchId, score?.status === 'LIVE' || score?.status === 'PAUSED');
+  const ownerTeams = useMatchTeams(match);
+  const { score, displaySeconds, refresh: refreshScore } = useLiveMatchScore(matchId);
+  const { scorecard, refresh: refreshScorecard } = useMatchScorecard(matchId, score?.status === 'LIVE' || score?.status === 'PAUSED');
   const [refreshing, setRefreshing] = useState(false);
 
   // ── Pending join requests (players who requested to join this match) ──────
@@ -978,7 +1175,7 @@ function OwnerView({
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await Promise.all([onChanged(), loadPendingRequests()]);
+      await Promise.all([onChanged(), loadPendingRequests(), refreshScore(), refreshScorecard()]);
     } finally {
       setRefreshing(false);
     }
@@ -1065,8 +1262,32 @@ function OwnerView({
         refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
 
+        {/* Public game: no venue to approve — it goes live once the PAASXO fee is paid */}
+        {isPendingVendor && match.isPublicSpaceMatch && (
+          <View style={[styles.vendorBanner, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}>
+            <View style={[styles.vendorBannerIcon, { backgroundColor: colors.primary + '20' }]}>
+              <ShieldCheck color={colors.primary} size={20} strokeWidth={2} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.vendorBannerTitle, { color: colors.primary }]}>
+                {match.paymentStatus === 'PAID' ? 'Confirming your payment…' : 'Pay the PAASXO fee to publish'}
+              </Text>
+              <Text style={styles.vendorBannerText}>
+                {match.paymentStatus === 'PAID'
+                  ? 'Your match goes live in a moment — pull to refresh.'
+                  : 'No venue approval needed. As soon as the one-time fee is paid your match goes live and players can request to join — free for them.'}
+              </Text>
+              {match.paymentStatus !== 'PAID' && (
+                <Pressable onPress={() => router.push(`/checkout/${matchId}` as any)} hitSlop={6} accessibilityRole="button">
+                  <Text style={[styles.infoLink, { marginTop: 8 }]}>Pay fee & publish</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        )}
+
         {/* Vendor approval banner */}
-        {isPendingVendor && (
+        {isPendingVendor && !match.isPublicSpaceMatch && (
           <View style={styles.vendorBanner}>
             <View style={styles.vendorBannerIcon}>
               <Clock color="#EA580C" size={20} strokeWidth={2} />
@@ -1093,7 +1314,14 @@ function OwnerView({
           </View>
         )}
 
-        <TeamChallengeBanner match={match} />
+        <TeamChallengeBanner
+          match={match}
+          organizerTeam={ownerTeams.organizerTeam}
+          opponentTeam={ownerTeams.opponentTeam}
+          isOwner
+          hasPendingChallenge={!!ownerTeams.pendingChallenge}
+          onChanged={onChanged}
+        />
 
         {/* Payment/refund status — shown for any cancelled, previously-paid booking
             (vendor rejection, vendor cancellation, or the organizer's own cancel),
@@ -1129,9 +1357,9 @@ function OwnerView({
 
         <Text style={styles.ownerSportLabel}>{match.sportType.toUpperCase()}</Text>
         <Text style={styles.ownerTitle}>{match.title}</Text>
-        <View style={styles.ownerLocationRow}>
+        <View style={[styles.ownerLocationRow, { flexWrap: 'wrap' }]}>
           <MapPin color={colors.textSecondary} size={14} strokeWidth={2} />
-          <Text style={styles.ownerLocationText}>{match.venue.name}</Text>
+          <Text style={[styles.ownerLocationText, { flexShrink: 1 }]}>{match.venue.name}</Text>
           {match.isPublicSpaceMatch && (
             <View style={styles.publicSpaceBadge}>
               <Text style={styles.publicSpaceBadgeText}>PUBLIC SPACE</Text>
@@ -1146,7 +1374,7 @@ function OwnerView({
             <LiveScoreboard score={score} displaySeconds={displaySeconds} scorecard={scorecard} />
             {score.status !== 'NOT_STARTED' && (
               <Pressable style={styles.scorecardLink} onPress={() => router.push(`/match/${matchId}/scorecard` as any)}>
-                <Text style={styles.scorecardLinkText}>View Full Scorecard →</Text>
+                <Text style={styles.scorecardLinkText}>{score.status === 'COMPLETED' ? 'View full scorecard' : 'Live scorecard'}</Text>
               </Pressable>
             )}
           </View>
@@ -1234,9 +1462,11 @@ function OwnerView({
           <View style={styles.matchInfoRow}>
             <View style={styles.matchInfoLabelRow}>
               <Users color={colors.textSecondary} size={16} strokeWidth={2} />
-              <Text style={styles.matchInfoLabel}>Organizer</Text>
+              <Text style={styles.matchInfoLabel}>{match.organizerTeamId ? 'Hosting team' : 'Organizer'}</Text>
             </View>
-            <Text style={styles.matchInfoValue}>{match.organizer?.name || 'You'}</Text>
+            <Text style={styles.matchInfoValue}>
+              {match.organizerTeamId ? (ownerTeams.organizerTeam?.name ?? '…') : (match.organizer?.name || 'You')}
+            </Text>
           </View>
         </View>
 
@@ -1279,7 +1509,20 @@ function OwnerView({
           <Text style={styles.placeholderText}>Amenities aren't listed for this venue yet.</Text>
         )}
 
-        {/* Participants */}
+        {/* Participants — a Team Match shows the two team rosters instead */}
+        {match.organizerTeamId ? (
+          <>
+            <Text style={styles.cardTitleLoose}>Teams</Text>
+            <TeamMatchLineup
+              match={match}
+              organizerTeam={ownerTeams.organizerTeam}
+              opponentTeam={ownerTeams.opponentTeam}
+              pendingChallenge={ownerTeams.pendingChallenge}
+              challengedTeam={ownerTeams.challengedTeam}
+            />
+          </>
+        ) : (
+        <>
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.cardTitleLoose}>Participants</Text>
           {playerProfiles.length > 0 && (
@@ -1301,6 +1544,19 @@ function OwnerView({
           </View>
         ) : (
           <Text style={styles.placeholderText}>No participants invited yet.</Text>
+        )}
+        </>
+        )}
+
+        {!isCancelled && (
+          <Pressable
+            style={styles.matchChatBtn}
+            onPress={() => router.push(`/chat/match/${matchId}` as any)}
+            accessibilityRole="button"
+          >
+            <MessageCircle color={colors.white} size={17} strokeWidth={2.4} />
+            <Text style={styles.matchChatBtnText}>Match chat</Text>
+          </Pressable>
         )}
 
         {/* Pending join requests — players who asked to join, awaiting your decision */}
@@ -1345,8 +1601,8 @@ function OwnerView({
           </View>
         )}
 
-        {/* Invite Players */}
-        {!isFull && match.status !== 'CANCELLED' && (
+        {/* Invite Players — not for a Team Match, whose lineup is the two team rosters */}
+        {!isFull && match.status !== 'CANCELLED' && !match.organizerTeamId && (
           <Pressable style={styles.invitePlayersBtn} onPress={() => setShowInviteSheet(true)}>
             <UserPlus color={colors.primary} size={16} strokeWidth={2} />
             <Text style={styles.invitePlayersTxt}>Invite Players</Text>
@@ -1361,8 +1617,10 @@ function OwnerView({
             onPress={() => {
               if (isPendingVendor) {
                 Alert.alert(
-                  'Awaiting Venue Approval',
-                  'Scoring unlocks once the venue accepts this match. You\'ll be able to start scoring as soon as it\'s confirmed.'
+                  match.isPublicSpaceMatch ? 'Match Not Confirmed Yet' : 'Awaiting Venue Approval',
+                  match.isPublicSpaceMatch
+                    ? 'Scoring unlocks once the match fee is paid. You\'ll be able to start scoring as soon as it\'s confirmed.'
+                    : 'Scoring unlocks once the venue accepts this match. You\'ll be able to start scoring as soon as it\'s confirmed.'
                 );
                 return;
               }
@@ -1388,7 +1646,7 @@ function OwnerView({
             }
             <Text style={styles.scoringButtonText}>
               {isPendingVendor
-                ? 'Score Match  ·  Pending Approval'
+                ? (match.isPublicSpaceMatch ? 'Score Match  ·  Awaiting Payment' : 'Score Match  ·  Pending Approval')
                 : !isPro
                 ? 'Score Match  ·  Pro'
                 : score?.status === 'LIVE' || score?.status === 'PAUSED'
@@ -1449,8 +1707,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   flex1: { flex: 1 },
   refreshableArea: { flex: 1, position: 'relative' },
   scoreboardWrap: { marginTop: 14, marginBottom: 4 },
-  scorecardLink: { alignSelf: 'center', marginTop: 10, paddingVertical: 4 },
-  scorecardLinkText: { fontSize: 12.5, fontWeight: '700', color: colors.primary },
+  scorecardLink: {
+    alignSelf: 'stretch', marginTop: 10, paddingVertical: 12, borderRadius: 14,
+    alignItems: 'center', borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.primary + '10',
+  },
+  scorecardLinkText: { fontSize: 14, fontWeight: '800', color: colors.primary },
   loadingScreen: {
     flex: 1,
     backgroundColor: colors.background,
@@ -1581,6 +1842,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
 
   // ─── Participants ────────────────────────────────────────────────────────────
   participantsBlock: { marginBottom: 20 },
+  matchChatBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    height: 46, borderRadius: 14, backgroundColor: colors.primary, marginBottom: 16,
+  },
+  matchChatBtnText: { color: colors.white, fontSize: 15, fontWeight: '800' },
   participantsSummary: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
 
   // ─── Rules ──────────────────────────────────────────────────────────────────
@@ -1761,6 +2027,14 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   modalPlayerSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
 
   // ── Vendor approval banner (OwnerView)
+  // Team Match banner — theme tokens only, so it reads correctly in light and dark.
+  teamBanner: {
+    flexDirection: 'row', gap: 12, alignItems: 'flex-start',
+    borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 16,
+  },
+  teamBannerIcon: { width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  teamBannerTitle: { fontSize: 13.5, fontWeight: '800', marginBottom: 3 },
+  teamBannerText: { fontSize: 12.5, color: colors.textSecondary, lineHeight: 18 },
   vendorBanner: {
     flexDirection: 'row',
     gap: 12,

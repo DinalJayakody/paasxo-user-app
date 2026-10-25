@@ -100,6 +100,10 @@ export const bookingApi = {
     sport?: string;
     date?: string;
     freeOnly?: boolean;
+    /** ALL | PUBLIC (public games) | PAID (venue matches that cost money to join). */
+    type?: 'ALL' | 'PUBLIC' | 'PAID';
+    /** true = every match on Paasxo (radius ignored), still nearest-first. */
+    worldwide?: boolean;
     page?: number;
     size?: number;
   }): Promise<{ content: any[]; hasMore: boolean }> => {

@@ -23,4 +23,27 @@ export const placeApi = {
       return [];
     }
   },
+
+  /** Story location sticker: Paasxo venues first, then Google/OSM places near
+   *  the user (cached and rate-limited server-side). Never throws. */
+  storySearch: async (query: string, coords?: { latitude: number; longitude: number } | null): Promise<StoryPlace[]> => {
+    try {
+      const { data } = await axiosInstance.get('/places/story-search', {
+        params: { q: query, lat: coords?.latitude, lng: coords?.longitude },
+        timeout: 8000,
+      });
+      return Array.isArray(data) ? data.filter((p) => p && typeof p.name === 'string' && p.name.trim()) : [];
+    } catch {
+      return [];
+    }
+  },
 };
+
+export interface StoryPlace {
+  name: string;
+  address?: string | null;
+  placeId?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  source: 'PAASXO' | 'GOOGLE' | 'OSM';
+}

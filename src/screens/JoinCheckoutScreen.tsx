@@ -160,13 +160,15 @@ export default function JoinCheckoutScreen({ matchId, additionalPlayerIds = [], 
   const totalPrice = match.totalPrice ?? match.pricePerSlot ?? 0;
   const maxSpots = match.maxSpots;
 
-  const perPlayer = match.pricePerPlayer ??
-    (totalPrice > 0 && maxSpots && maxSpots > 0
-      ? Number((totalPrice / maxSpots).toFixed(2))
-      : null);
-
   // If user is bringing additional players, they pay for all of them
   const playersJoining = 1 + additionalPlayerIds.length;
+  // Mirrors the server's MatchPricing.perPlayerShare: total ÷ capacity, or
+  // (no capacity set) total ÷ everyone in the match once these players join.
+  const currentPlayers = match.participants?.length ?? match.joinedPlayers ?? 0;
+  const perPlayer = match.pricePerPlayer ??
+    (totalPrice > 0
+      ? Number((totalPrice / (maxSpots && maxSpots > 0 ? maxSpots : Math.max(1, currentPlayers + playersJoining))).toFixed(2))
+      : null);
   const venueShare = perPlayer != null ? perPlayer * playersJoining : 0;
   // Flat, once-per-join fee (not multiplied by playersJoining) for a Public
   // Match — see CreateBookingPayload.isPublicMatch / BookingService.createJoinOrder,

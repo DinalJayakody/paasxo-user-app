@@ -14,7 +14,8 @@ import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { Button } from './Button';
 import { InputField } from './InputField';
-import { SPORTS } from '../constants/sports';
+import { OTHER_SPORT_ID, cleanOtherSports } from '../constants/sports';
+import { ActivityPicker } from './ActivityPicker';
 
 interface CompleteProfileModalProps {
   visible: boolean;
@@ -22,7 +23,7 @@ interface CompleteProfileModalProps {
   // 'google' | 'apple' | 'email' | undefined — drives the "You signed in
   // with ___" copy below. See UserProfile.authProvider.
   authProvider?: string;
-  onSubmit: (sports: string[], referralCode?: string) => Promise<void>;
+  onSubmit: (sports: string[], referralCode?: string, otherSports?: string) => Promise<void>;
   onSignOut: () => void;
 }
 
@@ -47,6 +48,7 @@ export const CompleteProfileModal: React.FC<CompleteProfileModalProps> = ({
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const [selectedSports, setSelectedSports] = useState<string[]>([]);
   const [referralCode, setReferralCode] = useState('');
+  const [otherSports, setOtherSports] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
@@ -62,14 +64,20 @@ export const CompleteProfileModal: React.FC<CompleteProfileModalProps> = ({
       setError('Select at least one activity to continue');
       return;
     }
+    const cleanedOther = selectedSports.includes(OTHER_SPORT_ID) ? cleanOtherSports(otherSports) : '';
+    if (selectedSports.includes(OTHER_SPORT_ID) && !cleanedOther) {
+      setError('Tell us which other activities you do');
+      return;
+    }
     setError(undefined);
     setLoading(true);
     try {
-      await onSubmit(selectedSports, referralCode.trim() || undefined);
+      await onSubmit(selectedSports, referralCode.trim() || undefined, cleanedOther || undefined);
       // Reset local state for the next time the modal is shown (e.g. a
       // different account signs in on the same device).
       setSelectedSports([]);
       setReferralCode('');
+      setOtherSports('');
     } catch (err: any) {
       setError(
         err?.response?.data?.message ||
@@ -100,29 +108,12 @@ export const CompleteProfileModal: React.FC<CompleteProfileModalProps> = ({
 
             <View style={styles.card}>
               <Text style={styles.sectionLabel}>SELECT YOUR ACTIVITY</Text>
-              <View style={styles.sportsGrid}>
-                {SPORTS.map((sport) => {
-                  const Icon = sport.icon;
-                  const active = selectedSports.includes(sport.id);
-                  return (
-                    <TouchableOpacity
-                      key={sport.id}
-                      style={[styles.sportTag, active && styles.sportTagActive]}
-                      onPress={() => toggleSport(sport.id)}
-                      activeOpacity={0.8}
-                    >
-                      <Icon
-                        color={active ? colors.primary : colors.textSecondary}
-                        size={14}
-                        strokeWidth={2}
-                      />
-                      <Text style={[styles.sportTagText, active && styles.sportTagTextActive]}>
-                        {sport.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+              <ActivityPicker
+                selected={selectedSports}
+                onToggle={toggleSport}
+                otherText={otherSports}
+                onOtherTextChange={(t) => { setOtherSports(t); setError(undefined); }}
+              />
             </View>
 
             <View style={styles.card}>

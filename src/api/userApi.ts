@@ -13,6 +13,8 @@ export interface UpdateProfilePayload {
   phoneNumber?: string;
   bio?: string;
   sports?: string[];
+  // "" clears it; omitted leaves it unchanged.
+  otherSports?: string;
   skillLevel?: string;
   locationAccess?: boolean;
   // Optional. Enables a real per-user calorie estimate on Activity sessions —
@@ -39,6 +41,7 @@ export const userApi = {
     if (payload.locationAccess !== undefined) formData.append('locationAccess', String(payload.locationAccess));
     if (payload.weightKg !== undefined) formData.append('weightKg', String(payload.weightKg));
     payload.sports?.forEach((sport) => formData.append('sports', sport));
+    if (payload.otherSports !== undefined) formData.append('otherSports', payload.otherSports);
     if (payload.profileImage) {
       formData.append('profileImage', {
         uri: payload.profileImage.uri,

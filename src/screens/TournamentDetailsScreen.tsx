@@ -1,3 +1,7 @@
+import { TeamSearchSheet } from '../components/team/TeamSearchSheet';
+import { teamApi } from '../api/teamApi';
+import { extractApiError } from '../utils/apiError';
+import { Team } from '../types/api';
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -44,6 +48,7 @@ import HeaderIconButton from '../components/HeaderIconButton';
 import ScreenGlow from '../components/ScreenGlow';
 import ShareToCommunityModal from '../components/ShareToCommunityModal';
 import { goBack } from '../utils/navigation';
+import { openProfile } from '../utils/openProfile';
 
 interface TournamentDetailsScreenProps {
   tournamentId: string;
@@ -70,15 +75,32 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
   const [addingMatch, setAddingMatch] = useState(false);
 
   const pulseAnim = useRef(new Animated.Value(0)).current;
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Teams I captain — for "Join with my team" and accepting invitations.
+  const [myCaptainedTeams, setMyCaptainedTeams] = useState<Team[]>([]);
+  const [busyTeamAction, setBusyTeamAction] = useState(false);
+  const [inviteSheetVisible, setInviteSheetVisible] = useState(false);
+
+  useEffect(() => {
+    if (!user?.firebaseUid) return;
+    teamApi.getMyTeams()
+      .then((ts) => setMyCaptainedTeams(ts.filter((t) => t.captainFirebaseUid === user.firebaseUid)))
+      .catch(() => setMyCaptainedTeams([]));
+  }, [user?.firebaseUid]);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [record, teamRecords, matchRecords] = await Promise.all([
-        tournamentApi.getTournament(tournamentId),
+      // The tournament itself must load; teams/fixtures degrade to empty
+      // rather than leaving the whole page stuck on a spinner.
+      const record = await tournamentApi.getTournament(tournamentId);
+      const [teamsRes, matchesRes] = await Promise.allSettled([
         tournamentApi.listTeams(tournamentId),
         tournamentApi.listMatches(tournamentId),
       ]);
+      const teamRecords = teamsRes.status === 'fulfilled' && Array.isArray(teamsRes.value) ? teamsRes.value : [];
+      const matchRecords = matchesRes.status === 'fulfilled' && Array.isArray(matchesRes.value) ? matchesRes.value : [];
+      setLoadError(null);
 
       const teamsWithPlayers = await Promise.all(
         teamRecords.map(async (team: any) => {
@@ -113,13 +135,79 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
         name: record.name,
         role: isOwner ? 'owner' : 'viewer',
       });
-    } catch (err) {
-      console.warn('Failed to load tournament', err);
+    } catch (err: any) {
+      if (!silent || !tournament) {
+        setLoadError(err?.response?.status === 404 ? 'This tournament no longer exists.' : (err?.message || "Couldn't load this tournament."));
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tournamentId, user]);
+
+  // ── Participation ──
+  const runTeamAction = async (fn: () => Promise<unknown>, done: string) => {
+    if (busyTeamAction) return;
+    setBusyTeamAction(true);
+    try {
+      await fn();
+      await load(true);
+      Alert.alert(done);
+    } catch (err) {
+      Alert.alert('Something went wrong', extractApiError(err, 'Please try again.'));
+    } finally {
+      setBusyTeamAction(false);
+    }
+  };
+
+  const handleJoinWithTeam = () => {
+    if (!tournament) return;
+    const inIds = new Set(tournament.teams.filter((t) => t.status !== 'DECLINED').map((t) => t.appTeamId).filter(Boolean));
+    const eligible = myCaptainedTeams.filter((t) => !inIds.has(t.id));
+    if (myCaptainedTeams.length === 0) {
+      Alert.alert('Create a team first', 'Teams join tournaments together — create your team, add your players, then come back to join.', [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Create Team', onPress: () => router.push('/create-team' as any) },
+      ]);
+      return;
+    }
+    if (eligible.length === 0) {
+      Alert.alert('Already in', 'Every team you captain is already in this tournament.');
+      return;
+    }
+    const join = (team: Team) => runTeamAction(() => tournamentApi.joinWithTeam(tournamentId, team.id), `${team.name} joined the tournament!`);
+    if (eligible.length === 1) {
+      Alert.alert('Join tournament', `Enter ${eligible[0].name} into ${tournament.name}?`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Join', onPress: () => join(eligible[0]) },
+      ]);
+    } else {
+      Alert.alert('Which team?', 'Pick the team to enter:', [
+        ...eligible.slice(0, 5).map((t) => ({ text: t.name, onPress: () => join(t) })),
+        { text: 'Cancel', style: 'cancel' as const },
+      ]);
+    }
+  };
+
+  const handleRemoveTeam = (team: { id: number; name: string; status?: string }, withdraw = false) => {
+    Alert.alert(
+      withdraw ? 'Withdraw your team?' : team.status === 'INVITED' ? 'Cancel invitation?' : 'Remove team?',
+      withdraw ? `${team.name} will leave this tournament.` : `${team.name} will be removed from this tournament.`,
+      [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: withdraw ? 'Withdraw' : 'Remove', style: 'destructive',
+          onPress: () => runTeamAction(() => tournamentApi.removeTeam(tournamentId, team.id), withdraw ? 'Your team has left the tournament.' : `${team.name} removed.`),
+        },
+      ],
+    );
+  };
+
+  const handleInviteTeam = (team: Team) => {
+    setInviteSheetVisible(false);
+    runTeamAction(() => tournamentApi.inviteTeam(tournamentId, team.id), `Invitation sent to ${team.name}.`);
+  };
 
   useEffect(() => {
     load();
@@ -192,9 +280,31 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
     ]);
   };
 
-  if (loading || !tournament) {
+  if (loading && !tournament) {
     return <LoadingScreen message="Loading tournament…" />;
   }
+  if (!tournament) {
+    return (
+      <SafeAreaView style={[styles.flex1, styles.errorWrap]} edges={['top']}>
+        <Text style={styles.heroEmoji}>🏆</Text>
+        <Text style={styles.errorTitle}>Couldn't open this tournament</Text>
+        <Text style={styles.errorBody}>{loadError ?? 'Please check your connection and try again.'}</Text>
+        <Pressable style={styles.errorRetry} onPress={() => load()} accessibilityRole="button">
+          <Text style={styles.errorRetryText}>Try again</Text>
+        </Pressable>
+        <Pressable onPress={() => goBack(router)} style={{ padding: 12 }} accessibilityRole="button">
+          <Text style={styles.errorBack}>Go back</Text>
+        </Pressable>
+      </SafeAreaView>
+    );
+  }
+
+  const joinedTeams = tournament.teams.filter((t) => !t.status || t.status === 'JOINED');
+  const invitedTeams = tournament.teams.filter((t) => t.status === 'INVITED');
+  const myInvites = invitedTeams.filter((t) => t.appTeamId && myCaptainedTeams.some((m) => m.id === t.appTeamId));
+  const myJoinedTeam = joinedTeams.find((t) => t.appTeamId && myCaptainedTeams.some((m) => m.id === t.appTeamId));
+  const isFull = tournament.maxTeams != null && joinedTeams.length >= tournament.maxTeams;
+  const canJoin = !!tournament.isOpen && !tournament.isOwner && tournament.lifecycle === 'UPCOMING' && !myJoinedTeam && !isFull;
 
   const lifecycleConfig = {
     UPCOMING: { label: 'Upcoming', color: colors.neutral500, bg: colors.neutral200 },
@@ -269,26 +379,105 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
           />
         }
       >
+        {/* Invitations for a team I captain */}
+        {myInvites.map((inv) => (
+          <View key={inv.id} style={styles.inviteBanner}>
+            <Text style={styles.inviteBannerTitle}>{inv.name} is invited to this tournament</Text>
+            <Text style={styles.inviteBannerSub}>Accept to enter your team — your current roster comes with it.</Text>
+            <View style={styles.inviteBannerActions}>
+              <Pressable
+                style={[styles.inviteAccept, busyTeamAction && { opacity: 0.6 }]}
+                disabled={busyTeamAction}
+                onPress={() => runTeamAction(() => tournamentApi.respondToInvite(tournamentId, inv.id, true), `${inv.name} is in!`)}
+              >
+                <Text style={styles.inviteAcceptText}>Accept</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.inviteDecline, busyTeamAction && { opacity: 0.6 }]}
+                disabled={busyTeamAction}
+                onPress={() => runTeamAction(() => tournamentApi.respondToInvite(tournamentId, inv.id, false), 'Invitation declined.')}
+              >
+                <Text style={styles.inviteDeclineText}>Decline</Text>
+              </Pressable>
+            </View>
+          </View>
+        ))}
+
+        {/* Public tournament: enter with my team */}
+        {(canJoin || myJoinedTeam || (tournament.isOpen && isFull && !tournament.isOwner)) && (
+          <View style={styles.joinCard}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.joinCardTitle}>
+                {myJoinedTeam ? `${myJoinedTeam.name} is in ✓` : isFull ? 'Tournament full' : 'Open to all teams'}
+              </Text>
+              <Text style={styles.joinCardSub}>
+                {myJoinedTeam
+                  ? 'Fixtures appear below once the organiser schedules them.'
+                  : isFull
+                    ? `All ${tournament.maxTeams} places are taken.`
+                    : tournament.maxTeams != null
+                      ? `${tournament.maxTeams - joinedTeams.length} of ${tournament.maxTeams} places left`
+                      : 'Enter your team to compete.'}
+              </Text>
+            </View>
+            {canJoin && (
+              <Pressable style={[styles.joinBtn, busyTeamAction && { opacity: 0.6 }]} onPress={handleJoinWithTeam} disabled={busyTeamAction} accessibilityRole="button">
+                {busyTeamAction ? <ActivityIndicator color={colors.white} size="small" /> : <Text style={styles.joinBtnText}>Join with my team</Text>}
+              </Pressable>
+            )}
+            {!!myJoinedTeam && tournament.lifecycle === 'UPCOMING' && !tournament.isOwner && (
+              <Pressable style={styles.withdrawBtn} onPress={() => handleRemoveTeam(myJoinedTeam, true)} disabled={busyTeamAction} accessibilityRole="button">
+                <Text style={styles.withdrawBtnText}>Withdraw</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Teams ({tournament.teams.length})</Text>
+          <Text style={styles.sectionTitle}>
+            Teams ({joinedTeams.length}{tournament.maxTeams ? `/${tournament.maxTeams}` : ''})
+          </Text>
           {tournament.isOwner && (
-            <Pressable style={styles.addChip} onPress={() => setAddTeamVisible(true)}>
-              <Plus color={colors.primary} size={14} strokeWidth={2.5} />
-              <Text style={[styles.addChipText, { color: colors.primary }]}>Add Team</Text>
-            </Pressable>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Pressable style={styles.addChip} onPress={() => setInviteSheetVisible(true)}>
+                <Plus color={colors.primary} size={14} strokeWidth={2.5} />
+                <Text style={[styles.addChipText, { color: colors.primary }]}>Invite Team</Text>
+              </Pressable>
+              <Pressable style={styles.addChip} onPress={() => setAddTeamVisible(true)}>
+                <Plus color={colors.primary} size={14} strokeWidth={2.5} />
+                <Text style={[styles.addChipText, { color: colors.primary }]}>By name</Text>
+              </Pressable>
+            </View>
           )}
         </View>
 
+        {tournament.isOwner && invitedTeams.length > 0 && (
+          <View style={styles.pendingWrap}>
+            <Text style={styles.pendingInvites}>Waiting to accept:</Text>
+            {invitedTeams.map((t) => (
+              <View key={t.id} style={styles.pendingRow}>
+                <Text style={styles.pendingName} numberOfLines={1}>{t.name} · {t.players.length} player{t.players.length === 1 ? '' : 's'}</Text>
+                <Pressable onPress={() => handleRemoveTeam(t)} hitSlop={8}><Text style={styles.pendingCancel}>Cancel invite</Text></Pressable>
+              </View>
+            ))}
+          </View>
+        )}
+
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.teamsRow}>
-          {tournament.teams.map((team) => (
-            <Pressable key={team.id} style={[styles.teamCard, { borderColor: team.color }]} onPress={() => setRosterTeam(team)}>
+          {joinedTeams.map((team) => (
+            <Pressable key={team.id} style={[styles.teamCard, { borderColor: team.color }]} onPress={() => setRosterTeam(team)} onLongPress={tournament.isOwner ? () => handleRemoveTeam(team) : undefined}>
+              {tournament.isOwner && tournament.lifecycle === 'UPCOMING' && (
+                <Pressable onPress={() => handleRemoveTeam(team)} hitSlop={10} style={styles.teamCardRemove} accessibilityLabel={`Remove ${team.name}`}>
+                  <X color={colors.textMuted} size={13} strokeWidth={2.6} />
+                </Pressable>
+              )}
               <Text style={styles.teamCardEmoji}>{team.emoji}</Text>
               <Text style={styles.teamCardName}>{team.name}</Text>
-              <Text style={styles.teamCardMeta}>{team.players.length} players</Text>
+              <Text style={styles.teamCardMeta}>{team.players.length} player{team.players.length === 1 ? '' : 's'}</Text>
             </Pressable>
           ))}
-          {tournament.teams.length === 0 && (
-            <Text style={styles.emptyHint}>No teams added yet.</Text>
+          {joinedTeams.length === 0 && (
+            <Text style={styles.emptyHint}>{tournament.isOpen ? 'No teams yet — be the first to join.' : 'No teams have joined yet.'}</Text>
           )}
         </ScrollView>
 
@@ -360,10 +549,16 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
             <Text style={styles.modalTitle}>{rosterTeam?.name}</Text>
             {rosterTeam?.players.length ? (
               rosterTeam.players.map((p) => (
-                <View key={p.id} style={styles.rosterRow}>
+                <Pressable
+                  key={p.id}
+                  style={({ pressed }) => [styles.rosterRow, pressed && p.playerFirebaseUid ? { opacity: 0.6 } : null]}
+                  disabled={!p.playerFirebaseUid}
+                  onPress={() => { setRosterTeam(null); openProfile(router, p.playerFirebaseUid, user?.firebaseUid); }}
+                  accessibilityRole="button"
+                >
                   <Crown color={colors.primary} size={14} strokeWidth={2} />
                   <Text style={styles.rosterRowText}>{p.playerDisplayName || p.playerFirebaseUid}</Text>
-                </View>
+                </Pressable>
               ))
             ) : (
               <Text style={styles.emptyHint}>No players added to this team yet.</Text>
@@ -453,6 +648,13 @@ export default function TournamentDetailsScreen({ tournamentId }: TournamentDeta
         shareType="TOURNAMENT"
         referenceId={String(tournament.id)}
         label="Share Tournament"
+      />
+      <TeamSearchSheet
+        visible={inviteSheetVisible}
+        onClose={() => setInviteSheetVisible(false)}
+        onSelect={handleInviteTeam}
+        title="Invite a Team"
+        excludeTeamIds={tournament.teams.filter((t) => t.status !== 'DECLINED').map((t) => t.appTeamId).filter((x): x is string => !!x)}
       />
     </SafeAreaView>
   );
@@ -751,6 +953,43 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   teamChipTextActive: {
     color: colors.white,
   },
+  errorWrap: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, backgroundColor: colors.background },
+  errorTitle: { fontSize: 19, fontWeight: '900', color: colors.text, marginTop: 8, textAlign: 'center' },
+  errorBody: { fontSize: 14, color: colors.textSecondary, marginTop: 6, textAlign: 'center', lineHeight: 20 },
+  errorRetry: { marginTop: 20, backgroundColor: colors.primary, borderRadius: 14, paddingHorizontal: 28, paddingVertical: 13 },
+  errorRetryText: { color: colors.white, fontSize: 15, fontWeight: '800' },
+  errorBack: { color: colors.textSecondary, fontSize: 14, fontWeight: '700' },
+  inviteBanner: {
+    backgroundColor: colors.primary + '12', borderColor: colors.primary, borderWidth: 1.5,
+    borderRadius: 16, padding: 14, marginBottom: 14,
+  },
+  inviteBannerTitle: { fontSize: 15, fontWeight: '900', color: colors.text },
+  inviteBannerSub: { fontSize: 12.5, color: colors.textSecondary, marginTop: 3 },
+  inviteBannerActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  inviteAccept: { flex: 1, backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 11, alignItems: 'center' },
+  inviteAcceptText: { color: colors.white, fontSize: 14, fontWeight: '800' },
+  inviteDecline: { flex: 1, borderColor: colors.neutral300, borderWidth: 1.5, borderRadius: 12, paddingVertical: 11, alignItems: 'center' },
+  inviteDeclineText: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  joinCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.cardBg,
+    borderRadius: 16, padding: 14, marginBottom: 14,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 2,
+  },
+  joinCardTitle: { fontSize: 15, fontWeight: '900', color: colors.text },
+  joinCardSub: { fontSize: 12.5, color: colors.textSecondary, marginTop: 2 },
+  joinBtn: { backgroundColor: colors.primary, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, minWidth: 120, alignItems: 'center' },
+  joinBtnText: { color: colors.white, fontSize: 13.5, fontWeight: '800' },
+  pendingWrap: { marginBottom: 10, gap: 6 },
+  pendingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  pendingName: { flex: 1, fontSize: 13, color: colors.text, fontWeight: '600' },
+  pendingCancel: { fontSize: 12.5, color: colors.error, fontWeight: '800' },
+  teamCardRemove: {
+    position: 'absolute', top: 6, right: 6, width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.neutral100, zIndex: 2,
+  },
+  withdrawBtn: { borderWidth: 1.5, borderColor: colors.error, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
+  withdrawBtnText: { color: colors.error, fontSize: 13, fontWeight: '800' },
+  pendingInvites: { fontSize: 12.5, color: colors.textSecondary, marginTop: -4, marginBottom: 8 },
   vsText: {
     textAlign: 'center',
     fontSize: 11,

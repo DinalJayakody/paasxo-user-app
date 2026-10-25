@@ -1,3 +1,4 @@
+import { localYMD, parseLocalYMD } from '../utils/localDate';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View,
@@ -23,10 +24,11 @@ import { LoadingScreen } from '../components/LoadingScreen';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import ScreenGlow from '../components/ScreenGlow';
+import { discountedPrice, promotionBlurb } from '../utils/promotion';
 import { goBack } from '../utils/navigation';
 
 const CATEGORY_LABELS: Record<string, string> = {
-  GYM: 'Gym', CALISTHENICS: 'Calisthenics', DANCING: 'Dancing', YOGA: 'Yoga',
+  GYM: 'Gym', BODYBUILDING: 'Bodybuilding', CALISTHENICS: 'Calisthenics', ZUMBA: 'Zumba', DANCING: 'Dancing', YOGA: 'Yoga',
   CROSSFIT: 'CrossFit', MARTIAL_ARTS: 'Martial Arts', PILATES: 'Pilates', OTHER: 'Training',
 };
 
@@ -37,12 +39,12 @@ function dateLabel(iso: string) {
   return new Date(iso + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return localYMD();
 }
 function addDaysIso(iso: string, days: number) {
-  const d = new Date(iso);
+  const d = parseLocalYMD(iso);
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return localYMD(d);
 }
 
 // Opens turn-by-turn navigation (not just a pin search) so a member can tap
@@ -162,7 +164,7 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
         endTime: slot.endTime,
         location: session.location ?? '',
         isOnline: session.isOnline ? '1' : '0',
-        price: String(session.price ?? 0),
+        price: String(discountedPrice(session.price ?? 0, session.promotion, slot.slotDate) ?? 0),
       },
     } as any);
   };
@@ -376,7 +378,29 @@ export default function TrainerSessionDetailsScreen({ sessionId }: Props) {
       <View style={[styles.bottomBar, { paddingBottom: 28 + insets.bottom }]}>
         <View style={styles.flex1}>
           <Text style={styles.priceLabel}>Price</Text>
-          <Text style={styles.priceValue}>LKR {session.price}</Text>
+          {(() => {
+            const onDate = selectedSlot?.slotDate ?? todayIso();
+            const now = discountedPrice(session.price, session.promotion, onDate);
+            const off = session.promotion && now != null && now < session.price;
+            return off ? (
+              <>
+                <View style={styles.priceRow}>
+                  <Text style={styles.priceValue}>LKR {now}</Text>
+                  <Text style={styles.priceWas}>LKR {session.price}</Text>
+                </View>
+                <Text style={styles.priceDeal} numberOfLines={1}>
+                  {session.promotion!.label ? `${session.promotion!.label} · ` : ''}{session.promotion!.discountPercent}% off
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.priceValue}>LKR {session.price}</Text>
+                {!!session.promotion && (
+                  <Text style={styles.priceDeal} numberOfLines={1}>{promotionBlurb(session.promotion)}</Text>
+                )}
+              </>
+            );
+          })()}
         </View>
         <TouchableOpacity
           style={[styles.joinButton, joining && styles.joinButtonDisabled]}
@@ -482,6 +506,9 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   priceLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '700', textTransform: 'uppercase' },
   priceValue: { fontSize: 18, fontWeight: '800', color: colors.text },
+  priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+  priceWas: { fontSize: 13, color: colors.textMuted, textDecorationLine: 'line-through', fontWeight: '600' },
+  priceDeal: { fontSize: 11.5, color: colors.success, fontWeight: '800', marginTop: 1 },
   joinButton: {
     flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.trainer,
     borderRadius: 14, paddingHorizontal: 22, paddingVertical: 14,

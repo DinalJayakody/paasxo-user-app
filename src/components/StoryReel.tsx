@@ -13,12 +13,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Plus, Video } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { UserStoryGroup, storyApi } from '../api/storyApi';
-import { StoryViewer } from './StoryViewer';
+import { STORY_GRADIENT, StoryViewer } from './StoryViewer';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { resolveMediaUrl } from '../utils/mediaUrl';
 
-export function StoryReel() {
+// refreshKey: bumped by the parent's pull-to-refresh so the stories row reloads too.
+export function StoryReel({ refreshKey = 0 }: { refreshKey?: number }) {
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
@@ -29,9 +30,12 @@ export function StoryReel() {
 
   useEffect(() => {
     mountedRef.current = true;
-    loadStories();
     return () => { mountedRef.current = false; };
   }, []);
+
+  useEffect(() => {
+    loadStories();
+  }, [refreshKey]);
 
   const loadStories = async () => {
     try {
@@ -86,10 +90,10 @@ export function StoryReel() {
         <View style={[styles.ringWrap, !hasUnseen && styles.ringWrapSeen]}>
           {hasUnseen && (
             <LinearGradient
-              colors={['#F9A825', '#E91E63', '#7B1FA2', colors.primary]}
+              colors={STORY_GRADIENT}
               style={StyleSheet.absoluteFillObject}
-              start={{ x: 0, y: 1 }}
-              end={{ x: 1, y: 0 }}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
             />
           )}
           {/* Avatar bubble */}

@@ -13,7 +13,11 @@
     "ios": "expo run:ios"
   },
   "dependencies": {
+    "@expo-google-fonts/bebas-neue": "^0.4.1",
     "@expo-google-fonts/inter": "^0.4.2",
+    "@expo-google-fonts/orbitron": "^0.4.2",
+    "@expo-google-fonts/pacifico": "^0.4.1",
+    "@expo-google-fonts/permanent-marker": "^0.4.0",
     "@expo/vector-icons": "^15.0.2",
     "@invertase/react-native-apple-authentication": "^2.5.1",
     "@lucide/lab": "^0.1.2",
@@ -27,6 +31,7 @@
     "expo-av": "~16.0.8",
     "expo-blur": "~15.0.7",
     "expo-camera": "~17.0.8",
+    "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.9",
     "expo-crypto": "~15.0.9",
     "expo-file-system": "~19.0.23",
@@ -37,6 +42,7 @@
     "expo-linear-gradient": "~15.0.7",
     "expo-linking": "~8.0.8",
     "expo-location": "~19.0.8",
+    "expo-media-library": "~18.2.1",
     "expo-notifications": "~0.32.17",
     "expo-router": "~6.0.8",
     "expo-sensors": "~15.0.8",

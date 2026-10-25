@@ -103,5 +103,6 @@ export const parseMatchDetails = (raw: any): MatchDetails => {
     paidParticipants: data.paidParticipants,
     organizerTeamId: data.organizerTeamId,
     opponentTeamId: data.opponentTeamId,
+    openTeamChallenge: !!data.openTeamChallenge,
   };
 };

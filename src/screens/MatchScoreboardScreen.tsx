@@ -31,6 +31,9 @@ import { LoadingScreen } from '../components/LoadingScreen';
 import ScreenGlow from '../components/ScreenGlow';
 import ShareToCommunityModal from '../components/ShareToCommunityModal';
 import { goBack } from '../utils/navigation';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 const SPORT_ACCENT: Record<string, string> = {
   FUTSAL: Colors.futsal,
@@ -60,7 +63,7 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
   const { score, loading: scoreLoading, actionLoading, error, displaySeconds, startMatch, pauseTimer, resumeTimer, endMatch, resetMatch, updateState, refresh: refreshScore } =
     useLiveMatchScore(matchId);
   const scoreIsLiveOrPaused = score?.status === 'LIVE' || score?.status === 'PAUSED';
-  const { scorecard, actionLoading: eventActionLoading, recordEvent: recordEventRaw, undoLastEvent: undoLastEventRaw } =
+  const { scorecard, actionLoading: eventActionLoading, recordEvent: recordEventRaw, undoLastEvent: undoLastEventRaw, refresh: refreshScorecard } =
     useMatchScorecard(matchId, scoreIsLiveOrPaused);
 
   // Recording/undoing an event already re-fetches the scorecard (so the goal
@@ -89,6 +92,14 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
       .finally(() => { if (!cancelled) setLoadingMatch(false); });
     return () => { cancelled = true; };
   }, [matchId]);
+
+  // Pull-to-refresh: the match (e.g. venue approval), the live score and the
+  // scorecard — everything this screen loads when first opened.
+  const { refreshing, onRefresh } = usePullToRefresh(() => Promise.all([
+    bookingApi.getById(matchId).then((raw) => { setMatch(parseMatchDetails(raw)); setLoadError(undefined); }).catch(() => {}),
+    refreshScore(),
+    refreshScorecard(),
+  ]));
 
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -200,7 +211,13 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <View style={{ flex: 1 }}>
+      <PaasxoRefreshLogo refreshing={refreshing} />
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         <Animated.View style={{ opacity: fadeAnim }}>
           {score && (
             <LiveScoreboard score={score} displaySeconds={displaySeconds} teamAName={teamAName} teamBName={teamBName} scorecard={scorecard} />
@@ -329,6 +346,7 @@ export default function MatchScoreboardScreen({ matchId }: MatchScoreboardScreen
           )}
         </Animated.View>
       </ScrollView>
+      </View>
 
       <ShareToCommunityModal
         visible={showCommunityShare}

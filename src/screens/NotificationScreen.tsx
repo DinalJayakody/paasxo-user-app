@@ -1,3 +1,4 @@
+import { GENERAL_BADGE_TYPES } from '../api/notificationApi';
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -46,10 +47,13 @@ import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import HeaderIconButton from '../components/HeaderIconButton';
 import ScreenGlow from '../components/ScreenGlow';
 import { goBack } from '../utils/navigation';
+import { resolveNotificationRoute } from '../utils/notificationRoutes';
+import { serverTimeMs } from '../utils/serverTime';
 
 function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
+  const t = serverTimeMs(iso);
+  if (!t) return 'just now';
+  const mins = Math.max(0, Math.floor((Date.now() - t) / 60000));
   if (mins < 1) return 'just now';
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
@@ -84,6 +88,7 @@ function NotificationIcon({ type }: { type: string }) {
     case 'WALK_RUN_INVITE_ACCEPTED': return <UserCheck color={colors.success} size={size} strokeWidth={sw} />;
     case 'WALK_RUN_INVITE_DECLINED': return <UserMinus color={colors.error} size={size} strokeWidth={sw} />;
     case 'TRAINER_NEW_SESSION':   return <Dumbbell color={colors.trainer} size={size} strokeWidth={sw} />;
+    case 'TRAINER_PLAN_PERSONAL': return <Dumbbell color={colors.trainer} size={size} strokeWidth={sw} />;
     case 'NEARBY_SUGGESTION':     return <Sparkles color="#F59E0B" size={size} strokeWidth={sw} />;
     case 'SESSION_REMINDER':      return <Clock color={colors.trainer} size={size} strokeWidth={sw} />;
     case 'MATCH_REMINDER':        return <Clock color={colors.primary} size={size} strokeWidth={sw} />;
@@ -91,6 +96,8 @@ function NotificationIcon({ type }: { type: string }) {
     case 'VENUE_CLOSED':          return <MapPin color="#F59E0B" size={size} strokeWidth={sw} />;
     case 'BOOKING_PENDING_VENDOR_APPROVAL': return <Clock color="#F59E0B" size={size} strokeWidth={sw} />;
     case 'TEAM_CHALLENGE_RECEIVED': return <Swords color={colors.primary} size={size} strokeWidth={sw} />;
+    case 'TEAM_MEMBER_LEFT':      return <UserMinus color={colors.textMuted} size={size} strokeWidth={sw} />;
+    case 'TEAM_CAPTAIN_ASSIGNED': return <UserCheck color={colors.primary} size={size} strokeWidth={sw} />;
     case 'TEAM_CHALLENGE_ACCEPTED': return <Swords color={colors.success} size={size} strokeWidth={sw} />;
     case 'TEAM_CHALLENGE_DECLINED': return <Swords color={colors.error} size={size} strokeWidth={sw} />;
     case 'TEAM_MATCH_CHALLENGE_RECEIVED': return <Swords color={colors.primary} size={size} strokeWidth={sw} />;
@@ -232,23 +239,10 @@ const DEFAULT_GUIDE = 'Everything from Paasxo, all in one place';
 // Per the client's request, the GENERAL bell (Home/Explore) is scoped strictly to
 // match and booking activity — tournament/walk-run/trainer/discovery notifications
 // are still tagged GENERAL server-side, but filtered out of this list client-side
-// so they don't dilute the "match and booking only" feed.
-const MATCH_AND_BOOKING_TYPES = new Set<string>([
-  'INVITATION_RECEIVED',
-  'INVITATION_ACCEPTED',
-  'INVITATION_DECLINED',
-  'INVITATION_EXPIRED',
-  'PAYMENT_REQUIRED',
-  'PAYMENT_SUCCESSFUL',
-  'PLAYER_JOINED',
-  'PLAYER_ADDED_DIRECTLY',
-  'MATCH_CANCELLED_NOTIFY',
-  'BOOKING_PENDING_VENDOR_APPROVAL',
-  'BOOKING_CONFIRMED',
-  'BOOKING_REJECTED',
-  'MATCH_REMINDER',
-  'VENUE_CLOSED',
-]);
+// so they don't dilute the "match and booking only" feed. The badge count uses
+// the same list (GENERAL_BADGE_TYPES) and marking read covers the hidden ones
+// too, so the badge can always be cleared.
+
 
 export default function NotificationScreen({ category }: NotificationScreenProps) {
   const { colors } = useTheme();
@@ -259,13 +253,15 @@ export default function NotificationScreen({ category }: NotificationScreenProps
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
+  const newestFetchedRef = useRef<string | undefined>(undefined);
   const copy = category ? CATEGORY_COPY[category] : null;
 
   const load = useCallback(async () => {
     try {
       const data = await notificationApi.getAll(category);
+      newestFetchedRef.current = data[0]?.createdAt;
       setNotifications(
-        category === 'GENERAL' ? data.filter((n) => MATCH_AND_BOOKING_TYPES.has(n.type)) : data
+        category === 'GENERAL' ? data.filter((n) => GENERAL_BADGE_TYPES.has(n.type)) : data
       );
     } catch {
       // silently fail on background refresh
@@ -287,16 +283,19 @@ export default function NotificationScreen({ category }: NotificationScreenProps
   // silently clear unread SOCIAL ones the user hasn't looked at yet, and
   // vice versa. A short delay gives the unread styling a moment to be seen
   // before it clears, same idea as Instagram/Twitter's activity tabs.
+  // One request for the whole category (not one per item), bounded by the
+  // newest notification on screen.
   const unreadIdsKey = notifications.filter((n) => !n.read).map((n) => n.id).join(',');
   useEffect(() => {
     if (loading || !unreadIdsKey) return;
-    const unreadIds = unreadIdsKey.split(',');
+    const unreadIds = new Set(unreadIdsKey.split(','));
     const t = setTimeout(() => {
-      Promise.allSettled(unreadIds.map((id) => notificationApi.markRead(id)))
+      // Bounded by the newest notification fetched (hidden types included).
+      notificationApi.markAllRead(category, newestFetchedRef.current)
         .then(() => {
-          const readIds = new Set(unreadIds);
-          setNotifications((prev) => prev.map((n) => (readIds.has(n.id) ? { ...n, read: true } : n)));
-        });
+          setNotifications((prev) => prev.map((n) => (unreadIds.has(n.id) ? { ...n, read: true } : n)));
+        })
+        .catch(() => {});
     }, 900);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -358,76 +357,17 @@ export default function NotificationScreen({ category }: NotificationScreenProps
     router.push(`/join-checkout/${bookingId}?invitationId=${n.invitationId}` as any);
   };
 
+  // Same destinations as a tapped push notification — see notificationRoutes.ts.
   const handlePress = async (n: NotificationResponse) => {
     await markRead(n);
-    const snap = n.matchSnapshot ?? {};
-
-    if (n.bookingId && n.invitationStatus === 'JOIN_COMPLETED') {
-      router.push(`/match/${n.bookingId}` as any);
-    } else if (
-      n.bookingId &&
-      (n.type === 'BOOKING_CONFIRMED' || n.type === 'BOOKING_REJECTED' || n.type === 'MATCH_CANCELLED_NOTIFY' ||
-        n.type === 'MATCH_REMINDER' || n.type === 'VENUE_CLOSED' || n.type === 'BOOKING_PENDING_VENDOR_APPROVAL')
-    ) {
-      // MatchDetailsScreen already branches on PENDING_VENDOR/ACTIVE_MATCH/CANCELLED,
-      // so it's the right landing page for every one of these booking-lifecycle events.
-      router.push(`/match/${n.bookingId}` as any);
-    } else if (
-      (n.type === 'FOLLOW_REQUEST_RECEIVED' || n.type === 'FOLLOW_REQUEST_ACCEPTED' || n.type === 'NEW_FOLLOWER')
-      && snap.firebaseUid
-    ) {
-      router.push(`/friend-profile?user=${snap.firebaseUid}` as any);
-    } else if ((n.type === 'POST_LIKED' || n.type === 'POST_COMMENTED') && snap.postId) {
-      // These notifications are always about the recipient's own post, so the
-      // right landing spot is that exact post in the recipient's own profile.
-      // POST_COMMENTED also opens straight into the comment sheet — otherwise
-      // "X commented on your photo" lands on the photo with the comment that
-      // triggered it nowhere in sight, one more tap away.
-      const openComments = n.type === 'POST_COMMENTED' ? '&openComments=1' : '';
-      router.push(`/profile?openPostId=${snap.postId}${openComments}` as any);
-    } else if (n.type === 'REEL_LIKED' && snap.reelId) {
-      router.push(`/profile?openReelId=${snap.reelId}&tab=Reels` as any);
-    } else if ((n.type === 'TOURNAMENT_PLAYER_ADDED' || n.type === 'TOURNAMENT_REMINDER') && snap.tournamentId) {
-      router.push(`/tournament/${snap.tournamentId}` as any);
-    } else if (n.type === 'TRAINER_NEW_SESSION' && snap.sessionId) {
-      router.push(`/trainer-session/${snap.sessionId}` as any);
-    } else if (n.type === 'SESSION_REMINDER' && snap.sessionId) {
-      router.push(`/trainer-session/${snap.sessionId}` as any);
-    } else if (n.type === 'NEARBY_SUGGESTION' && snap.venueId) {
-      router.push('/explore?category=VENUES' as any);
-    } else if (n.type === 'TEAM_CHALLENGE_RECEIVED' && snap.challengedTeamId) {
-      // Recipient is the challenged team's captain - land them on their own
-      // team, where the pending challenge (and Accept/Decline) shows up.
-      router.push(`/team/${snap.challengedTeamId}` as any);
-    } else if (
-      (n.type === 'TEAM_CHALLENGE_ACCEPTED' || n.type === 'TEAM_CHALLENGE_DECLINED') &&
-      snap.challengerTeamId
-    ) {
-      // Recipient is the challenger's captain - land them back on their own team.
-      router.push(`/team/${snap.challengerTeamId}` as any);
-    } else if (n.type === 'TEAM_MATCH_CHALLENGE_RECEIVED' && snap.challengedTeamId) {
-      // Recipient is the challenged team's captain - the Match Challenges
-      // card on their own team screen is where Pay/Decline lives.
-      router.push(`/team/${snap.challengedTeamId}` as any);
-    } else if (
-      (n.type === 'TEAM_MATCH_CHALLENGE_ACCEPTED' || n.type === 'TEAM_MATCH_CHALLENGE_DECLINED') &&
-      snap.bookingId
-    ) {
-      // Recipient is the organizer - land them on the actual match, now
-      // either confirmed (accepted) or cancelled+refunded (declined).
-      router.push(`/match/${snap.bookingId}` as any);
-    } else if (n.type === 'COMMUNITY_JOIN_REQUEST' && snap.communityId) {
-      // Recipient is a community admin - land them straight on the pending
-      // requests list so Accept/Decline is one tap away, not buried behind
-      // the overflow menu.
-      router.push(`/community/${snap.communityId}?openRequests=1` as any);
-    } else if (
-      (n.type === 'COMMUNITY_JOIN_APPROVED' || n.type === 'COMMUNITY_JOIN_DECLINED') &&
-      snap.communityId
-    ) {
-      router.push(`/community/${snap.communityId}` as any);
-    }
-    // WALK_RUN_INVITE_* has no dedicated viewer screen yet - falls through to mark-read only.
+    const route = resolveNotificationRoute({
+      type: n.type,
+      bookingId: n.bookingId,
+      invitationId: n.invitationId,
+      invitationStatus: n.invitationStatus,
+      snap: n.matchSnapshot,
+    });
+    if (route) router.push(route as any);
   };
 
   if (loading) {

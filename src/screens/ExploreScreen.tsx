@@ -1,3 +1,5 @@
+import { AreaSearchSheet } from '../components/AreaSearchSheet';
+import { DatePickerSheet } from '../components/DatePickerSheet';
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
@@ -43,6 +45,7 @@ import {
   Target,
   Volleyball,
   LayoutGrid,
+  Swords,
   type LucideIcon,
 } from 'lucide-react-native';
 import * as Location from 'expo-location';
@@ -88,37 +91,37 @@ const DEFAULT_LNG = 79.8612;
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Category = 'VENUES' | 'TRAINERS' | 'GAMES' | 'EVENTS';
 type ExploreStep = 'SEARCH' | 'RESULTS' | 'MAP';
-type SportFilter = 'ALL' | 'FUTSAL' | 'CRICKET' | 'PICKLEBALL';
+type SportFilter = 'ALL' | 'FUTSAL' | 'CRICKET' | 'PICKLEBALL' | 'PADDLEBALL';
 type DateQuick = 'TODAY' | 'TOMORROW' | 'WEEKEND' | 'CUSTOM' | null;
 
 interface VenueResult {
   id: string; name: string; location: string;
   pricePerSlot: number | null; imageBase64?: string; imageUrl?: string;
-  latitude: number; longitude: number; distance?: number;
+  latitude: number | null; longitude: number | null; distance?: number;
 }
 interface GameResult {
   id: string; title: string; sport: string;
   slotDate: string; startTime: string; endTime: string;
   locationName: string; joinedPlayersCount: number; maxSpots: number;
   spotsLeft: number; totalPrice: number | null; pricePerPlayer: number | null;
-  latitude: number; longitude: number; distance?: number;
+  latitude: number | null; longitude: number | null; distance?: number;
   isPublicMatch?: boolean; publicMatchJoinFee?: number | null;
 }
 interface TrainerResult {
   id: string; name: string; location: string;
   specialty?: string; pricePerSession: number | null;
   imageBase64?: string; imageUrl?: string; rating?: number;
-  latitude: number; longitude: number; distance?: number;
+  latitude: number | null; longitude: number | null; distance?: number;
 }
 const CATEGORY_LABELS: Record<string, string> = {
-  GYM: 'Gym', CALISTHENICS: 'Calisthenics', DANCING: 'Dancing', YOGA: 'Yoga',
+  GYM: 'Gym', BODYBUILDING: 'Bodybuilding', CALISTHENICS: 'Calisthenics', ZUMBA: 'Zumba', DANCING: 'Dancing', YOGA: 'Yoga',
   CROSSFIT: 'CrossFit', MARTIAL_ARTS: 'Martial Arts', PILATES: 'Pilates', OTHER: 'Training',
 };
 interface EventResult {
   id: string; name: string; sport: string;
   futsalName: string; startDate?: string;
   teamCount?: number; maxTeams?: number; status?: string;
-  latitude: number; longitude: number; distance?: number;
+  latitude: number | null; longitude: number | null; distance?: number;
 }
 type AnyResult = VenueResult | GameResult | TrainerResult | EventResult;
 
@@ -128,6 +131,20 @@ const SPORTS: { id: SportFilter; label: string; Icon: LucideIcon }[] = [
   { id: 'FUTSAL', label: 'Futsal', Icon: Goal },
   { id: 'CRICKET', label: 'Cricket', Icon: Target },
   { id: 'PICKLEBALL', label: 'Pickleball', Icon: Volleyball },
+  { id: 'PADDLEBALL', label: 'Paddleball', Icon: Volleyball },
+];
+
+// Trainer specialties offered as filter chips (values = backend TrainerCategory).
+const TRAINER_FILTERS: { id: string; label: string }[] = [
+  { id: 'GYM', label: 'Gym' },
+  { id: 'CALISTHENICS', label: 'Calisthenics' },
+  { id: 'BODYBUILDING', label: 'Bodybuilding' },
+  { id: 'ZUMBA', label: 'Zumba' },
+  { id: 'YOGA', label: 'Yoga' },
+  { id: 'DANCING', label: 'Dancing' },
+  { id: 'CROSSFIT', label: 'CrossFit' },
+  { id: 'MARTIAL_ARTS', label: 'Martial Arts' },
+  { id: 'PILATES', label: 'Pilates' },
 ];
 
 // Same sport->icon mapping used for result-card badges (games/events).
@@ -140,8 +157,10 @@ function sportIconFor(sport?: string): LucideIcon {
 const RADIUS_PRESETS = [5, 10, 20, 50];
 const DAY_LABELS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
+// Local calendar date — toISOString() is UTC, which in Sri Lanka (UTC+5:30)
+// turned "Today" into yesterday's date before 5:30am.
 function toYMD(d: Date): string {
-  return d.toISOString().split('T')[0];
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function addDays(d: Date, n: number): Date {
@@ -150,11 +169,12 @@ function addDays(d: Date, n: number): Date {
   return r;
 }
 
+/** This weekend's next day: today if it's already Saturday/Sunday, else the coming Saturday. */
 function nextWeekend(): Date {
   const now = new Date();
   const day = now.getDay(); // 0=Sun,6=Sat
-  const daysToSat = day === 6 ? 7 : (6 - day + 7) % 7 || 7;
-  return addDays(now, daysToSat);
+  if (day === 6 || day === 0) return now;
+  return addDays(now, 6 - day);
 }
 
 function resolveImage(v: any): string | undefined {
@@ -369,136 +389,6 @@ const createPieStyles = (colors: ThemeColors) => StyleSheet.create({
   },
 });
 
-// ─── Calendar picker modal ────────────────────────────────────────────────────
-function CalendarModal({
-  visible,
-  onClose,
-  onSelect,
-  selectedDate,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onSelect: (d: Date) => void;
-  selectedDate: Date | null;
-}) {
-  const { colors } = useTheme();
-  const calStyles = React.useMemo(() => createCalStyles(colors), [colors]);
-  const today = new Date();
-  const [viewDate, setViewDate] = useState<Date>(() => {
-    const d = selectedDate ?? today;
-    return new Date(d.getFullYear(), d.getMonth(), 1);
-  });
-
-  useEffect(() => {
-    if (visible) {
-      const d = selectedDate ?? today;
-      setViewDate(new Date(d.getFullYear(), d.getMonth(), 1));
-    }
-  }, [visible]);
-
-  const year = viewDate.getFullYear();
-  const month = viewDate.getMonth();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstDayJS = new Date(year, month, 1).getDay(); // 0=Sun
-  const startOffset = (firstDayJS + 6) % 7; // Mon=0
-
-  const cells: (number | null)[] = [];
-  for (let i = 0; i < startOffset; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
-
-  const monthLabel = viewDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-
-  const prevMonth = () => setViewDate(new Date(year, month - 1, 1));
-  const nextMonth = () => setViewDate(new Date(year, month + 1, 1));
-
-  const isPast = (day: number) => {
-    const d = new Date(year, month, day);
-    d.setHours(0, 0, 0, 0);
-    const t = new Date();
-    t.setHours(0, 0, 0, 0);
-    return d < t;
-  };
-  const isSelected = (day: number) => {
-    if (!selectedDate) return false;
-    return (
-      selectedDate.getFullYear() === year &&
-      selectedDate.getMonth() === month &&
-      selectedDate.getDate() === day
-    );
-  };
-  const isToday = (day: number) =>
-    today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={calStyles.overlay}>
-        <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={onClose} activeOpacity={1} />
-        <View style={calStyles.sheet}>
-          <View style={calStyles.handle} />
-          <Text style={calStyles.title}>Pick a Date</Text>
-
-          {/* Month nav */}
-          <View style={calStyles.monthNav}>
-            <TouchableOpacity onPress={prevMonth} style={calStyles.navBtn} activeOpacity={0.7}>
-              <ChevronLeft color={colors.primary} size={20} strokeWidth={2.5} />
-            </TouchableOpacity>
-            <Text style={calStyles.monthLabel}>{monthLabel}</Text>
-            <TouchableOpacity onPress={nextMonth} style={calStyles.navBtn} activeOpacity={0.7}>
-              <ChevronRight color={colors.primary} size={20} strokeWidth={2.5} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Day-of-week header */}
-          <View style={calStyles.weekRow}>
-            {DAY_LABELS.map((d) => (
-              <Text key={d} style={calStyles.weekLabel}>{d}</Text>
-            ))}
-          </View>
-
-          {/* Date grid */}
-          <View style={calStyles.grid}>
-            {cells.map((day, i) => {
-              if (!day) return <View key={`empty-${i}`} style={calStyles.cell} />;
-              const past = isPast(day);
-              const sel = isSelected(day);
-              const tod = isToday(day);
-              return (
-                <TouchableOpacity
-                  key={day}
-                  style={[
-                    calStyles.cell,
-                    sel && calStyles.cellSelected,
-                    tod && !sel && calStyles.cellToday,
-                    past && calStyles.cellPast,
-                  ]}
-                  onPress={() => {
-                    if (!past) {
-                      onSelect(new Date(year, month, day));
-                      onClose();
-                    }
-                  }}
-                  activeOpacity={past ? 1 : 0.7}
-                >
-                  <Text
-                    style={[
-                      calStyles.cellText,
-                      sel && calStyles.cellTextSelected,
-                      tod && !sel && calStyles.cellTextToday,
-                      past && calStyles.cellTextPast,
-                    ]}
-                  >
-                    {day}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
 
 // ─── Main component ───────────────────────────────────────────────────────────
 const VALID_CATEGORIES: Category[] = ['VENUES', 'TRAINERS', 'GAMES', 'EVENTS'];
@@ -511,7 +401,7 @@ export default function ExploreScreen() {
   const { active: isPro } = useSubscription();
   // Lets other screens deep-link straight into a category, e.g.
   // router.replace('/explore?category=TRAINERS') from the trainer booking flow.
-  const params = useLocalSearchParams<{ category?: string }>();
+  const params = useLocalSearchParams<{ category?: string; q?: string }>();
 
   // Navigation
   const [step, setStep] = useState<ExploreStep>('SEARCH');
@@ -529,7 +419,9 @@ export default function ExploreScreen() {
   );
 
   // Filters
-  const [searchText, setSearchText] = useState('');
+  // Text search lives on the Explore tab's own search bar; whatever was typed
+  // there arrives as ?q= and is applied here as a removable chip.
+  const [searchText, setSearchText] = useState(() => (typeof params.q === 'string' ? params.q.slice(0, 80) : ''));
   // Live-as-you-type dropdown, shown directly under the search bar instead of
   // requiring a "Show Results" tap + full-screen navigation for every search —
   // that full RESULTS step (with its date/radius/sport filters) still exists
@@ -547,6 +439,18 @@ export default function ExploreScreen() {
   const [showCalendar, setShowCalendar] = useState(false);
   const [radiusKm, setRadiusKm] = useState(20);
   const [freeOnly, setFreeOnly] = useState(false);
+  // Trainer specialty filter (TrainerCategory) — null = all trainers.
+  const [trainerCategory, setTrainerCategory] = useState<string | null>(null);
+  // Search-area centre: null = "my location". Set by dragging the radius map
+  // (or "Search this area" on the results map).
+  const [centerLat, setCenterLat] = useState<number | null>(null);
+  const [centerLng, setCenterLng] = useState<number | null>(null);
+  const [centerLabel, setCenterLabel] = useState<string | null>(null);
+  const radiusMapRef = useRef<any>(null);
+  const [areaSearchVisible, setAreaSearchVisible] = useState(false);
+  const programmaticMoveRef = useRef(false);
+  const resultsMapRef = useRef<any>(null);
+  const [mapMovedTo, setMapMovedTo] = useState<{ latitude: number; longitude: number } | null>(null);
 
   // Location
   const [userLat, setUserLat] = useState<number | null>(null);
@@ -616,14 +520,15 @@ export default function ExploreScreen() {
       try {
         const filterDate = getFilterDate();
         const q = searchText.trim() || undefined;
-        const lat2 = userLat ?? undefined;
-        const lng2 = userLng ?? undefined;
+        const lat2 = (centerLat ?? userLat) ?? undefined;
+        const lng2 = (centerLng ?? userLng) ?? undefined;
         const pageParams = { page: targetPage, size: PAGE_SIZE };
         let more = false;
 
         if (cat === 'VENUES') {
           const { content, hasMore: m } = await futsalApi.filterVenues({
-            query: q, lat: lat2, lng: lng2, radiusKm, freeOnly: freeOnly || undefined, ...pageParams,
+            query: q, lat: lat2, lng: lng2, radiusKm, freeOnly: freeOnly || undefined,
+            sport: sportFilter !== 'ALL' ? sportFilter : undefined, ...pageParams,
           });
           more = m;
           const mapped = content.map((v: any): VenueResult => ({
@@ -632,14 +537,15 @@ export default function ExploreScreen() {
             location: v.location ?? v.locationName ?? '',
             pricePerSlot: v.pricePerSlot != null ? Number(v.pricePerSlot) : null,
             imageBase64: v.imageBase64, imageUrl: v.imageUrl,
-            latitude: v.latitude ?? DEFAULT_LAT, longitude: v.longitude ?? DEFAULT_LNG,
+            latitude: v.latitude ?? null, longitude: v.longitude ?? null,
             distance: mapDist(v.latitude, v.longitude),
           }));
           setResults((prev) => (append ? [...prev, ...mapped] : mapped));
 
         } else if (cat === 'TRAINERS') {
           const { content, hasMore: m } = await trainerApi.filterTrainers({
-            query: q, lat: lat2, lng: lng2, radiusKm, freeOnly: freeOnly || undefined, ...pageParams,
+            query: q, category: trainerCategory ?? undefined,
+            lat: lat2, lng: lng2, radiusKm, freeOnly: freeOnly || undefined, ...pageParams,
           });
           more = m;
           const mapped = content.map((t: any): TrainerResult => ({
@@ -652,7 +558,7 @@ export default function ExploreScreen() {
             pricePerSession: t.hourlyRate != null ? Number(t.hourlyRate) : null,
             imageUrl: resolveMediaUrl(t.profileImageUrl),
             rating: t.rating,
-            latitude: t.latitude ?? DEFAULT_LAT, longitude: t.longitude ?? DEFAULT_LNG,
+            latitude: t.latitude ?? null, longitude: t.longitude ?? null,
             distance: mapDist(t.latitude, t.longitude),
           }));
           setResults((prev) => (append ? [...prev, ...mapped] : mapped));
@@ -680,7 +586,7 @@ export default function ExploreScreen() {
             maxSpots: b.maxSpots ?? 0, spotsLeft: b.spotsLeft ?? 0,
             totalPrice: b.totalPrice != null ? Number(b.totalPrice) : null,
             pricePerPlayer: b.pricePerPlayer != null ? Number(b.pricePerPlayer) : null,
-            latitude: b.latitude ?? DEFAULT_LAT, longitude: b.longitude ?? DEFAULT_LNG,
+            latitude: b.latitude ?? null, longitude: b.longitude ?? null,
             distance: mapDist(b.latitude, b.longitude),
             isPublicMatch: b.isPublicMatch ?? false,
             publicMatchJoinFee: b.publicMatchJoinFee != null ? Number(b.publicMatchJoinFee) : null,
@@ -702,7 +608,7 @@ export default function ExploreScreen() {
             teamCount: t.teamCount ?? (t.teams?.length ?? 0),
             maxTeams: t.maxTeams,
             status: t.status,
-            latitude: t.latitude ?? DEFAULT_LAT, longitude: t.longitude ?? DEFAULT_LNG,
+            latitude: t.latitude ?? null, longitude: t.longitude ?? null,
             distance: mapDist(t.latitude, t.longitude),
           }));
           setResults((prev) => (append ? [...prev, ...mapped] : mapped));
@@ -718,7 +624,7 @@ export default function ExploreScreen() {
         if (append) setLoadingMore(false); else if (!silent) setLoading(false);
       }
     },
-    [searchText, sportFilter, dateQuick, customDate, radiusKm, freeOnly, userLat, userLng, mapDist]
+    [searchText, sportFilter, dateQuick, customDate, radiusKm, freeOnly, userLat, userLng, centerLat, centerLng, trainerCategory, mapDist]
   );
 
   // Location resolves asynchronously (permission prompt + GPS/network fix), so a
@@ -741,54 +647,56 @@ export default function ExploreScreen() {
     fetchResults(category, 0, false);
   };
 
-  // Debounced live search — fires a small (5-result) preview fetch for the
-  // dropdown as the user types, independent of the full RESULTS step.
+  // Filters changed while results/map are showing → refresh them in place.
+  const filtersKey = `${radiusKm}|${centerLat}|${centerLng}|${trainerCategory}|${sportFilter}`;
+  const firstFiltersRun = useRef(true);
   useEffect(() => {
-    if (dropdownDebounceRef.current) clearTimeout(dropdownDebounceRef.current);
-    const q = searchText.trim();
-    if (step !== 'SEARCH' || q.length < 2) {
-      setDropdownOpen(false);
-      setDropdownResults([]);
-      return;
-    }
-    dropdownDebounceRef.current = setTimeout(async () => {
-      setDropdownLoading(true);
-      setDropdownOpen(true);
-      try {
-        const pageParams = { page: 0, size: 5 };
-        const lat2 = userLat ?? undefined;
-        const lng2 = userLng ?? undefined;
-        if (category === 'VENUES') {
-          const { content } = await futsalApi.filterVenues({ query: q, lat: lat2, lng: lng2, radiusKm, ...pageParams });
-          setDropdownResults(content.map((v: any) => ({
-            id: String(v.id ?? v._id), title: v.name ?? 'Venue', subtitle: v.location ?? v.locationName ?? '', raw: v,
-          })));
-        } else if (category === 'TRAINERS') {
-          const { content } = await trainerApi.filterTrainers({ query: q, lat: lat2, lng: lng2, radiusKm, ...pageParams });
-          setDropdownResults(content.map((t: any) => ({
-            id: String(t.id), title: t.trainerDisplayName ?? 'Trainer', subtitle: t.location ?? '', raw: t,
-          })));
-        } else if (category === 'GAMES') {
-          const { content } = await bookingApi.filterBookings({ query: q, lat: lat2, lng: lng2, radiusKm, ...pageParams });
-          setDropdownResults(content.map((b: any) => ({
-            id: String(b.id ?? b._id), title: b.title ?? 'Match', subtitle: b.futsalName ?? b.locationName ?? b.location ?? '', raw: b,
-          })));
-        } else {
-          const { content } = await tournamentApi.filterTournaments({ query: q, lat: lat2, lng: lng2, radiusKm, ...pageParams });
-          setDropdownResults(content.map((t: any) => ({
-            id: String(t.id ?? t._id), title: t.name ?? t.title ?? 'Tournament', subtitle: t.futsalName ?? t.venueName ?? '', raw: t,
-          })));
-        }
-      } catch {
-        setDropdownResults([]);
-      } finally {
-        setDropdownLoading(false);
-      }
-    }, 350);
-    return () => {
-      if (dropdownDebounceRef.current) clearTimeout(dropdownDebounceRef.current);
-    };
-  }, [searchText, category, step, userLat, userLng, radiusKm]);
+    if (firstFiltersRun.current) { firstFiltersRun.current = false; return; }
+    if (step === 'SEARCH') return;
+    const t = setTimeout(() => fetchResults(category, 0, false, true), 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersKey]);
+
+  // Search centre helpers
+  const searchLatVal = centerLat ?? userLat ?? DEFAULT_LAT;
+  const searchLngVal = centerLng ?? userLng ?? DEFAULT_LNG;
+  const usingCustomCenter = centerLat != null && centerLng != null;
+  const regionFor = (la: number, ln: number, km: number) => ({
+    latitude: la, longitude: ln, latitudeDelta: (km / 111) * 2.6, longitudeDelta: (km / 111) * 2.6,
+  });
+  const setSearchCenter = useCallback((la: number | null, ln: number | null, label?: string) => {
+    setCenterLat(la);
+    setCenterLng(ln);
+    setCenterLabel(label ?? null);
+    if (la == null || ln == null || label) return;
+    // One reverse-geocode per finished drag (on-device geocoder, no API cost).
+    Location.reverseGeocodeAsync({ latitude: la, longitude: ln })
+      .then(([p]) => {
+        if (!p) return;
+        const label = [p.district || p.name || p.street, p.city || p.subregion].filter(Boolean).join(', ');
+        if (label) setCenterLabel(label);
+      })
+      .catch(() => {});
+  }, []);
+  // Our own camera moves are flagged so onRegionChangeComplete doesn't treat
+  // them as the user picking a new area; the flag self-clears in case the
+  // camera was already there and no change event fires.
+  const moveRadiusMap = (region: ReturnType<typeof regionFor>, ms: number) => {
+    if (!radiusMapRef.current) return;
+    programmaticMoveRef.current = true;
+    radiusMapRef.current.animateToRegion(region, ms);
+    setTimeout(() => { programmaticMoveRef.current = false; }, ms + 500);
+  };
+  const resetToMyLocation = () => {
+    setSearchCenter(null, null);
+    moveRadiusMap(regionFor(userLat ?? DEFAULT_LAT, userLng ?? DEFAULT_LNG, radiusKm), 350);
+  };
+  // Keep the radius preview framed on the circle as the radius changes.
+  useEffect(() => {
+    moveRadiusMap(regionFor(searchLatVal, searchLngVal, radiusKm), 300);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [radiusKm, userLat, userLng]);
 
   const handleSelectDropdownResult = (item: { raw: any }) => {
     setDropdownOpen(false);
@@ -803,7 +711,7 @@ export default function ExploreScreen() {
         location: v.location ?? v.locationName ?? '',
         pricePerSlot: v.pricePerSlot != null ? Number(v.pricePerSlot) : null,
         imageBase64: v.imageBase64, imageUrl: v.imageUrl,
-        latitude: v.latitude ?? DEFAULT_LAT, longitude: v.longitude ?? DEFAULT_LNG,
+        latitude: v.latitude ?? null, longitude: v.longitude ?? null,
         distance: mapDist(v.latitude, v.longitude),
       });
     }
@@ -894,7 +802,7 @@ export default function ExploreScreen() {
           <TouchableOpacity
             style={styles.cardCta}
             activeOpacity={0.88}
-            onPress={() => router.push(`/create-match` as any)}
+            onPress={() => router.push({ pathname: '/create-match', params: { venueId: String(venue.id) } } as any)}
           >
             <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.cardCtaGrad}>
               <Text style={styles.cardCtaText}>Book Now</Text>
@@ -1125,82 +1033,20 @@ export default function ExploreScreen() {
         />
         <View style={styles.heroGlassStroke} pointerEvents="none" />
 
-        <HeaderIconButton
-          style={styles.exploreBell}
-          onPress={() => router.push('/notifications?category=GENERAL' as any)}
-          hitSlop={8}
-        >
-          <WhistleIcon color={colors.white} size={19} strokeWidth={2} />
-          {unreadGeneral > 0 && (
-            <View style={styles.exploreBellBadge}>
-              <Text style={styles.exploreBellBadgeText}>{unreadGeneral > 9 ? '9+' : unreadGeneral}</Text>
-            </View>
-          )}
-        </HeaderIconButton>
         <View style={styles.heroBrandRow}>
-          <Image source={require('../../assets/logo-mark.png')} style={styles.heroLogo} resizeMode="contain" />
-          {isPro && (
-            <View style={styles.proBadge}>
-              <Zap color="#1A1A2E" size={8} strokeWidth={2.5} fill="#1A1A2E" />
-              <Text style={styles.proBadgeText}>PRO</Text>
-            </View>
-          )}
+          <Image source={require('../../assets/logo-mark.png')} style={styles.heroLogo} resizeMode="contain" accessibilityLabel="Paasxo" />
         </View>
         <Text style={styles.heroTitle}>Discover</Text>
-        <Text style={styles.heroSub}>Find venues & matches near you</Text>
-        <View style={{ position: 'relative', zIndex: 20 }}>
-          <View style={styles.searchBar}>
-            <Search color={colors.neutral400} size={17} strokeWidth={2} />
-            <TextInput
-              style={styles.searchInput}
-              value={searchText}
-              onChangeText={setSearchText}
-              onFocus={() => { if (searchText.trim().length >= 2) setDropdownOpen(true); }}
-              placeholder={category === 'VENUES' ? 'Search venue name…' : category === 'TRAINERS' ? 'Search trainer name…' : category === 'EVENTS' ? 'Search tournament…' : 'Search match title…'}
-              placeholderTextColor={colors.neutral400}
-              returnKeyType="search"
-              onSubmitEditing={handleShowResults}
-            />
-            {!!searchText && (
-              <TouchableOpacity onPress={() => { setSearchText(''); setDropdownOpen(false); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <X color={colors.neutral400} size={15} strokeWidth={2} />
-              </TouchableOpacity>
-            )}
+        <Text style={styles.heroSub}>Filter venues, games, trainers & tournaments near you</Text>
+        {!!searchText.trim() && (
+          <View style={styles.queryChip}>
+            <Search color={colors.white} size={13} strokeWidth={2.4} />
+            <Text style={styles.queryChipText} numberOfLines={1}>“{searchText.trim()}”</Text>
+            <TouchableOpacity onPress={() => setSearchText('')} hitSlop={10} accessibilityLabel="Clear search text">
+              <X color={colors.white} size={14} strokeWidth={2.6} />
+            </TouchableOpacity>
           </View>
-
-          {dropdownOpen && (
-            <View style={styles.searchDropdown}>
-              {dropdownLoading ? (
-                <View style={styles.searchDropdownLoading}>
-                  <ActivityIndicator color={colors.primary} size="small" />
-                </View>
-              ) : dropdownResults.length === 0 ? (
-                <Text style={styles.searchDropdownEmpty}>No {CATS.find((c) => c.id === category)?.label.toLowerCase()} found</Text>
-              ) : (
-                <>
-                  {dropdownResults.map((item) => (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={styles.searchDropdownRow}
-                      activeOpacity={0.7}
-                      onPress={() => handleSelectDropdownResult(item)}
-                    >
-                      <Search color={colors.neutral400} size={14} strokeWidth={2} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.searchDropdownTitle} numberOfLines={1}>{item.title}</Text>
-                        {!!item.subtitle && <Text style={styles.searchDropdownSubtitle} numberOfLines={1}>{item.subtitle}</Text>}
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                  <TouchableOpacity style={styles.searchDropdownSeeAll} activeOpacity={0.7} onPress={handleShowResults}>
-                    <Text style={styles.searchDropdownSeeAllText}>See all results</Text>
-                    <ChevronRight color={colors.primary} size={14} strokeWidth={2.5} />
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          )}
-        </View>
+        )}
       </View>
       </View>
 
@@ -1229,6 +1075,23 @@ export default function ExploreScreen() {
           );
         })()}
 
+        {/* Team vs Team — open Team Match Challenges nearby, a separate flow from
+            individual Games (team captains only; see TeamMatchesScreen). */}
+        <TouchableOpacity
+          style={styles.teamMatchEntry}
+          onPress={() => router.push('/team-matches' as any)}
+          activeOpacity={0.85}
+        >
+          <View style={styles.teamMatchEntryIcon}>
+            <Swords color={colors.primary} size={20} strokeWidth={2.2} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.teamMatchEntryTitle}>Team vs Team</Text>
+            <Text style={styles.teamMatchEntrySub}>Take on nearby teams · split the cost 50/50</Text>
+          </View>
+          <ChevronRight color={colors.neutral400} size={18} strokeWidth={2} />
+        </TouchableOpacity>
+
         <RadialCategoryMenu
           visible={showCategoryMenu}
           selected={category}
@@ -1236,10 +1099,10 @@ export default function ExploreScreen() {
           onClose={() => setShowCategoryMenu(false)}
         />
 
-        {/* Sport filter — only for Games */}
-        {category === 'GAMES' && (
+        {/* Sport sub-category — Venues and Games */}
+        {(category === 'GAMES' || category === 'VENUES') && (
           <>
-            <Text style={styles.sectionTitle}>Sport</Text>
+            <Text style={styles.sectionTitle}>{category === 'VENUES' ? 'Venue type' : 'Sport'}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
               {SPORTS.map((s) => (
                 <TouchableOpacity
@@ -1256,7 +1119,34 @@ export default function ExploreScreen() {
           </>
         )}
 
-        {/* When? */}
+        {/* Trainer specialty — only for Trainers */}
+        {category === 'TRAINERS' && (
+          <>
+            <Text style={styles.sectionTitle}>Training type</Text>
+            <View style={styles.trainerCatRow}>
+              {[{ id: null as string | null, label: 'All' }, ...TRAINER_FILTERS].map((t) => {
+                const active = trainerCategory === t.id;
+                return (
+                  <TouchableOpacity
+                    key={t.id ?? 'ALL'}
+                    style={[styles.chip, active && styles.chipActive]}
+                    onPress={() => setTrainerCategory(t.id)}
+                    activeOpacity={0.8}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: active }}
+                  >
+                    {t.id === null && <LayoutGrid color={active ? colors.primary : colors.textSecondary} size={14} strokeWidth={2.2} />}
+                    {t.id !== null && <Dumbbell color={active ? colors.primary : colors.textSecondary} size={14} strokeWidth={2.2} />}
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{t.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </>
+        )}
+
+        {/* When? — dates only exist for games and tournaments */}
+        {(category === 'GAMES' || category === 'EVENTS') && (<>
         <Text style={styles.sectionTitle}>When?</Text>
         <View style={styles.dateGrid}>
           {(['TODAY', 'TOMORROW', 'WEEKEND'] as DateQuick[]).map((d) => {
@@ -1303,6 +1193,7 @@ export default function ExploreScreen() {
             </TouchableOpacity>
           )}
         </TouchableOpacity>
+        </>)}
 
         {/* Radius */}
         <Text style={styles.sectionTitle}>Search Radius</Text>
@@ -1343,34 +1234,68 @@ export default function ExploreScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Radius map */}
+        {/* Where to search — type a place, or drag the map below */}
+        <TouchableOpacity style={styles.areaField} onPress={() => setAreaSearchVisible(true)} activeOpacity={0.85} accessibilityRole="search">
+          <Search color={colors.primary} size={16} strokeWidth={2.4} />
+          <Text style={styles.areaFieldText} numberOfLines={1}>
+            {usingCustomCenter ? (centerLabel ?? 'Selected area') : 'Near my location — tap to search a place'}
+          </Text>
+          {usingCustomCenter && (
+            <TouchableOpacity onPress={resetToMyLocation} hitSlop={10} accessibilityLabel="Use my location">
+              <X color={colors.textMuted} size={16} />
+            </TouchableOpacity>
+          )}
+        </TouchableOpacity>
+
+        {/* Radius map — drag to move the search area */}
         {Platform.OS !== 'web' && MapViewComponent ? (
-          <View style={styles.radiusMapWrap}>
-            <MapViewComponent
-              style={StyleSheet.absoluteFillObject}
-              region={radiusMapRegion}
-              scrollEnabled={false}
-              zoomEnabled={false}
-              pitchEnabled={false}
-              rotateEnabled={false}
-              pointerEvents="none"
-            >
-              <MarkerComponent coordinate={{ latitude: lat, longitude: lng }} />
-              {CircleComponent && (
-                <CircleComponent
-                  center={{ latitude: lat, longitude: lng }}
-                  radius={radiusKm * 1000}
-                  fillColor="rgba(64,124,240,0.12)"
-                  strokeColor="rgba(64,124,240,0.55)"
-                  strokeWidth={2}
-                />
-              )}
-            </MapViewComponent>
-            <View style={styles.radiusMapBadge}>
-              <MapPin color={colors.primary} size={10} strokeWidth={2.5} />
-              <Text style={styles.radiusMapBadgeText}>{radiusKm} km radius</Text>
+          <>
+            <View style={styles.radiusMapWrap}>
+              <MapViewComponent
+                ref={radiusMapRef}
+                style={StyleSheet.absoluteFillObject}
+                initialRegion={regionFor(searchLatVal, searchLngVal, radiusKm)}
+                pitchEnabled={false}
+                rotateEnabled={false}
+                showsUserLocation={userLat != null}
+                onRegionChangeComplete={(r: any) => {
+                  // Only a drag/zoom by the user moves the search area —
+                  // our own re-framing (radius change, "use my location") must not.
+                  if (programmaticMoveRef.current) { programmaticMoveRef.current = false; return; }
+                  const moved = haversineKm(r.latitude, r.longitude, searchLatVal, searchLngVal);
+                  if (moved > Math.max(0.05, radiusKm * 0.02)) setSearchCenter(r.latitude, r.longitude);
+                }}
+              >
+                {CircleComponent && (
+                  <CircleComponent
+                    center={{ latitude: searchLatVal, longitude: searchLngVal }}
+                    radius={radiusKm * 1000}
+                    fillColor="rgba(64,124,240,0.12)"
+                    strokeColor="rgba(64,124,240,0.55)"
+                    strokeWidth={2}
+                  />
+                )}
+              </MapViewComponent>
+              <View style={styles.centerPin} pointerEvents="none">
+                <MapPin color={colors.primary} size={28} strokeWidth={2.4} fill={colors.white} />
+              </View>
+              <View style={styles.radiusMapBadge} pointerEvents="none">
+                <MapPin color={colors.primary} size={10} strokeWidth={2.5} />
+                <Text style={styles.radiusMapBadgeText} numberOfLines={1}>
+                  {radiusKm} km · {usingCustomCenter ? (centerLabel ?? 'Selected area') : 'Your location'}
+                </Text>
+              </View>
             </View>
-          </View>
+            <View style={styles.radiusHintRow}>
+              <Text style={styles.radiusHint}>Drag or zoom the map to search a different area.</Text>
+              {usingCustomCenter && (
+                <TouchableOpacity style={styles.myLocBtn} onPress={resetToMyLocation} activeOpacity={0.8} accessibilityRole="button">
+                  <Navigation color={colors.primary} size={12} strokeWidth={2.6} />
+                  <Text style={styles.myLocBtnText}>Use my location</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </>
         ) : (
           <View style={styles.radiusMapFallback}>
             <MapIcon color={colors.neutral400} size={28} strokeWidth={1.5} />
@@ -1378,7 +1303,8 @@ export default function ExploreScreen() {
           </View>
         )}
 
-        {/* Free only */}
+        {/* Free only — tournaments have no free/paid distinction here */}
+        {category !== 'EVENTS' && (
         <TouchableOpacity
           style={styles.freeToggleRow}
           onPress={() => setFreeOnly((v) => !v)}
@@ -1388,13 +1314,16 @@ export default function ExploreScreen() {
             <DollarSign color={freeOnly ? colors.success : colors.textMuted} size={16} strokeWidth={2} />
             <View>
               <Text style={styles.freeToggleLabel}>Free only</Text>
-              <Text style={styles.freeToggleSub}>Show only matches / venues with no cost</Text>
+              <Text style={styles.freeToggleSub}>
+                {category === 'TRAINERS' ? 'Only trainers offering free sessions' : category === 'VENUES' ? 'Only venues with free slots' : 'Only games with no join fee'}
+              </Text>
             </View>
           </View>
           <View style={[styles.toggle, freeOnly && styles.toggleOn]}>
             <View style={[styles.toggleThumb, freeOnly && styles.toggleThumbOn]} />
           </View>
         </TouchableOpacity>
+        )}
 
         {/* Pro banner */}
         {!isPro && (
@@ -1424,7 +1353,7 @@ export default function ExploreScreen() {
         </TouchableOpacity>
       </View>
 
-      <CalendarModal
+      <DatePickerSheet
         visible={showCalendar}
         onClose={() => setShowCalendar(false)}
         selectedDate={customDate}
@@ -1482,6 +1411,44 @@ export default function ExploreScreen() {
           );
         })}
       </ScrollView>
+
+      {/* Sub-categories for the chosen main category */}
+      {(category === 'VENUES' || category === 'GAMES' || category === 'TRAINERS') && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.subCatScroll}
+          contentContainerStyle={styles.catSwitchRow}
+        >
+          {category === 'TRAINERS'
+            ? [{ id: null as string | null, label: 'All' }, ...TRAINER_FILTERS].map((t) => {
+                const active = trainerCategory === t.id;
+                return (
+                  <TouchableOpacity
+                    key={t.id ?? 'ALL'}
+                    style={[styles.subCatChip, active && styles.subCatChipActive]}
+                    onPress={() => setTrainerCategory(t.id)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.subCatText, active && styles.subCatTextActive]}>{t.label}</Text>
+                  </TouchableOpacity>
+                );
+              })
+            : SPORTS.map((sp) => {
+                const active = sportFilter === sp.id;
+                return (
+                  <TouchableOpacity
+                    key={sp.id}
+                    style={[styles.subCatChip, active && styles.subCatChipActive]}
+                    onPress={() => setSportFilter(sp.id)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.subCatText, active && styles.subCatTextActive]}>{sp.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+        </ScrollView>
+      )}
 
       {loading ? (
         <View style={styles.loadingWrap}>
@@ -1565,17 +1532,32 @@ export default function ExploreScreen() {
     return (
       <View style={{ flex: 1 }}>
         <MapViewComponent
+          ref={resultsMapRef}
           style={StyleSheet.absoluteFillObject}
-          initialRegion={getResultsMapRegion()}
+          initialRegion={regionFor(searchLatVal, searchLngVal, radiusKm)}
           showsUserLocation
           showsMyLocationButton={false}
+          onRegionChangeComplete={(r: any) => {
+            // Offer "Search this area" once the user has panned away from the current area.
+            const away = haversineKm(r.latitude, r.longitude, searchLatVal, searchLngVal);
+            setMapMovedTo(away > Math.max(0.3, radiusKm * 0.25) ? { latitude: r.latitude, longitude: r.longitude } : null);
+          }}
         >
+          {CircleComponent && (
+            <CircleComponent
+              center={{ latitude: searchLatVal, longitude: searchLngVal }}
+              radius={radiusKm * 1000}
+              fillColor="rgba(64,124,240,0.08)"
+              strokeColor="rgba(64,124,240,0.5)"
+              strokeWidth={2}
+            />
+          )}
           {results.map((item: any) =>
-            item.latitude && item.longitude ? (
+            item.latitude != null && item.longitude != null ? (
               <MarkerComponent
                 key={item.id}
                 coordinate={{ latitude: item.latitude, longitude: item.longitude }}
-                pinColor={colors.primary}
+                pinColor={category === 'TRAINERS' ? Colors.trainer : category === 'EVENTS' ? '#F59E0B' : colors.primary}
                 onPress={() => openSheet(item)}
                 title={'name' in item ? (item as VenueResult).name : (item as GameResult).title}
               />
@@ -1583,17 +1565,54 @@ export default function ExploreScreen() {
           )}
         </MapViewComponent>
 
+        {mapMovedTo && (
+          <TouchableOpacity
+            style={[styles.searchAreaBtn, { top: 120 }]}
+            onPress={() => { setSearchCenter(mapMovedTo.latitude, mapMovedTo.longitude); setMapMovedTo(null); }}
+            activeOpacity={0.88}
+            accessibilityRole="button"
+          >
+            <RotateCcw color={colors.white} size={14} strokeWidth={2.6} />
+            <Text style={styles.searchAreaBtnText}>Search this area</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Radius control on the map itself */}
+        <View style={[styles.mapRadiusBar, { bottom: 34 }]}>
+          {RADIUS_PRESETS.map((r) => {
+            const active = radiusKm === r;
+            return (
+              <TouchableOpacity
+                key={r}
+                style={[styles.mapRadiusChip, active && { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  setRadiusKm(r);
+                  resultsMapRef.current?.animateToRegion(regionFor(searchLatVal, searchLngVal, r), 300);
+                }}
+                activeOpacity={0.85}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={`${r} kilometre radius`}
+              >
+                <Text style={[styles.mapRadiusChipText, active && { color: colors.white }]}>{r} km</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
         <SafeAreaView style={styles.mapOverlay} edges={['top']}>
           <View style={styles.mapTopRow}>
             <TouchableOpacity style={styles.mapTopBtn} onPress={() => setStep('RESULTS')} activeOpacity={0.85}>
               <X color={colors.text} size={18} strokeWidth={2.5} />
             </TouchableOpacity>
             <View style={styles.mapTopCenter}>
-              <Text style={styles.mapTopCount}>{results.length} {category === 'VENUES' ? 'venues' : 'games'}</Text>
+              <Text style={styles.mapTopCount}>
+                {results.length}{hasMore ? '+' : ''} {category === 'VENUES' ? 'venues' : category === 'TRAINERS' ? 'trainers' : category === 'EVENTS' ? 'tournaments' : 'games'} · {radiusKm} km
+              </Text>
             </View>
-            <TouchableOpacity style={styles.mapNewSearch} onPress={() => setStep('SEARCH')} activeOpacity={0.85}>
+            <TouchableOpacity style={styles.mapNewSearch} onPress={() => setAreaSearchVisible(true)} activeOpacity={0.85} accessibilityRole="search">
               <Search color={colors.primary} size={13} strokeWidth={2} />
-              <Text style={styles.mapNewSearchText}>New Search</Text>
+              <Text style={styles.mapNewSearchText}>Search area</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -1639,13 +1658,10 @@ export default function ExploreScreen() {
                 activeOpacity={0.88}
                 onPress={() => {
                   closeSheet();
-                  if ('pricePerSession' in selectedItem) {
-                    router.push(`/trainer/${selectedItem.id}` as any);
-                  } else if ('name' in selectedItem) {
-                    router.push('/create-match' as any);
-                  } else {
-                    router.push(`/match/${selectedItem.id}` as any);
-                  }
+                  if (category === 'TRAINERS') router.push(`/trainer/${selectedItem.id}` as any);
+                  else if (category === 'EVENTS') router.push(`/tournament/${selectedItem.id}` as any);
+                  else if (category === 'VENUES') router.push(`/venue/${selectedItem.id}` as any);
+                  else router.push(`/match/${selectedItem.id}` as any);
                 }}
               >
                 <LinearGradient
@@ -1653,7 +1669,7 @@ export default function ExploreScreen() {
                   style={styles.sheetCtaGrad}
                 >
                   <Text style={styles.sheetCtaText}>
-                    {'pricePerSession' in selectedItem ? 'View Trainer' : 'name' in selectedItem ? 'Book Now' : 'View Game'}
+                    {category === 'TRAINERS' ? 'View Trainer' : category === 'EVENTS' ? 'View Tournament' : category === 'VENUES' ? 'View Venue' : 'View Game'}
                   </Text>
                   <ChevronRight color={colors.white} size={16} strokeWidth={2.5} />
                 </LinearGradient>
@@ -1672,12 +1688,35 @@ export default function ExploreScreen() {
       {step === 'RESULTS' && renderResultsStep()}
       {step === 'MAP' && renderMapStep()}
       {step !== 'MAP' && <BottomNavbar activeTab="EXPLORE" showCreateButton={false} />}
+      <AreaSearchSheet
+        visible={areaSearchVisible}
+        onClose={() => setAreaSearchVisible(false)}
+        near={userLat != null && userLng != null ? { latitude: userLat, longitude: userLng } : null}
+        onUseMyLocation={resetToMyLocation}
+        onPick={(a) => {
+          setSearchCenter(a.latitude, a.longitude, a.label.split(',')[0]);
+          moveRadiusMap(regionFor(a.latitude, a.longitude, radiusKm), 350);
+          resultsMapRef.current?.animateToRegion(regionFor(a.latitude, a.longitude, radiusKm), 350);
+          setMapMovedTo(null);
+        }}
+      />
     </SafeAreaView>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  teamMatchEntry: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: colors.cardBg, borderRadius: 16, padding: 14, marginTop: 12,
+    borderWidth: 1.5, borderColor: colors.primary + '33',
+  },
+  teamMatchEntryIcon: {
+    width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary + '14',
+  },
+  teamMatchEntryTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
+  teamMatchEntrySub: { fontSize: 12, color: colors.textMuted, marginTop: 2, fontWeight: '600' },
   safeArea: { flex: 1, backgroundColor: colors.background },
 
   // ── Hero
@@ -1713,11 +1752,49 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   exploreBellBadgeText: { fontSize: 9, fontWeight: '800', color: colors.white },
   heroBrandRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 14 },
-  heroLogo: { width: 38, height: 38, borderRadius: 10 },
+  heroLogo: { width: 76, height: 76 },
   proBadge: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: colors.warning, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2 },
   proBadgeText: { fontSize: 8, fontWeight: '900', color: '#1A1A2E', letterSpacing: 0.6 },
   heroTitle: { fontSize: 30, fontWeight: '900', color: colors.white, letterSpacing: -0.4 },
-  heroSub: { fontSize: 13, color: colors.white + 'CC', marginBottom: 16, marginTop: 2 },
+  heroSub: { fontSize: 13, color: colors.white + 'CC', marginBottom: 4, marginTop: 2 },
+  areaField: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.cardBg,
+    borderRadius: 14, borderWidth: 1.5, borderColor: colors.primary + '40',
+    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10,
+  },
+  areaFieldText: { flex: 1, fontSize: 14, fontWeight: '700', color: colors.text },
+  subCatScroll: { flexGrow: 0, marginTop: -2, marginBottom: 6 },
+  subCatChip: {
+    paddingHorizontal: 13, paddingVertical: 7, borderRadius: 16,
+    backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.neutral200,
+  },
+  subCatChipActive: { backgroundColor: colors.primary + '18', borderColor: colors.primary },
+  subCatText: { fontSize: 12.5, fontWeight: '700', color: colors.textSecondary },
+  subCatTextActive: { color: colors.primary, fontWeight: '800' },
+  queryChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', maxWidth: '100%',
+    backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7, marginTop: 10,
+  },
+  queryChipText: { color: colors.white, fontSize: 13, fontWeight: '700', flexShrink: 1 },
+  trainerCatRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 6 },
+  radiusHintRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, gap: 8 },
+  radiusHint: { flex: 1, fontSize: 12, color: colors.textMuted },
+  myLocBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: colors.primary + '14' },
+  myLocBtnText: { fontSize: 12, fontWeight: '800', color: colors.primary },
+  centerPin: { position: 'absolute', left: '50%', top: '50%', marginLeft: -14, marginTop: -28 },
+  mapRadiusBar: {
+    position: 'absolute', left: 12, right: 12, flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.cardBg, borderRadius: 18, padding: 6,
+    shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 10, elevation: 6,
+  },
+  mapRadiusChip: { flex: 1, paddingVertical: 8, borderRadius: 13, alignItems: 'center' },
+  mapRadiusChipText: { fontSize: 12.5, fontWeight: '800', color: colors.textSecondary },
+  searchAreaBtn: {
+    position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.primary, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 22,
+    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, elevation: 6,
+  },
+  searchAreaBtnText: { color: colors.white, fontSize: 13.5, fontWeight: '900' },
   searchBar: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.inputBg, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11 },
   searchInput: { flex: 1, fontSize: 14, color: colors.text },
   searchDropdown: {
@@ -1899,7 +1976,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   mapTopCount: { fontSize: 14, fontWeight: '800', color: colors.text, textAlign: 'center' },
   mapNewSearch: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.cardBg, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
   mapNewSearchText: { fontSize: 12, fontWeight: '700', color: colors.primary },
-  mapFABs: { position: 'absolute', bottom: 30, right: 16, alignItems: 'flex-end', gap: 10 },
+  mapFABs: { position: 'absolute', bottom: 100, right: 16, alignItems: 'flex-end', gap: 10 },
   mapFAB: { borderRadius: 14, overflow: 'hidden', shadowColor: colors.primary, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   mapFABGrad: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 11 },
   mapFABText: { fontSize: 13, fontWeight: '800', color: colors.white },
@@ -1968,23 +2045,3 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
 });
 
 // ─── Calendar styles ──────────────────────────────────────────────────────────
-const createCalStyles = (colors: ThemeColors) => StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
-  sheet: { backgroundColor: colors.cardBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: Platform.OS === 'ios' ? 36 : 24, paddingTop: 12 },
-  handle: { width: 40, height: 4, backgroundColor: colors.neutral300, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  title: { fontSize: 18, fontWeight: '800', color: colors.text, textAlign: 'center', marginBottom: 20 },
-  monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  navBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  monthLabel: { fontSize: 16, fontWeight: '700', color: colors.text },
-  weekRow: { flexDirection: 'row', marginBottom: 8 },
-  weekLabel: { flex: 1, textAlign: 'center', fontSize: 12, fontWeight: '700', color: colors.textMuted },
-  grid: { flexDirection: 'row', flexWrap: 'wrap' },
-  cell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 20, marginVertical: 2 },
-  cellSelected: { backgroundColor: colors.primary },
-  cellToday: { backgroundColor: colors.primaryLight },
-  cellPast: { opacity: 0.3 },
-  cellText: { fontSize: 14, fontWeight: '600', color: colors.text },
-  cellTextSelected: { color: colors.white, fontWeight: '800' },
-  cellTextToday: { color: colors.primary, fontWeight: '800' },
-  cellTextPast: { color: colors.textMuted },
-});

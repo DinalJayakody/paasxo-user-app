@@ -41,6 +41,12 @@ export const tournamentApi = {
     return Array.isArray(data) ? data : [];
   },
 
+  /** Upcoming PUBLIC tournaments, soonest first — the feed's Paasxo announcements. */
+  announcements: async (): Promise<any[]> => {
+    const { data } = await axiosInstance.get('/tournaments/announcements');
+    return Array.isArray(data) ? data : [];
+  },
+
   getTournament: async (tournamentId: string | number) => {
     const { data } = await axiosInstance.get(ENDPOINTS.TOURNAMENTS.DETAIL(tournamentId));
     return data;
@@ -49,6 +55,29 @@ export const tournamentApi = {
   createTeam: async (tournamentId: string | number, payload: CreateTournamentTeamPayload) => {
     const { data } = await axiosInstance.post(ENDPOINTS.TOURNAMENTS.CREATE_TEAM(tournamentId), payload);
     return data;
+  },
+
+  /** Organiser invites an existing app team; its captain must accept. */
+  inviteTeam: async (tournamentId: string | number, teamId: string) => {
+    const { data } = await axiosInstance.post(`/tournaments/${tournamentId}/invites`, { teamId });
+    return data;
+  },
+
+  /** Captain of an invited team accepts/declines. */
+  respondToInvite: async (tournamentId: string | number, tournamentTeamId: number, accept: boolean) => {
+    const { data } = await axiosInstance.post(`/tournaments/${tournamentId}/teams/${tournamentTeamId}/respond`, { accept });
+    return data;
+  },
+
+  /** Captain enters their team into a public tournament. */
+  joinWithTeam: async (tournamentId: string | number, teamId: string) => {
+    const { data } = await axiosInstance.post(`/tournaments/${tournamentId}/join`, { teamId });
+    return data;
+  },
+
+  /** Organiser removes / captain withdraws a team (only before it has fixtures). */
+  removeTeam: async (tournamentId: string | number, tournamentTeamId: number) => {
+    await axiosInstance.delete(`/tournaments/${tournamentId}/teams/${tournamentTeamId}`);
   },
 
   listTeams: async (tournamentId: string | number) => {
@@ -90,7 +119,7 @@ export const tournamentApi = {
   updateScore: async (
     tournamentId: string | number,
     matchId: string | number,
-    payload: { teamAScore: number; teamBScore: number; status?: string }
+    payload: { teamAScore: number; teamBScore: number; status?: string; detail?: Record<string, any> }
   ) => {
     const { data } = await axiosInstance.patch(
       ENDPOINTS.TOURNAMENTS.UPDATE_SCORE(tournamentId, matchId),

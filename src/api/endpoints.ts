@@ -40,7 +40,13 @@ export const HOSTINGER_URL: string | undefined = 'https://www.paasxo.com/api';
 export const HOSTINGER_PROBE_TIMEOUT_MS = 8000;
 
 function resolveBaseUrl(): string {
-  if (Platform.OS === 'web') return TUNNEL_URL;
+  if (Platform.OS === 'web') {
+    // The deployed web build (www.paasxo.com / the Vercel mirror) talks to the
+    // production API; only a local `expo start --web` uses the dev tunnel.
+    const host = typeof window !== 'undefined' ? window.location?.hostname ?? '' : '';
+    const isLocal = host === 'localhost' || host === '127.0.0.1' || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+    return !isLocal && HOSTINGER_URL ? HOSTINGER_URL : TUNNEL_URL;
+  }
 
   // Expo Go/dev builds already hold a connection to the Metro bundler at
   // <hostUri> (e.g. "192.168.1.4:8081") to load this very JS bundle — reusing
@@ -272,6 +278,13 @@ export const ENDPOINTS = {
     JOIN_ORDER: (slotId: string | number) => `/trainers/slots/${slotId}/join-order`,
     MY_BOOKINGS: '/trainers/bookings/my',
     CANCEL_BOOKING: (bookingId: string | number) => `/trainers/bookings/${bookingId}/cancel`,
+    // Workout/diet plans & memberships (T4/T5/T6)
+    PLANS_FOR_TRAINER: (trainerFirebaseUid: string) => `/trainers/${trainerFirebaseUid}/plans`,
+    PLAN: (planId: string | number) => `/trainers/plans/${planId}`,
+    PLAN_ORDER: (planId: string | number) => `/trainers/plans/${planId}/order`,
+    MY_PLAN_PURCHASES: '/trainers/plans/purchases/mine',
+    CANCEL_PLAN_PURCHASE: (purchaseId: string | number) => `/trainers/plans/purchases/${purchaseId}/cancel`,
+    PLAN_CLIENT_NOTE: (purchaseId: string | number) => `/trainers/plans/purchases/${purchaseId}/client-note`,
   },
 
   // Matches com.pasxo.controller.PaymentController / PayHereWebhookController.
@@ -361,6 +374,18 @@ export const ENDPOINTS = {
     DECLINE_CHALLENGE: (challengeId: string) => `/team-matches/challenges/${challengeId}/decline`,
     ACCEPT_ORDER: (challengeId: string) => `/team-matches/challenges/${challengeId}/accept-order`,
     MY_PENDING_CHALLENGES: '/team-matches/challenges/mine',
+    // Open challenges — Explore -> Team vs Team.
+    OPEN_LIST: (params: { lat?: number; lng?: number; radiusKm?: number; sport?: string; q?: string }) => {
+      const q = Object.entries(params)
+        .filter(([, v]) => v !== undefined && v !== null && v !== '')
+        .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+        .join('&');
+      return `/team-matches/open${q ? `?${q}` : ''}`;
+    },
+    // POST lists an already-paid team booking openly; DELETE takes it down.
+    OPEN_LISTING: (bookingId: string | number) => `/team-matches/${bookingId}/open`,
+    JOIN_ORDER: (bookingId: string | number) => `/team-matches/${bookingId}/join-order`,
+    PENDING_CHALLENGE: (bookingId: string | number) => `/team-matches/${bookingId}/pending-challenge`,
   },
 };
 

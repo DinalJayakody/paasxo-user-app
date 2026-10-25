@@ -19,6 +19,8 @@ export interface PersistedTrackingSession {
   startTime: string; // ISO — the ORIGINAL session start, never rewritten on resume
   phase: 'ACTIVE' | 'PAUSED';
   distanceMeters: number;
+  /** GPS-only distance (distanceMeters may be the step estimate). Optional: older checkpoints lack it. */
+  gpsDistanceMeters?: number;
   maxSpeedKmh: number;
   elevationGainMeters: number;
   elevationLossMeters: number;
@@ -28,6 +30,10 @@ export interface PersistedTrackingSession {
   lastSplitElapsedS: number;
   stepCount: number | null;
   lastProcessedTimestamp: number;
+  /** Moving (non-paused) time in ms as of savedAt. Optional: older checkpoints lack it. */
+  activeMs?: number;
+  /** Epoch ms this checkpoint was written. */
+  savedAt?: number;
 }
 
 export async function saveTrackingSession(session: PersistedTrackingSession): Promise<void> {

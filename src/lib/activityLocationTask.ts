@@ -17,7 +17,8 @@ import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const ACTIVITY_LOCATION_TASK = 'paasxo-activity-location-task';
-const BUFFER_KEY = '@paasxo:activityLocationBuffer';
+const BUFFER_KEY = '@paasxo:activityLocationBuffer'; // legacy single-array buffer
+const BATCH_PREFIX = '@paasxo:activityLoc:';
 
 export interface BufferedSample {
   latitude: number;
@@ -29,6 +30,8 @@ export interface BufferedSample {
   // low-quality fixes before they pollute distance/speed, see
   // useActivityTracking.ts's MAX_SAMPLE_ACCURACY_M.
   accuracy: number | null;
+  // Vertical accuracy in metres — noisy GPS altitude is skipped for elevation.
+  altitudeAccuracy?: number | null;
 }
 
 TaskManager.defineTask(ACTIVITY_LOCATION_TASK, async ({ data, error }) => {
@@ -40,8 +43,6 @@ TaskManager.defineTask(ACTIVITY_LOCATION_TASK, async ({ data, error }) => {
   if (!locations?.length) return;
 
   try {
-    const raw = await AsyncStorage.getItem(BUFFER_KEY);
-    const existing: BufferedSample[] = raw ? JSON.parse(raw) : [];
     const additions: BufferedSample[] = locations.map((loc) => ({
       latitude: loc.coords.latitude,
       longitude: loc.coords.longitude,
@@ -49,20 +50,46 @@ TaskManager.defineTask(ACTIVITY_LOCATION_TASK, async ({ data, error }) => {
       speed: loc.coords.speed,
       timestamp: loc.timestamp,
       accuracy: loc.coords.accuracy,
+      altitudeAccuracy: loc.coords.altitudeAccuracy,
     }));
-    await AsyncStorage.setItem(BUFFER_KEY, JSON.stringify([...existing, ...additions]));
+    // One key per delivered batch (never read-modify-write a shared array):
+    // a drain running at the same moment can't erase a batch it never read.
+    const key = `${BATCH_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await AsyncStorage.setItem(key, JSON.stringify(additions));
   } catch (e) {
     console.warn('[activityLocationTask] failed to buffer sample:', e);
   }
 });
 
-/** Reads and clears every sample buffered since the last drain. */
+async function batchKeys(): Promise<string[]> {
+  const keys = await AsyncStorage.getAllKeys();
+  return keys.filter((k) => k.startsWith(BATCH_PREFIX));
+}
+
+/** Reads and removes exactly the batches buffered so far (plus any legacy single-array buffer). */
 export async function drainLocationBuffer(): Promise<BufferedSample[]> {
   try {
-    const raw = await AsyncStorage.getItem(BUFFER_KEY);
-    if (!raw) return [];
-    await AsyncStorage.removeItem(BUFFER_KEY);
-    return JSON.parse(raw) as BufferedSample[];
+    const keys = await batchKeys();
+    const out: BufferedSample[] = [];
+    if (keys.length) {
+      const entries = await AsyncStorage.multiGet(keys);
+      for (const [, raw] of entries) {
+        if (!raw) continue;
+        try {
+          const arr = JSON.parse(raw);
+          if (Array.isArray(arr)) out.push(...arr);
+        } catch {
+          // corrupt batch — skip it
+        }
+      }
+      await AsyncStorage.multiRemove(keys);
+    }
+    const legacy = await AsyncStorage.getItem(BUFFER_KEY);
+    if (legacy) {
+      await AsyncStorage.removeItem(BUFFER_KEY);
+      try { out.push(...JSON.parse(legacy)); } catch { /* ignore */ }
+    }
+    return out;
   } catch {
     return [];
   }
@@ -70,7 +97,8 @@ export async function drainLocationBuffer(): Promise<BufferedSample[]> {
 
 export async function clearLocationBuffer(): Promise<void> {
   try {
-    await AsyncStorage.removeItem(BUFFER_KEY);
+    const keys = await batchKeys();
+    await AsyncStorage.multiRemove([...keys, BUFFER_KEY]);
   } catch {
     // Non-fatal — a stale buffer just gets picked up (and safely ignored,
     // since the hook resets its own accumulators) on the next session.

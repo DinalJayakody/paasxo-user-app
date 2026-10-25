@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { Alert, View, Text, Image, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { Alert, Animated, View, Text, Image, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Heart, MessageCircle, Share2, Bookmark, Camera, Sparkles, MoreHorizontal, Flag, UserX, Trophy, ChevronRight, Play, Swords, Radio, Film } from 'lucide-react-native';
+import { Heart, MessageCircle, Share2, Bookmark, Camera, Sparkles, MoreHorizontal, Flag, UserX, Trophy, ChevronRight, Play, Swords, Radio, Film, Trash2, UserRound, UserMinus } from 'lucide-react-native';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import { openProfile } from '../utils/openProfile';
 import { PostSummary, MatchScorecard } from '../types/api';
 import { parseMediaUrl, formatTimeAgo } from '../utils/postFormat';
 import { resolveAvatarUri } from '../utils/mediaUrl';
@@ -17,6 +18,11 @@ import { LikesModal } from './LikesModal';
 import { ActionMenuSheet } from './ActionMenuSheet';
 import { ReportSheet } from './ReportSheet';
 import { PostVideoPlayer } from './PostVideoPlayer';
+import { FullScreenImageViewer } from './FullScreenImageViewer';
+import { TaggedPeopleModal } from './TaggedPeopleModal';
+import { contentEvents, useIsDeleted } from '../stores/contentEvents';
+import { shareContent } from '../utils/shareContent';
+import { extractApiError } from '../utils/apiError';
 
 interface PostCardProps {
   post: PostSummary;
@@ -51,6 +57,12 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare, autoOpenComme
   const [menuVisible, setMenuVisible] = useState(false);
   const [reportVisible, setReportVisible] = useState(false);
   const [videoPlayerVisible, setVideoPlayerVisible] = useState(false);
+  // Tap a photo to open it full screen; double-tap to like (with a heart burst).
+  const [imageViewerVisible, setImageViewerVisible] = useState(false);
+  const lastTapRef = useRef(0);
+  const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartScale = useRef(new Animated.Value(0)).current;
+  useEffect(() => () => { if (singleTapTimer.current) clearTimeout(singleTapTimer.current); }, []);
   // Square until the real image loads and reports its natural size.
   const [imageAspectRatio, setImageAspectRatio] = useState(1);
   const handleImageLoad = (e: { nativeEvent: { source?: { width: number; height: number } } }) => {
@@ -74,6 +86,64 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare, autoOpenComme
   const isReelShare = post.postType === 'COMMUNITY_REEL_SHARE';
   const isVideo = post.mediaType === 'VIDEO';
   const isOwnPost = !!user?.firebaseUid && user.firebaseUid === post.authorId;
+  const isDeleted = useIsDeleted('post', post.id);
+  const [deleting, setDeleting] = useState(false);
+  const [taggedListVisible, setTaggedListVisible] = useState(false);
+  const [taggedUsers, setTaggedUsers] = useState(post.taggedUsers ?? []);
+  useEffect(() => { setTaggedUsers(post.taggedUsers ?? []); }, [post.taggedUsers]);
+  const amTagged = !!user?.firebaseUid && taggedUsers.some((t) => t.firebaseUid === user.firebaseUid);
+  // Only real, shareable posts (not auto-generated profile-photo / pointer posts).
+  const canShare = !isProfileUpdate && !isMatchShare && !isScorecardShare && !isReelShare;
+
+  const handleShare = () => {
+    if (onShare) { onShare(); return; }
+    shareContent('post', post.id, post.authorDisplayName).then((ok) => {
+      if (!ok) Alert.alert('Could not share', 'Please try again.');
+    });
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete this post?',
+      post.mediaType === 'VIDEO'
+        ? 'The video, its likes and comments will be removed for everyone. This can’t be undone.'
+        : 'The post, its likes and comments will be removed for everyone. This can’t be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive', onPress: async () => {
+            if (deleting) return;
+            setDeleting(true);
+            try {
+              await socialMediaApi.deletePost(post.id);
+              contentEvents.markDeleted('post', post.id); // every list showing it drops it now
+            } catch (err) {
+              Alert.alert('Could not delete', extractApiError(err, 'Please try again.'));
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleRemoveMyTag = () => {
+    Alert.alert('Remove your tag?', "You'll no longer be tagged in this post and it leaves your Tagged tab.", [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove', style: 'destructive', onPress: async () => {
+          try {
+            await socialMediaApi.removeMyTag(post.id);
+            setTaggedUsers((cur) => cur.filter((t) => t.firebaseUid !== user?.firebaseUid));
+            contentEvents.markDeleted('untag', post.id);
+          } catch (err) {
+            Alert.alert('Could not remove tag', extractApiError(err, 'Please try again.'));
+          }
+        },
+      },
+    ]);
+  };
 
   const handleBlockAuthor = () => {
     Alert.alert(
@@ -95,6 +165,32 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare, autoOpenComme
         },
       ]
     );
+  };
+
+  const burstHeart = () => {
+    heartScale.setValue(0);
+    Animated.sequence([
+      Animated.spring(heartScale, { toValue: 1, useNativeDriver: true, friction: 4, tension: 120 }),
+      Animated.delay(350),
+      Animated.timing(heartScale, { toValue: 0, duration: 220, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const handleImageTap = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 280) {
+      // Double tap: like (never unlike — same as Instagram).
+      lastTapRef.current = 0;
+      if (singleTapTimer.current) { clearTimeout(singleTapTimer.current); singleTapTimer.current = null; }
+      burstHeart();
+      if (!interaction.likedByCurrentUser && !likeBusy) handleToggleLike();
+      return;
+    }
+    lastTapRef.current = now;
+    singleTapTimer.current = setTimeout(() => {
+      singleTapTimer.current = null;
+      setImageViewerVisible(true);
+    }, 280);
   };
 
   const handleToggleLike = async () => {
@@ -136,11 +232,18 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare, autoOpenComme
     }
   };
 
+  if (isDeleted) return null;
+
   return (
-    <View style={styles.postCard}>
+    <View style={[styles.postCard, deleting && { opacity: 0.5 }]}>
       {/* HEADER */}
       <View style={styles.postHeader}>
-        <View style={styles.postUser}>
+        <Pressable
+          style={({ pressed }) => [styles.postUser, pressed && { opacity: 0.6 }]}
+          onPress={() => openProfile(router, post.authorId, user?.firebaseUid)}
+          accessibilityRole="button"
+          accessibilityLabel={`Open ${post.authorDisplayName || 'author'}'s profile`}
+        >
           <Image source={{ uri: avatarUri }} style={styles.postAvatar} />
           <View style={styles.postMeta}>
             <Text style={styles.postName}>{post.authorDisplayName || 'Unknown User'}</Text>
@@ -148,12 +251,14 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare, autoOpenComme
               {post.sport} • {formatTimeAgo(post.createdAt)}
             </Text>
           </View>
-        </View>
+        </Pressable>
 
         <View style={styles.headerIcons}>
-          <Pressable style={styles.iconButtonSmall} onPress={onShare}>
-            <Share2 color={colors.neutral600} size={18} strokeWidth={2.5} />
-          </Pressable>
+          {canShare && (
+            <Pressable style={styles.iconButtonSmall} onPress={handleShare} hitSlop={6} accessibilityLabel="Share post">
+              <Share2 color={colors.neutral600} size={18} strokeWidth={2.5} />
+            </Pressable>
+          )}
           <Pressable style={styles.iconButtonSmall} onPress={() => setMenuVisible(true)} hitSlop={6}>
             <MoreHorizontal color={colors.neutral600} size={18} strokeWidth={2.5} />
           </Pressable>
@@ -162,6 +267,24 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare, autoOpenComme
 
       {/* CAPTION */}
       {!isProfileUpdate && !!post.caption && <Text style={styles.postText}>{post.caption}</Text>}
+
+      {/* TAGGED PEOPLE — "with Ana and 2 others"; tap a name for their profile */}
+      {taggedUsers.length > 0 && (
+        <View style={styles.taggedRow}>
+          <UserRound color={colors.primary} size={13} strokeWidth={2.4} />
+          <Text style={styles.taggedText} numberOfLines={1}>
+            {'with '}
+            <Text style={styles.taggedName} onPress={() => openProfile(router, taggedUsers[0].firebaseUid, user?.firebaseUid)}>
+              {taggedUsers[0].displayName}
+            </Text>
+            {taggedUsers.length > 1 && (
+              <Text style={styles.taggedName} onPress={() => setTaggedListVisible(true)}>
+                {` and ${taggedUsers.length - 1} other${taggedUsers.length > 2 ? 's' : ''}`}
+              </Text>
+            )}
+          </Text>
+        </View>
+      )}
 
       {/* IMAGE */}
       {isProfileUpdate ? (
@@ -235,11 +358,23 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare, autoOpenComme
         )
       ) : (
         imageUri && (
-          <Image
-            source={{ uri: imageUri }}
-            style={[styles.postImage, { aspectRatio: imageAspectRatio }]}
-            onLoad={handleImageLoad}
-          />
+          <Pressable
+            onPress={handleImageTap}
+            accessibilityRole="imagebutton"
+            accessibilityLabel="Photo. Tap to view full screen, double-tap to like"
+          >
+            <Image
+              source={{ uri: imageUri }}
+              style={[styles.postImage, { aspectRatio: imageAspectRatio }]}
+              onLoad={handleImageLoad}
+            />
+            <Animated.View
+              pointerEvents="none"
+              style={[styles.likeBurst, { opacity: heartScale, transform: [{ scale: heartScale.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }) }] }]}
+            >
+              <Heart color={colors.white} fill={colors.white} size={86} strokeWidth={1.5} />
+            </Animated.View>
+          </Pressable>
         )
       )}
 
@@ -290,6 +425,38 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare, autoOpenComme
       {isVideo && (
         <PostVideoPlayer visible={videoPlayerVisible} post={post} onClose={() => setVideoPlayerVisible(false)} />
       )}
+      {imageUri && !isVideo && (
+        <FullScreenImageViewer visible={imageViewerVisible} imageUri={imageUri} onClose={() => setImageViewerVisible(false)} />
+      )}
+
+      <TaggedPeopleModal
+        visible={taggedListVisible}
+        people={taggedUsers}
+        onClose={() => setTaggedListVisible(false)}
+        onOpen={(uid) => { setTaggedListVisible(false); openProfile(router, uid, user?.firebaseUid); }}
+      />
+
+      {isOwnPost && (
+        <ActionMenuSheet
+          visible={menuVisible}
+          onClose={() => setMenuVisible(false)}
+          actions={[
+            ...(canShare ? [{
+              key: 'share',
+              label: 'Share post',
+              icon: <Share2 color={colors.text} size={18} strokeWidth={2.2} />,
+              onPress: handleShare,
+            }] : []),
+            {
+              key: 'delete',
+              label: post.mediaType === 'VIDEO' ? 'Delete video' : 'Delete post',
+              icon: <Trash2 color={colors.error} size={18} strokeWidth={2.2} />,
+              destructive: true,
+              onPress: handleDelete,
+            },
+          ]}
+        />
+      )}
 
       {!isOwnPost && (
         <>
@@ -297,6 +464,18 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare, autoOpenComme
             visible={menuVisible}
             onClose={() => setMenuVisible(false)}
             actions={[
+              ...(canShare ? [{
+                key: 'share',
+                label: 'Share post',
+                icon: <Share2 color={colors.text} size={18} strokeWidth={2.2} />,
+                onPress: handleShare,
+              }] : []),
+              ...(amTagged ? [{
+                key: 'untag',
+                label: 'Remove my tag',
+                icon: <UserMinus color={colors.text} size={18} strokeWidth={2.2} />,
+                onPress: handleRemoveMyTag,
+              }] : []),
               {
                 key: 'report',
                 label: 'Report Post',
@@ -326,6 +505,9 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onShare, autoOpenComme
 };
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  taggedRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
+  taggedText: { flex: 1, fontSize: 12.5, color: colors.textSecondary, fontWeight: '600' },
+  taggedName: { color: colors.primary, fontWeight: '800' },
   postCard: {
     backgroundColor: colors.cardBg,
     borderRadius: 18,
@@ -379,6 +561,10 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     borderRadius: 14,
     marginTop: 10,
     backgroundColor: colors.neutral100,
+  },
+  likeBurst: {
+    position: 'absolute', top: 10, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center',
   },
   videoPlayBadge: {
     position: 'absolute', top: '50%', left: '50%',

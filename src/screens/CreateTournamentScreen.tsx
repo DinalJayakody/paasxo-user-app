@@ -1,3 +1,7 @@
+import { TeamSearchSheet } from '../components/team/TeamSearchSheet';
+import { extractApiError } from '../utils/apiError';
+import { localYMD, parseLocalYMD } from '../utils/localDate';
+import { DatePickerSheet } from '../components/DatePickerSheet';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -39,6 +43,9 @@ import {
   Info,
   Shield,
   X,
+  Globe,
+  Lock,
+  CalendarDays,
 } from 'lucide-react-native';
 import { Colors, ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
@@ -49,7 +56,7 @@ import { tournamentApi } from '../api/tournamentApi';
 import { socialMediaApi } from '../api/socialMediaApi';
 import { tournamentStorage } from '../utils/tournamentStorage';
 import { teamFlair } from '../utils/parseTournament';
-import { TournamentTeamUI } from '../types/api';
+import { Team, TournamentTeamUI } from '../types/api';
 import { AuthContext } from '../context/AuthContext';
 import ScreenGlow from '../components/ScreenGlow';
 import { goBack } from '../utils/navigation';
@@ -121,7 +128,8 @@ export default function CreateTournamentScreen() {
   const [description, setDescription] = useState('');
   const [coverImage, setCoverImage] = useState<string | null>(null);
   const [expectedTeamsCount, setExpectedTeamsCount] = useState<number>(8);
-  const [isOpenTournament, setIsOpenTournament] = useState(false);
+  const [isOpenTournament, setIsOpenTournament] = useState(true);
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [venueModalVisible, setVenueModalVisible] = useState(false);
   const [venues, setVenues] = useState<any[]>([]);
   const [loadingVenues, setLoadingVenues] = useState(false);
@@ -267,16 +275,60 @@ export default function CreateTournamentScreen() {
         date: selectedDate,
         slotIds: selectedSlotIds.length > 0 ? selectedSlotIds : undefined,
         isOpen: isOpenTournament,
+        maxTeams: isOpenTournament ? expectedTeamsCount : undefined,
       });
       const id = created?.id ?? created?._id;
       setTournamentId(id);
       await tournamentStorage.track({ id, futsalId: selectedVenue.id, name: name.trim(), role: 'owner' });
       animateStep(2); // go to rules
     } catch (err) {
-      Alert.alert('Could not create tournament', 'Please check your venue/date and try again.');
+      Alert.alert('Could not create tournament', extractApiError(err, 'Please check your venue/date and try again.'));
     } finally {
       setCreatingTournament(false);
     }
+  };
+
+  // Invite a team that already exists in Paasxo — its captain accepts from a
+  // notification and the whole roster comes with it.
+  const [inviteSheetVisible, setInviteSheetVisible] = useState(false);
+  const handleInviteTeam = async (team: Team) => {
+    setInviteSheetVisible(false);
+    if (!tournamentId) return;
+    try {
+      const created = await tournamentApi.inviteTeam(tournamentId, team.id);
+      const record = { id: created.id, name: created.name, playerCount: created.playerCount ?? 0, status: created.status, appTeamId: created.appTeamId, logoUrl: created.logoUrl };
+      // The team's players come with it — show them right away.
+      const players = await tournamentApi.listPlayers(tournamentId, created.id).catch(() => []);
+      setTeams((prev) => [...prev.filter((t) => t.id !== created.id), { ...record, playerCount: players.length || record.playerCount, players, ...teamFlair(record) }]);
+      Alert.alert(
+        created.status === 'JOINED' ? 'Team added' : 'Invitation sent',
+        created.status === 'JOINED' ? `${team.name} is in, with ${players.length} player${players.length === 1 ? '' : 's'}.` : `${team.name} and its ${players.length} player${players.length === 1 ? '' : 's'} are invited — the captain will be asked to accept.`,
+      );
+    } catch (err) {
+      Alert.alert('Could not invite team', extractApiError(err, 'Please try again.'));
+    }
+  };
+
+  const handleRemoveTeam = (team: TournamentTeamUI) => {
+    if (!tournamentId) return;
+    Alert.alert(
+      team.status === 'INVITED' ? 'Cancel invitation?' : 'Remove team?',
+      team.status === 'INVITED' ? `${team.name} will no longer be invited.` : `${team.name} will be removed from this tournament.`,
+      [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: team.status === 'INVITED' ? 'Cancel invite' : 'Remove', style: 'destructive', onPress: async () => {
+            try {
+              await tournamentApi.removeTeam(tournamentId, team.id);
+              setTeams((prev) => prev.filter((t) => t.id !== team.id));
+              if (activeTeamId === team.id) setActiveTeamId(null);
+            } catch (err) {
+              Alert.alert('Could not remove team', extractApiError(err, 'Please try again.'));
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleAddTeam = async () => {
@@ -288,7 +340,7 @@ export default function CreateTournamentScreen() {
       setTeams((prev) => [...prev, { ...teamRecord, players: [], ...teamFlair(teamRecord) }]);
       setTeamNameInput('');
     } catch (err: any) {
-      Alert.alert('Could not add team', 'Please try again.');
+      Alert.alert('Could not add team', extractApiError(err, 'Please try again.'));
     } finally {
       setAddingTeam(false);
     }
@@ -456,21 +508,31 @@ export default function CreateTournamentScreen() {
         onChangeText={setDescription}
       />
 
-      {/* Expected teams / open tournament */}
-      <View style={styles.openTournamentRow}>
-        <View style={styles.openTournamentInfo}>
-          <Text style={styles.label} >Open Registration</Text>
-          <Text style={styles.openTournamentDesc}>Let any user join with their team</Text>
-        </View>
-        <Switch
-          value={isOpenTournament}
-          onValueChange={setIsOpenTournament}
-          trackColor={{ false: colors.neutral300, true: colors.primary + '80' }}
-          thumbColor={isOpenTournament ? colors.primary : colors.white}
-        />
+      {/* Who can enter */}
+      <Text style={styles.label}>Who can enter?</Text>
+      <View style={styles.privacyRow}>
+        {([
+          { open: true, title: 'Public', sub: 'Any team can join · announced in the Paasxo feed', Icon: Globe },
+          { open: false, title: 'Private', sub: 'Invite only · hidden from search', Icon: Lock },
+        ] as const).map((o) => {
+          const active = isOpenTournament === o.open;
+          return (
+            <Pressable
+              key={o.title}
+              onPress={() => setIsOpenTournament(o.open)}
+              style={[styles.privacyCard, active && styles.privacyCardActive]}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: active }}
+            >
+              <o.Icon color={active ? colors.primary : colors.textSecondary} size={18} strokeWidth={2.2} />
+              <Text style={[styles.privacyTitle, active && { color: colors.primary }]}>{o.title}</Text>
+              <Text style={styles.privacySub}>{o.sub}</Text>
+            </Pressable>
+          );
+        })}
       </View>
 
-      <Text style={styles.label}>Expected Teams</Text>
+      <Text style={styles.label}>{isOpenTournament ? 'Maximum teams' : 'Expected teams'}</Text>
       <View style={styles.teamsCountRow}>
         {[4, 6, 8, 12, 16, 24, 32].map((n) => (
           <Pressable
@@ -495,28 +557,23 @@ export default function CreateTournamentScreen() {
       {selectedVenue && (
         <>
           <Text style={styles.label}>Date *</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dateScrollRow}>
-            {Array.from({ length: 21 }).map((_, i) => {
-              const date = new Date();
-              date.setDate(date.getDate() + i);
-              const dateStr = date.toISOString().split('T')[0];
-              const isSelected = selectedDate === dateStr;
-              return (
-                <Pressable
-                  key={i}
-                  onPress={() => handleDateSelect(dateStr)}
-                  style={[styles.dateChip, isSelected && styles.dateChipSelected]}
-                >
-                  <Text style={[styles.dateChipDay, isSelected && styles.dateChipTextSelected]}>
-                    {date.toLocaleDateString('en-US', { weekday: 'short' })}
-                  </Text>
-                  <Text style={[styles.dateChipDate, isSelected && styles.dateChipTextSelected]}>
-                    {date.getDate()}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+          <Pressable style={styles.selectorButton} onPress={() => setDatePickerVisible(true)} accessibilityRole="button">
+            <CalendarDays color={colors.primary} size={20} strokeWidth={2} />
+            <Text style={styles.selectorButtonText}>
+              {selectedDate
+                ? parseLocalYMD(selectedDate).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                : 'Pick a date…'}
+            </Text>
+            <ChevronRight color={colors.neutral400} size={16} strokeWidth={2} />
+          </Pressable>
+          <DatePickerSheet
+            visible={datePickerVisible}
+            onClose={() => setDatePickerVisible(false)}
+            title="Tournament date"
+            selectedDate={selectedDate ? parseLocalYMD(selectedDate) : null}
+            maxDate={new Date(Date.now() + 180 * 24 * 3600 * 1000)}
+            onSelect={(d) => handleDateSelect(localYMD(d))}
+          />
         </>
       )}
 
@@ -661,15 +718,34 @@ export default function CreateTournamentScreen() {
         </Pressable>
       </View>
 
+      <Pressable style={styles.inviteTeamBtn} onPress={() => setInviteSheetVisible(true)} accessibilityRole="button">
+        <Shield color={colors.primary} size={17} strokeWidth={2.4} />
+        <Text style={styles.inviteTeamBtnText}>Invite an existing Paasxo team</Text>
+        <ChevronRight color={colors.primary} size={16} strokeWidth={2.4} />
+      </Pressable>
+      <Text style={styles.orHint}>or quickly add a team by name:</Text>
+
       <View style={styles.teamGrid}>
         {teams.map((team) => (
-          <View key={team.id} style={[styles.teamCard, { borderColor: team.color }]}>
+          <View key={team.id} style={[styles.teamCard, { borderColor: team.color }, team.status === 'INVITED' && { borderStyle: 'dashed' }]}>
+            <Pressable onPress={() => handleRemoveTeam(team)} hitSlop={10} style={styles.teamCardRemove} accessibilityLabel={`Remove ${team.name}`}>
+              <X color={colors.textMuted} size={14} strokeWidth={2.6} />
+            </Pressable>
             <Text style={styles.teamCardEmoji}>{team.emoji}</Text>
             <Text style={styles.teamCardName}>{team.name}</Text>
-            <Text style={styles.teamCardMeta}>{team.playerCount} players</Text>
+            <Text style={styles.teamCardMeta}>
+              {team.status === 'INVITED' ? 'Invited · waiting' : team.status === 'DECLINED' ? 'Declined' : `${team.playerCount} player${team.playerCount === 1 ? '' : 's'}`}
+            </Text>
           </View>
         ))}
       </View>
+      <TeamSearchSheet
+        visible={inviteSheetVisible}
+        onClose={() => setInviteSheetVisible(false)}
+        onSelect={handleInviteTeam}
+        title="Invite a Team"
+        excludeTeamIds={teams.map((t) => t.appTeamId).filter((x): x is string => !!x)}
+      />
 
       {teams.length === 0 && (
         <Text style={styles.emptyHint}>No teams yet. Add some or let players join by discovery.</Text>
@@ -742,7 +818,7 @@ export default function CreateTournamentScreen() {
             <View key={team.id} style={styles.rosterTeamBlock}>
               <View style={[styles.rosterTeamHeader, { borderLeftColor: team.color }]}>
                 <Text style={styles.rosterTeamTitle}>{team.emoji} {team.name}</Text>
-                <Text style={styles.rosterTeamCount}>{team.players.length} players</Text>
+                <Text style={styles.rosterTeamCount}>{team.players.length} player{team.players.length === 1 ? '' : 's'}</Text>
               </View>
               {team.players.length === 0 ? (
                 <Text style={styles.rosterEmpty}>No players added yet</Text>
@@ -1120,6 +1196,25 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   coverImageHint: { fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
 
   // Open tournament
+  privacyRow: { flexDirection: 'row', gap: 10, marginBottom: 6 },
+  privacyCard: {
+    flex: 1, borderRadius: 14, borderWidth: 1.5, borderColor: colors.neutral200,
+    backgroundColor: colors.cardBg, padding: 12, gap: 4,
+  },
+  privacyCardActive: { borderColor: colors.primary, backgroundColor: colors.primary + '10' },
+  privacyTitle: { fontSize: 14.5, fontWeight: '800', color: colors.text },
+  privacySub: { fontSize: 11.5, lineHeight: 15, color: colors.textSecondary },
+  teamCardRemove: {
+    position: 'absolute', top: 6, right: 6, width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.neutral100, zIndex: 2,
+  },
+  inviteTeamBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4, marginBottom: 8,
+    paddingHorizontal: 14, paddingVertical: 14, borderRadius: 14,
+    borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.primary + '10',
+  },
+  inviteTeamBtnText: { flex: 1, fontSize: 14.5, fontWeight: '800', color: colors.primary },
+  orHint: { fontSize: 12.5, color: colors.textSecondary, marginBottom: 8 },
   openTournamentRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: colors.cardBg, borderRadius: 14, padding: 14, marginTop: 16,

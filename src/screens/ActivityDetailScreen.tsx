@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Alert, Animated, Dimensions, Share, ActivityIndicator, Platform, Image,
+  Alert, Animated, Dimensions, Share, ActivityIndicator, Platform, Image, Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import MapView, { Polyline, Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import {
-  ArrowLeft, Clock, Footprints, TrendingUp, TrendingDown, Camera,
+  ArrowLeft, Clock, Footprints, TrendingUp, TrendingDown, Camera, Image as ImageIcon,
   MapPin, Calendar, Trash2, Share2, Trophy, ListOrdered, Flame, BookImage, Send,
 } from 'lucide-react-native';
 import { Colors } from '../styles/colors';
@@ -22,6 +22,7 @@ import { storyApi } from '../api/storyApi';
 import { socialMediaApi } from '../api/socialMediaApi';
 import { extractApiError } from '../utils/apiError';
 import { resolveAvatarUri } from '../utils/mediaUrl';
+import { openProfile } from '../utils/openProfile';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -113,8 +114,8 @@ export default function ActivityDetailScreen() {
     if (activity) ensureMapSnapshot(mapRef);
   }, [activity, ensureMapSnapshot]);
 
-  const handlePickPhotoForCard = useCallback(async () => {
-    const picked = await pickPhoto();
+  const handlePickPhotoForCard = useCallback(async (source: 'camera' | 'library') => {
+    const picked = await pickPhoto(source);
     if (!picked) return;
     if (templateId !== 'photo') setTemplateId('photo');
   }, [pickPhoto, templateId, setTemplateId]);
@@ -256,10 +257,16 @@ export default function ActivityDetailScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
         {/* Author row — only shown for a friend's shared activity */}
         {!isOwnActivity && (
-          <View style={styles.authorRow}>
+          <Pressable
+            style={({ pressed }) => [styles.authorRow, pressed && { opacity: 0.6 }]}
+            disabled={!activity.authorFirebaseUid}
+            onPress={() => openProfile(router, activity.authorFirebaseUid, user?.firebaseUid)}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${activity.authorDisplayName}'s profile`}
+          >
             <Image source={{ uri: resolveAvatarUri(activity.authorProfileImageUrl, activity.authorDisplayName) }} style={styles.authorAvatar} />
             <Text style={styles.authorText}>Shared by {activity.authorDisplayName}</Text>
-          </View>
+          </Pressable>
         )}
 
         {/* Route map */}
@@ -427,12 +434,22 @@ export default function ActivityDetailScreen() {
           </View>
 
           {templateId === 'photo' && (
-            <TouchableOpacity onPress={handlePickPhotoForCard} activeOpacity={0.8} style={styles.takePhotoBtn}>
-              <Camera color={cfg.accent} size={16} strokeWidth={2.25} />
-              <Text style={[styles.takePhotoBtnText, { color: cfg.accent }]}>
-                {photoUri ? 'Retake Photo' : 'Take Photo'}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.photoBtnRow}>
+              <TouchableOpacity onPress={() => handlePickPhotoForCard('camera')} activeOpacity={0.8} style={[styles.takePhotoBtn, styles.photoBtnHalf]}
+                accessibilityRole="button" accessibilityLabel={photoUri ? 'Retake photo' : 'Take photo'}>
+                <Camera color={cfg.accent} size={16} strokeWidth={2.25} />
+                <Text style={[styles.takePhotoBtnText, { color: cfg.accent }]}>
+                  {photoUri ? 'Retake' : 'Take Photo'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handlePickPhotoForCard('library')} activeOpacity={0.8} style={[styles.takePhotoBtn, styles.photoBtnHalf]}
+                accessibilityRole="button" accessibilityLabel="Choose a photo from your library">
+                <ImageIcon color={cfg.accent} size={16} strokeWidth={2.25} />
+                <Text style={[styles.takePhotoBtnText, { color: cfg.accent }]}>
+                  {photoUri ? 'Change' : 'Choose Photo'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           )}
         </Animated.View>
 
@@ -579,4 +596,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E293B', borderWidth: 1.5, borderColor: '#334155',
   },
   takePhotoBtnText: { fontSize: 14, fontWeight: '800' },
+  photoBtnRow: { flexDirection: 'row', gap: 10 },
+  photoBtnHalf: { flex: 1 },
 });

@@ -11,6 +11,8 @@ import { resolveAvatarUri } from '../utils/mediaUrl';
 import { usePaginatedList } from '../hooks/usePaginatedList';
 import ScreenGlow from '../components/ScreenGlow';
 import { goBack } from '../utils/navigation';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 
 const cardKey = (u: UserCard) => u.firebaseUid;
 
@@ -60,17 +62,21 @@ export default function BlockedAccountsScreen() {
         <View style={styles.centerWrap}>
           <ActivityIndicator color={colors.primary} />
         </View>
-      ) : list.data.length === 0 ? (
-        <View style={styles.centerWrap}>
-          <ShieldOff color={colors.neutral300} size={40} strokeWidth={1.6} />
-          <Text style={styles.emptyTitle}>No blocked accounts</Text>
-          <Text style={styles.emptySubtitle}>Accounts you block will show up here, and you can unblock them anytime.</Text>
-        </View>
       ) : (
+        <View style={{ flex: 1 }}>
+        <PaasxoRefreshLogo refreshing={list.loading} />
         <FlatList
           data={list.data}
           keyExtractor={cardKey}
-          contentContainerStyle={styles.listContent}
+          refreshControl={<PaasxoRefreshControl refreshing={list.loading} onRefresh={list.reload} />}
+          ListEmptyComponent={
+            <View style={styles.centerWrap}>
+              <ShieldOff color={colors.neutral300} size={40} strokeWidth={1.6} />
+              <Text style={styles.emptyTitle}>No blocked accounts</Text>
+              <Text style={styles.emptySubtitle}>Accounts you block will show up here, and you can unblock them anytime.</Text>
+            </View>
+          }
+          contentContainerStyle={[styles.listContent, list.data.length === 0 && { flexGrow: 1 }]}
           showsVerticalScrollIndicator={false}
           onEndReachedThreshold={0.5}
           onEndReached={() => {
@@ -108,6 +114,7 @@ export default function BlockedAccountsScreen() {
             ) : null
           }
         />
+        </View>
       )}
     </SafeAreaView>
   );

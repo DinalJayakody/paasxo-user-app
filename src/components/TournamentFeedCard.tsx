@@ -61,8 +61,11 @@ export function TournamentFeedCard({ tournament, onPress }: Props) {
     COMPLETED: { label: 'COMPLETED', bg: colors.success + '18', text: colors.success },
   }[tournament.lifecycle];
 
-  const spotsLabel = `${tournament.teamsCount}/${tournament.expectedTeams} teams`;
-  const fillPct = Math.min(tournament.teamsCount / Math.max(tournament.expectedTeams, 1), 1);
+  const capped = tournament.expectedTeams > 0;
+  const spotsLabel = capped
+    ? `${tournament.teamsCount}/${tournament.expectedTeams} teams`
+    : `${tournament.teamsCount} ${tournament.teamsCount === 1 ? 'team' : 'teams'} joined`;
+  const fillPct = capped ? Math.min(tournament.teamsCount / tournament.expectedTeams, 1) : 0;
 
   return (
     <Animated.View style={[{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
@@ -125,11 +128,13 @@ export function TournamentFeedCard({ tournament, onPress }: Props) {
                 <Users color={colors.textSecondary} size={13} strokeWidth={2} />
                 <Text style={styles.progressText}>{spotsLabel}</Text>
               </View>
-              <Text style={styles.progressPct}>{Math.round(fillPct * 100)}% full</Text>
+              {capped && <Text style={styles.progressPct}>{Math.round(fillPct * 100)}% full</Text>}
             </View>
-            <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, { width: `${fillPct * 100}%`, backgroundColor: sport.color }]} />
-            </View>
+            {capped && (
+              <View style={styles.progressBarBg}>
+                <View style={[styles.progressBarFill, { width: `${fillPct * 100}%`, backgroundColor: sport.color }]} />
+              </View>
+            )}
           </View>
 
           {/* CTA */}

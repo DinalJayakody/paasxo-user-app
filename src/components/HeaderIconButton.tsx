@@ -6,13 +6,14 @@ interface HeaderIconButtonProps {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   hitSlop?: number;
+  accessibilityLabel?: string;
 }
 
 /** Circular icon button used in floating headers (bell, search, settings,
  *  back arrow...) — a spring scale-down on press stands in for "hover" since
  *  touch devices have no pointer-hover state. Purely a visual wrapper: the
  *  `onPress` behavior is whatever the caller already had. */
-export default function HeaderIconButton({ onPress, children, style, hitSlop = 6 }: HeaderIconButtonProps) {
+export default function HeaderIconButton({ onPress, children, style, hitSlop = 6, accessibilityLabel }: HeaderIconButtonProps) {
   const scale = useRef(new Animated.Value(1)).current;
 
   const pressIn = () => {
@@ -23,7 +24,7 @@ export default function HeaderIconButton({ onPress, children, style, hitSlop = 6
   };
 
   return (
-    <Pressable onPress={onPress} onPressIn={pressIn} onPressOut={pressOut} hitSlop={hitSlop}>
+    <Pressable onPress={onPress} onPressIn={pressIn} onPressOut={pressOut} hitSlop={hitSlop} accessibilityRole="button" accessibilityLabel={accessibilityLabel}>
       <Animated.View style={[style, { transform: [{ scale }] }]}>
         {children}
       </Animated.View>

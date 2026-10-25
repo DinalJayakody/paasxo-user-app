@@ -24,6 +24,9 @@ interface TeamSearchSheetProps {
   onClose: () => void;
   onSelect: (team: Team) => void;
   excludeTeamId?: string;
+  /** Extra team ids to hide (e.g. already in the tournament). */
+  excludeTeamIds?: string[];
+  title?: string;
 }
 
 /**
@@ -31,7 +34,7 @@ interface TeamSearchSheetProps {
  * - same debounced-search shell as PlayerSearchSheet/AddTeamMemberSheet, but
  * searching teams (GET /teams/search) instead of users.
  */
-export function TeamSearchSheet({ visible, onClose, onSelect, excludeTeamId }: TeamSearchSheetProps) {
+export function TeamSearchSheet({ visible, onClose, onSelect, excludeTeamId, excludeTeamIds, title = 'Challenge a Team' }: TeamSearchSheetProps) {
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const [query, setQuery] = useState('');
@@ -51,7 +54,7 @@ export function TeamSearchSheet({ visible, onClose, onSelect, excludeTeamId }: T
       setLoading(true);
       try {
         const teams = await teamApi.searchTeams(query.trim());
-        setResults(teams.filter((t) => t.id !== excludeTeamId));
+        setResults(teams.filter((t) => t.id !== excludeTeamId && !(excludeTeamIds ?? []).includes(t.id)));
       } catch {
         setResults([]);
       } finally {
@@ -72,7 +75,7 @@ export function TeamSearchSheet({ visible, onClose, onSelect, excludeTeamId }: T
           <View style={styles.handle} />
 
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Challenge a Team</Text>
+            <Text style={styles.headerTitle}>{title}</Text>
             <Pressable onPress={onClose} style={styles.closeBtn}>
               <X color={colors.text} size={20} strokeWidth={2.5} />
             </Pressable>

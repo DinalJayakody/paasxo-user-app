@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,7 +13,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Check, Shield, Swords, Trash2, UserMinus, UserPlus, Wallet, X } from 'lucide-react-native';
+import { ArrowLeft, Check, Crown, LogOut, Pencil, Shield, Swords, Trash2, UserMinus, UserPlus, Wallet, X } from 'lucide-react-native';
+import { EditTeamSheet } from '../components/team/EditTeamSheet';
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -27,6 +29,10 @@ import ScreenGlow from '../components/ScreenGlow';
 import { AddTeamMemberSheet } from '../components/team/AddTeamMemberSheet';
 import { TeamSearchSheet } from '../components/team/TeamSearchSheet';
 import { goBack } from '../utils/navigation';
+import { openProfile } from '../utils/openProfile';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface TeamDetailScreenProps {
   teamId: string;
@@ -53,11 +59,15 @@ export default function TeamDetailScreen({ teamId }: TeamDetailScreenProps) {
   const [loading, setLoading] = useState(true);
   const [addMemberVisible, setAddMemberVisible] = useState(false);
   const [teamSearchVisible, setTeamSearchVisible] = useState(false);
+  const [editVisible, setEditVisible] = useState(false);
   const [busyUid, setBusyUid] = useState<string | null>(null);
   const [busyChallengeId, setBusyChallengeId] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState(false);
+  const [handOverVisible, setHandOverVisible] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // silent: pull-to-refresh keeps the current team on screen while reloading.
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [teamRes, challengesRes, myTeamsRes, matchChallengesRes] = await Promise.all([
         teamApi.getTeam(teamId),
@@ -77,6 +87,7 @@ export default function TeamDetailScreen({ teamId }: TeamDetailScreenProps) {
   }, [teamId, myUid]);
 
   useEffect(() => { load(); }, [load]);
+  const { refreshing, onRefresh } = usePullToRefresh(() => load(true));
 
   const isCaptain = !!team && !!myUid && team.captainFirebaseUid === myUid;
   // Every OTHER team I captain - used to offer a quick "Challenge This Team"
@@ -110,6 +121,52 @@ export default function TeamDetailScreen({ teamId }: TeamDetailScreenProps) {
           }
         },
       },
+    ]);
+  };
+
+  // Leave the team. A captain hands the captaincy to another player first;
+  // a captain who is the only player is pointed to "Delete team" instead.
+  const isMember = !!team && !!myUid && team.members.some((m) => m.firebaseUid === myUid);
+  const otherMembers = team ? team.members.filter((m) => m.firebaseUid !== myUid) : [];
+
+  const leave = async (newCaptainUid?: string) => {
+    setLeaving(true);
+    try {
+      await teamApi.leaveTeam(teamId, newCaptainUid);
+      setHandOverVisible(false);
+      Alert.alert('You left the team', `You're no longer on ${team?.name ?? 'this team'}.`, [
+        { text: 'OK', onPress: () => goBack(router) },
+      ]);
+    } catch (err) {
+      Alert.alert('Could not leave team', extractApiError(err));
+    } finally {
+      setLeaving(false);
+    }
+  };
+
+  const handleLeaveTeam = () => {
+    if (!team) return;
+    if (isCaptain) {
+      if (otherMembers.length === 0) {
+        Alert.alert('You are the only player', 'A team needs at least one player. Delete the team instead?', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete team', style: 'destructive', onPress: handleDeleteTeam },
+        ]);
+        return;
+      }
+      setHandOverVisible(true);
+      return;
+    }
+    Alert.alert(`Leave ${team.name}?`, 'You’ll be removed from the roster and won’t be part of its future team matches. The captain can add you again later.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Leave', style: 'destructive', onPress: () => leave() },
+    ]);
+  };
+
+  const confirmHandOver = (uid: string, name: string) => {
+    Alert.alert(`Make ${name} captain and leave?`, `${name} will manage the team and its challenges. You’ll be removed from the roster.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Hand over & leave', style: 'destructive', onPress: () => leave(uid) },
     ]);
   };
 
@@ -224,24 +281,37 @@ export default function TeamDetailScreen({ teamId }: TeamDetailScreenProps) {
           </HeaderIconButton>
           <Text style={styles.title} numberOfLines={1}>{team.name}</Text>
           {isCaptain ? (
-            <HeaderIconButton onPress={handleDeleteTeam} style={styles.headerIconBtn} hitSlop={8}>
-              <Trash2 color={colors.white} size={18} strokeWidth={2.2} />
-            </HeaderIconButton>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <HeaderIconButton onPress={() => setEditVisible(true)} style={styles.headerIconBtn} hitSlop={8} accessibilityLabel="Edit team">
+                <Pencil color={colors.white} size={17} strokeWidth={2.2} />
+              </HeaderIconButton>
+              <HeaderIconButton onPress={handleDeleteTeam} style={styles.headerIconBtn} hitSlop={8} accessibilityLabel="Delete team">
+                <Trash2 color={colors.white} size={18} strokeWidth={2.2} />
+              </HeaderIconButton>
+            </View>
           ) : (
             <View style={styles.headerIconBtn} />
           )}
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <View style={{ flex: 1 }}>
+      <PaasxoRefreshLogo refreshing={refreshing} />
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         <View style={styles.heroSection}>
-          {logoUri ? (
-            <Image source={{ uri: logoUri }} style={styles.logo} />
-          ) : (
-            <View style={styles.logoFallback}>
-              <Shield color={colors.primary} size={36} strokeWidth={1.8} />
-            </View>
-          )}
+          <Pressable disabled={!isCaptain} onPress={() => setEditVisible(true)} accessibilityRole={isCaptain ? 'button' : undefined} accessibilityLabel={isCaptain ? 'Edit team logo' : undefined}>
+            {logoUri ? (
+              <Image source={{ uri: logoUri }} style={styles.logo} />
+            ) : (
+              <View style={styles.logoFallback}>
+                <Shield color={colors.primary} size={36} strokeWidth={1.8} />
+              </View>
+            )}
+          </Pressable>
           <Text style={styles.teamName}>{team.name}</Text>
           <Text style={styles.teamMeta}>{team.sport} · {team.members.length} {team.members.length === 1 ? 'player' : 'players'}</Text>
         </View>
@@ -252,9 +322,14 @@ export default function TeamDetailScreen({ teamId }: TeamDetailScreenProps) {
               <UserPlus color={colors.white} size={15} strokeWidth={2.4} />
               <Text style={styles.actionBtnText}>Add Member</Text>
             </Pressable>
-            <Pressable style={[styles.actionBtn, styles.challengeBtn]} onPress={() => setTeamSearchVisible(true)}>
-              <Swords color={colors.white} size={15} strokeWidth={2.4} />
-              <Text style={styles.actionBtnText}>Challenge a Team</Text>
+            <Pressable
+              style={[styles.actionBtn, styles.challengeBtn]}
+              onPress={() => router.push(`/create-team-challenge-match?teamId=${team.id}` as any)}
+              accessibilityRole="button"
+              accessibilityHint="Pick a venue and time, pay your half, then choose the team to challenge"
+            >
+              <Swords color={colors.primary} size={15} strokeWidth={2.4} />
+              <Text style={[styles.actionBtnText, styles.challengeBtnText]}>Challenge a Team</Text>
             </Pressable>
           </View>
         )}
@@ -265,11 +340,19 @@ export default function TeamDetailScreen({ teamId }: TeamDetailScreenProps) {
             const avatarUri = resolveAvatarUri(m.profileImageUrl, m.displayName);
             return (
               <View key={m.firebaseUid} style={styles.memberRow}>
-                <Image source={{ uri: avatarUri }} style={styles.memberAvatar} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.memberName} numberOfLines={1}>{m.displayName}</Text>
-                  {m.captain && <Text style={styles.captainTag}>CAPTAIN</Text>}
-                </View>
+                {/* Avatar + name open the player's profile; the remove button stays separate. */}
+                <Pressable
+                  style={({ pressed }) => [{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }, pressed && { opacity: 0.6 }]}
+                  onPress={() => openProfile(router, m.firebaseUid, myUid)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${m.displayName}'s profile`}
+                >
+                  <Image source={{ uri: avatarUri }} style={styles.memberAvatar} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.memberName} numberOfLines={1}>{m.displayName}{m.firebaseUid === myUid ? ' (you)' : ''}</Text>
+                    {m.captain && <Text style={styles.captainTag}>CAPTAIN</Text>}
+                  </View>
+                </Pressable>
                 {isCaptain && !m.captain && (
                   busyUid === m.firebaseUid ? (
                     <ActivityIndicator size="small" color={colors.error} />
@@ -283,6 +366,24 @@ export default function TeamDetailScreen({ teamId }: TeamDetailScreenProps) {
             );
           })}
         </View>
+
+        {isMember && (
+          <Pressable
+            style={({ pressed }) => [styles.leaveBtn, pressed && { opacity: 0.7 }]}
+            onPress={handleLeaveTeam}
+            disabled={leaving}
+            accessibilityRole="button"
+            accessibilityLabel="Leave team"
+            accessibilityHint={isCaptain ? 'Choose a new captain, then leave the team' : undefined}
+          >
+            {leaving ? <ActivityIndicator size="small" color={colors.error} /> : (
+              <>
+                <LogOut color={colors.error} size={16} strokeWidth={2.2} />
+                <Text style={styles.leaveBtnText}>Leave team</Text>
+              </>
+            )}
+          </Pressable>
+        )}
 
         {isCaptain && matchChallenges.length > 0 && (
           <View style={styles.card}>
@@ -359,7 +460,10 @@ export default function TeamDetailScreen({ teamId }: TeamDetailScreenProps) {
                   {existing ? (
                     <Text style={styles.challengeStatus}>{existing.status}</Text>
                   ) : (
-                    <Pressable style={styles.smallChallengeBtn} onPress={() => sendChallenge(mine.id, team.id)}>
+                    <Pressable
+                      style={styles.smallChallengeBtn}
+                      onPress={() => router.push(`/create-team-challenge-match?teamId=${mine.id}&opponentTeamId=${team.id}&opponentName=${encodeURIComponent(team.name)}` as any)}
+                    >
                       <Swords color={colors.white} size={12} strokeWidth={2.4} />
                       <Text style={styles.smallChallengeBtnText}>Challenge</Text>
                     </Pressable>
@@ -370,13 +474,48 @@ export default function TeamDetailScreen({ teamId }: TeamDetailScreenProps) {
           </View>
         )}
       </ScrollView>
+      </View>
 
+      {isCaptain && (
+        <EditTeamSheet visible={editVisible} team={team} onClose={() => setEditVisible(false)} onSaved={(t) => setTeam(t)} />
+      )}
       <AddTeamMemberSheet
         visible={addMemberVisible}
         onClose={() => setAddMemberVisible(false)}
         onAdd={handleAddMember}
         excludeUids={team.members.map((m) => m.firebaseUid)}
       />
+      <Modal visible={handOverVisible} transparent animationType="slide" onRequestClose={() => setHandOverVisible(false)}>
+        <Pressable style={styles.sheetBackdrop} onPress={() => !leaving && setHandOverVisible(false)} accessibilityLabel="Close" />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHead}>
+            <Text style={styles.sheetTitle}>Choose a new captain</Text>
+            <Pressable onPress={() => setHandOverVisible(false)} hitSlop={10} disabled={leaving} accessibilityLabel="Close">
+              <X color={colors.text} size={20} />
+            </Pressable>
+          </View>
+          <Text style={styles.sheetSub}>
+            Before you leave, hand {team.name} to another player. They’ll manage the roster and challenges.
+          </Text>
+          <ScrollView style={{ maxHeight: 360 }}>
+            {otherMembers.map((m) => (
+              <Pressable
+                key={m.firebaseUid}
+                style={({ pressed }) => [styles.handOverRow, pressed && { opacity: 0.6 }]}
+                onPress={() => confirmHandOver(m.firebaseUid, m.displayName)}
+                disabled={leaving}
+                accessibilityRole="button"
+                accessibilityLabel={`Make ${m.displayName} captain`}
+              >
+                <Image source={{ uri: resolveAvatarUri(m.profileImageUrl, m.displayName) }} style={styles.memberAvatar} />
+                <Text style={[styles.memberName, { flex: 1 }]} numberOfLines={1}>{m.displayName}</Text>
+                <Crown color={colors.warning} size={17} strokeWidth={2.2} />
+              </Pressable>
+            ))}
+          </ScrollView>
+          {leaving && <ActivityIndicator color={colors.primary} style={{ marginTop: 12 }} />}
+        </View>
+      </Modal>
       <TeamSearchSheet
         visible={teamSearchVisible}
         onClose={() => setTeamSearchVisible(false)}
@@ -450,7 +589,10 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     height: 44, borderRadius: 14, backgroundColor: colors.primary,
   },
-  challengeBtn: { backgroundColor: colors.neutral900 },
+  // Outlined, primary-tinted — reads in both themes (neutral900 flips to
+  // near-white in dark mode, which made white-on-white text).
+  challengeBtn: { backgroundColor: colors.primary + '14', borderWidth: 1.5, borderColor: colors.primary },
+  challengeBtnText: { color: colors.primary },
   actionBtnText: { color: colors.white, fontSize: 13, fontWeight: '700' },
 
   card: {
@@ -489,4 +631,23 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
   },
   smallChallengeBtnText: { color: colors.white, fontSize: 11, fontWeight: '700' },
+
+  leaveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    height: 46, borderRadius: 14, marginBottom: 14,
+    borderWidth: 1.5, borderColor: colors.error + '55', backgroundColor: colors.error + '0D',
+  },
+  leaveBtnText: { color: colors.error, fontSize: 14, fontWeight: '800' },
+  sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,6,23,0.5)' },
+  sheet: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: colors.cardBg,
+    borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20, paddingBottom: 36,
+  },
+  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sheetTitle: { fontSize: 18, fontWeight: '900', color: colors.text },
+  sheetSub: { fontSize: 13, color: colors.textMuted, lineHeight: 19, marginTop: 6, marginBottom: 10 },
+  handOverRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.neutral200,
+  },
 });

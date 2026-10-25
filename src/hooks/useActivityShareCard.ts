@@ -13,8 +13,8 @@
  * ActivityDetailScreen (share later from history) so both get the exact
  * same card rather than two slightly-different implementations.
  */
-import React, { useCallback, useRef, useState } from 'react';
-import { View, Dimensions } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, Dimensions, Linking, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import MapView from 'react-native-maps';
 import { StoredActivity } from '../api/activityApi';
@@ -45,6 +45,17 @@ export function useActivityShareCard(
   const [aspectRatio, setAspectRatio] = useState<ShareCardAspectRatio>('post');
   const [templateId, setTemplateId] = useState<ShareCardTemplateId>('classic');
   const imageLoadedRef = useRef(false);
+
+  // Reopen a saved activity in the design it was saved with.
+  const restoredFor = useRef<string | null>(null);
+  useEffect(() => {
+    const key = activity ? activity.serverId ?? activity.localId : null;
+    if (!activity || !key || restoredFor.current === key) return;
+    restoredFor.current = key;
+    if (activity.shareAspectRatio) setAspectRatio(activity.shareAspectRatio);
+    if (activity.shareTemplateId) setTemplateId(activity.shareTemplateId);
+    if (activity.sharePhotoUri) setPhotoUri(activity.sharePhotoUri);
+  }, [activity]);
   const cachedCardUriRef = useRef<string | null>(null);
   const snapshottingRef = useRef(false);
 
@@ -80,20 +91,28 @@ export function useActivityShareCard(
   }, [mapSnapshotUri, activity]);
 
   /**
-   * Opens the camera for the 'photo' template's background — a selfie or a
-   * shot of the route taken right after finishing, Strava-style. Does
-   * nothing (no Alert) if the user denies the permission or cancels; the
-   * card just falls back to the map/gradient, same as a failed map snapshot.
+   * Picks the 'photo' template's background: take one now (a selfie or a shot
+   * of the route, Strava-style) or choose one from the library. A denied
+   * permission explains itself with a shortcut to Settings; cancelling just
+   * leaves the card on the map/gradient, same as a failed map snapshot.
    */
-  const pickPhoto = useCallback(async (): Promise<boolean> => {
+  const pickPhoto = useCallback(async (source: 'camera' | 'library' = 'camera'): Promise<boolean> => {
     try {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) return false;
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
-        quality: 0.9,
-        allowsEditing: false,
-      });
+      const perm = source === 'camera'
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert(
+          source === 'camera' ? 'Camera access needed' : 'Photo access needed',
+          `Allow ${source === 'camera' ? 'camera' : 'photo library'} access in Settings to add a photo to your activity.`,
+          [{ text: 'Not now', style: 'cancel' }, { text: 'Open Settings', onPress: () => Linking.openSettings() }],
+        );
+        return false;
+      }
+      const options: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], quality: 0.9, allowsEditing: false, exif: false };
+      const result = source === 'camera'
+        ? await ImagePicker.launchCameraAsync(options)
+        : await ImagePicker.launchImageLibraryAsync(options);
       if (result.canceled || !result.assets?.[0]?.uri) return false;
       setPhotoUri(result.assets[0].uri);
       cachedCardUriRef.current = null;

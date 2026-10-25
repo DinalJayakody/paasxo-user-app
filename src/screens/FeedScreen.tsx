@@ -1,3 +1,4 @@
+import { videoQueue } from '../stores/videoQueue';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import {
@@ -35,6 +36,7 @@ import { useFloatingHeader } from '../hooks/useFloatingHeader';
 import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
 import { SearchBar } from '../components/SearchBar';
 import HeaderIconButton from '../components/HeaderIconButton';
+import { useChat } from '../stores/chatStore';
 import { ThemeColors } from '../styles/colors';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
@@ -74,6 +76,7 @@ const getTournamentLifecycle = (t: any): 'UPCOMING' | 'LIVE' | 'COMPLETED' => {
 };
 
 const FeedScreen = () => {
+  const chatUnread = useChat((st) => st.unreadTotal);
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const navBarHeight = useBottomNavBarHeight();
@@ -122,6 +125,12 @@ const FeedScreen = () => {
   //Pagination for Feed
   const onEndReachedCalledDuringMomentum = React.useRef(false);
   const [posts, setPosts] = useState<any[]>([]);
+  // Feed order of the loaded video posts, for the Reels-style video pager —
+  // re-applied on focus since a profile's post viewer swaps in its own list.
+  const postsRef = React.useRef<any[]>([]);
+  postsRef.current = posts;
+  useEffect(() => { videoQueue.set(posts); }, [posts]);
+  useFocusEffect(React.useCallback(() => { videoQueue.set(postsRef.current); }, []));
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -136,12 +145,19 @@ const FeedScreen = () => {
     return Array.from(map.values());
   };
 
-  const fetchPosts = async (nextPage = 0) => {
-    if (loading) return;
+  // Each request claims an id; only the latest one may apply its result, so a
+  // slow "load more" that lands after a pull-to-refresh can't append stale
+  // posts onto the fresh first page.
+  const postsRequestId = React.useRef(0);
+
+  const fetchPosts = async (nextPage = 0, force = false) => {
+    if (loading && !force) return;
+    const requestId = ++postsRequestId.current;
 
     try {
       setLoading(true);
       const res = await socialMediaApi.getPosts(nextPage);
+      if (requestId !== postsRequestId.current) return;
       const safeData = res.content ?? [];
 
       setPosts(prev => {
@@ -159,7 +175,7 @@ const FeedScreen = () => {
     } catch (err) {
       console.log('FETCH POSTS ERROR:', err);
     } finally {
-      setLoading(false);
+      if (requestId === postsRequestId.current) setLoading(false);
     }
   };
 
@@ -167,42 +183,32 @@ const FeedScreen = () => {
     fetchPosts(0);
   }, []);
 
-  // Fetch tournament ads from backend (futsals → their tournaments)
-  useEffect(() => {
-    const loadTournamentAds = async () => {
+  // Paasxo announcements: upcoming PUBLIC tournaments (one request; private
+  // and past tournaments are never included — see /tournaments/announcements).
+  const loadTournamentAds = React.useCallback(async () => {
       try {
-        const futsals = await futsalApi.listVenues();
-        const futsalList = Array.isArray(futsals) ? futsals : Array.isArray(futsals?.data) ? futsals.data : [];
-        const ads: TournamentFeedItem[] = [];
-        for (const futsal of futsalList.slice(0, 5)) {
-          if (ads.length >= 6) break;
-          try {
-            const ts = await tournamentApi.listForFutsal(futsal.id ?? futsal._id);
-            for (const t of (ts || []).slice(0, 2)) {
-              ads.push({
-                id: t.id,
-                name: t.name || 'Tournament',
-                sport: (t.sport || futsal.sport || 'FUTSAL').toUpperCase(),
-                date: t.date || t.startDate || '',
-                venueName: futsal.name || futsal.futsalName || `Venue #${futsal.id}`,
-                teamsCount: t.teamsCount ?? t.registeredTeams ?? 0,
-                expectedTeams: t.expectedTeams ?? t.maxTeams ?? 8,
-                lifecycle: getTournamentLifecycle(t),
-                isOwner: false,
-              });
-            }
-          } catch { /* skip this futsal */ }
-        }
-        setTournamentAds(ads);
-      } catch { /* silent */ }
-    };
-    loadTournamentAds();
+        const ts = await tournamentApi.announcements();
+        setTournamentAds(ts.map((t: any): TournamentFeedItem => ({
+          id: t.id,
+          name: t.name || 'Tournament',
+          sport: 'FUTSAL',
+          date: t.date || '',
+          venueName: t.futsalName || undefined,
+          teamsCount: t.teamCount ?? 0,
+          expectedTeams: t.maxTeams ?? 0,
+          lifecycle: 'UPCOMING',
+          isOwner: false,
+        })));
+      } catch { /* silent — the feed works without them */ }
   }, []);
+  useEffect(() => { loadTournamentAds(); }, [loadTournamentAds]);
 
-  // Discover Communities strip — one shot per screen mount, top 4 only.
-  useEffect(() => {
-    communityApi.discover(0, 4).then((res) => setDiscoverCommunities(res.content)).catch(() => {});
-  }, []);
+  // Discover Communities strip — top 4 only; on mount and on pull-to-refresh.
+  const loadDiscoverCommunities = React.useCallback(() =>
+    communityApi.discover(0, 4).then((res) => setDiscoverCommunities(res.content)).catch(() => {}), []);
+  useEffect(() => { loadDiscoverCommunities(); }, [loadDiscoverCommunities]);
+
+  const [storiesRefreshKey, setStoriesRefreshKey] = useState(0);
 
   const loadMore = () => {
     if (!hasMore || loading) return;
@@ -211,9 +217,18 @@ const FeedScreen = () => {
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = async () => {
+    if (refreshing) return;
     setRefreshing(true);
     try {
-      await fetchPosts(0);
+      // Same fresh loads as opening the feed: posts from page 0 (overriding any
+      // in-flight "load more"), stories, tournament cards, communities, bell count.
+      setStoriesRefreshKey((k) => k + 1);
+      await Promise.all([
+        fetchPosts(0, true),
+        loadTournamentAds(),
+        loadDiscoverCommunities(),
+        notificationApi.getUnreadCount('SOCIAL').then(setUnreadSocial).catch(() => {}),
+      ]);
     } finally {
       setRefreshing(false);
     }
@@ -293,10 +308,12 @@ const FeedScreen = () => {
   const feedItems = useMemo((): FeedItem[] => {
     if (tournamentAds.length === 0) return posts.map((p) => ({ kind: 'post', data: p }));
     const result: FeedItem[] = [];
+    // Soonest announcement pinned first, then one every 5 posts.
+    result.push({ kind: 'tournament-ad', data: tournamentAds[0] });
     posts.forEach((post, index) => {
       result.push({ kind: 'post', data: post });
-      if ((index + 1) % 5 === 0) {
-        const adIdx = Math.floor(index / 5) % tournamentAds.length;
+      if ((index + 1) % 5 === 0 && tournamentAds.length > 1) {
+        const adIdx = 1 + (Math.floor(index / 5) % (tournamentAds.length - 1));
         result.push({ kind: 'tournament-ad', data: tournamentAds[adIdx] });
       }
     });
@@ -364,6 +381,17 @@ const FeedScreen = () => {
               onPress={() => router.push('/communities' as any)}
             >
               <Users color={colors.white} size={20} />
+            </HeaderIconButton>
+            <HeaderIconButton
+              style={[styles.iconButton, styles.topBarActionButton]}
+              onPress={() => router.push('/messages' as any)}
+            >
+              <MessageCircle color={colors.white} size={20} />
+              {chatUnread > 0 && (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>{chatUnread > 9 ? '9+' : chatUnread}</Text>
+                </View>
+              )}
             </HeaderIconButton>
             <HeaderIconButton
               style={[styles.iconButton, styles.topBarActionButton]}
@@ -462,7 +490,7 @@ const FeedScreen = () => {
               <View style={styles.tournamentAdWrap}>
                 <View style={styles.tournamentAdLabel}>
                   <Trophy color={colors.primary} size={12} strokeWidth={2.5} />
-                  <Text style={styles.tournamentAdLabelText}>FEATURED TOURNAMENT</Text>
+                  <Text style={styles.tournamentAdLabelText}>PAASXO ANNOUNCEMENT · OPEN TOURNAMENT</Text>
                 </View>
                 <TournamentFeedCard
                   tournament={item.data}
@@ -491,7 +519,7 @@ const FeedScreen = () => {
         ListHeaderComponent={
           <>
             {/* STORIES */}
-            <StoryReel />
+            <StoryReel refreshKey={storiesRefreshKey} />
 
             {/* LIVE & RECENT */}
             <View style={styles.sectionHeader}>
@@ -976,13 +1004,13 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     padding: 18,
   },
   sponsoredBannerTitle: {
-    color: colors.white,
+    color: colors.background,
     fontSize: 22,
     fontWeight: '900',
     letterSpacing: 1.2,
   },
   sponsoredBannerTitleAlt: {
-    color: colors.white,
+    color: colors.background,
     fontSize: 24,
     fontWeight: '900',
     letterSpacing: 1.2,
@@ -1274,7 +1302,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingHorizontal: 32,
   },
   unlockButtonText: {
-    color: colors.white,
+    color: colors.background,
     fontSize: 13,
     fontWeight: '900',
   },

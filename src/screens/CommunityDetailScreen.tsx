@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -31,6 +31,10 @@ import { PostSummary } from '../types/api';
 import { resolveMediaUrl, resolveAvatarUri } from '../utils/mediaUrl';
 import { extractApiError } from '../utils/apiError';
 import { goBack } from '../utils/navigation';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
+import { openProfile } from '../utils/openProfile';
 
 export default function CommunityDetailScreen() {
   const { id, openRequests } = useLocalSearchParams<{ id: string; openRequests?: string }>();
@@ -69,11 +73,16 @@ export default function CommunityDetailScreen() {
     }
   }, [id]);
 
+  // Only the newest feed request may apply — a slow "load more" can't append
+  // onto a first page that a pull-to-refresh has since replaced.
+  const feedRequestId = useRef(0);
   const loadFeed = useCallback(async (targetPage: number, append: boolean) => {
     if (!id) return;
+    const reqId = ++feedRequestId.current;
     setFeedLoading(true);
     try {
       const result = await communityApi.getFeed(id, targetPage);
+      if (reqId !== feedRequestId.current) return;
       setPosts((prev) => (append ? [...prev, ...result.content] : result.content));
       setFeedPage(targetPage);
       setFeedHasMore(result.hasMore);
@@ -101,6 +110,14 @@ export default function CommunityDetailScreen() {
   }, [id, community?.isAdmin]);
 
   useEffect(() => { loadPendingRequests(); }, [loadPendingRequests]);
+
+  // Same fresh loads as opening the community: details, first feed page (members
+  // only), and join requests (admins only — loadPendingRequests no-ops otherwise).
+  const { refreshing, onRefresh } = usePullToRefresh(() => Promise.all([
+    loadCommunity(),
+    community?.isMember ? loadFeed(0, false) : null,
+    loadPendingRequests(),
+  ]));
 
   // Arrived here from a "wants to join" notification — jump straight to the
   // requests sheet instead of making the admin hunt for the banner.
@@ -250,7 +267,10 @@ export default function CommunityDetailScreen() {
         </View>
       </View>
 
+      <View style={{ flex: 1 }}>
+      <PaasxoRefreshLogo refreshing={refreshing} />
       <FlatList
+        refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         data={community.isMember ? posts : []}
         keyExtractor={(p) => p.id}
         renderItem={({ item }) => <PostCard post={item} />}
@@ -334,6 +354,7 @@ export default function CommunityDetailScreen() {
           )
         }
       />
+      </View>
 
       {community.isMember && (
         <Pressable style={styles.fab} onPress={() => setShowComposer(true)}>
@@ -397,8 +418,16 @@ export default function CommunityDetailScreen() {
             <ScrollView style={{ maxHeight: 400 }}>
               {pendingRequests.map((r) => (
                 <View key={r.id} style={styles.requestRow}>
-                  <Image source={{ uri: resolveAvatarUri(r.requesterProfileImageUrl, r.requesterDisplayName) }} style={styles.requestAvatar} />
-                  <Text style={styles.requestName} numberOfLines={1}>{r.requesterDisplayName}</Text>
+                  {/* Check who's asking before approving: close the sheet, open their profile. */}
+                  <Pressable
+                    style={({ pressed }) => [{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }, pressed && { opacity: 0.6 }]}
+                    onPress={() => { setShowRequests(false); openProfile(router, r.requesterFirebaseUid, user?.firebaseUid); }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open ${r.requesterDisplayName}'s profile`}
+                  >
+                    <Image source={{ uri: resolveAvatarUri(r.requesterProfileImageUrl, r.requesterDisplayName) }} style={styles.requestAvatar} />
+                    <Text style={styles.requestName} numberOfLines={1}>{r.requesterDisplayName}</Text>
+                  </Pressable>
                   <Pressable style={styles.requestApproveBtn} onPress={() => handleApprove(r.id)}>
                     <Check color={Colors.white} size={14} strokeWidth={2.5} />
                   </Pressable>

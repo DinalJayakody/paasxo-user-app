@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { PostSummary } from '../types/api';
 
 // Single in-memory source of truth for like/comment/save state, shared by
@@ -97,8 +97,16 @@ export function usePostInteraction(post: PostSummary): PostInteractionState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [post.id]);
 
+  // getSnapshot must return the SAME object until something changes — a fresh
+  // toState(post) on every call made React see an endless "change" and log
+  // "The result of getSnapshot should be cached to avoid an infinite loop".
+  const fallback = useMemo(
+    () => toState(post),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [post.likeCount, post.likedByCurrentUser, post.commentCount, post.savedByCurrentUser],
+  );
   return useSyncExternalStore(
     postInteractionStore.subscribe,
-    () => postInteractionStore.getSnapshot(post.id) ?? toState(post)
+    () => postInteractionStore.getSnapshot(post.id) ?? fallback
   );
 }

@@ -14,6 +14,8 @@ const EQUIPMENT_TIP: Record<TrainerCategory, string> = {
   DANCING: 'Wear comfortable shoes suited for movement and breathable clothing.',
   MARTIAL_ARTS: 'Wear appropriate training attire — your trainer will advise on any protective gear.',
   OTHER: 'Wear comfortable clothing suited for physical activity.',
+  BODYBUILDING: 'Wear closed-toe training shoes and bring a towel and water bottle.',
+  ZUMBA: 'Wear light, supportive trainers and breathable clothing — bring water.',
 };
 
 export interface GuidelineItem {

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   Dimensions,
   Modal,
@@ -10,7 +11,12 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Eye, Heart, Share2, X } from 'lucide-react-native';
+import { Eye, Heart, Send, Share2, Trash2, Users, X } from 'lucide-react-native';
+import { ActionMenuSheet } from './ActionMenuSheet';
+import { CenteredAt } from './story/CenteredAt';
+import { contentEvents } from '../stores/contentEvents';
+import { shareContent } from '../utils/shareContent';
+import { extractApiError } from '../utils/apiError';
 import { ReelSummary } from '../types/api';
 import { reelApi } from '../api/reelApi';
 import { parseMediaUrl } from '../utils/postFormat';
@@ -18,6 +24,9 @@ import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { LoopingVideo } from './LoopingVideo';
 import ShareToCommunityModal from './ShareToCommunityModal';
+import { useRouter } from 'expo-router';
+import { useAuth } from '../context/AuthContext';
+import { openProfile } from '../utils/openProfile';
 
 let Audio: any = null;
 if (Platform.OS !== 'web') {
@@ -45,12 +54,16 @@ interface ReelPlayerProps {
 }
 
 export function ReelPlayer({ visible, reel, onClose }: ReelPlayerProps) {
+  const profileRouter = useRouter();
+  const { user: profileViewer } = useAuth();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [showCommunityShare, setShowCommunityShare] = useState(false);
+  const [shareMenuVisible, setShareMenuVisible] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const heartScale = useRef(new Animated.Value(1)).current;
   const viewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -133,7 +146,10 @@ export function ReelPlayer({ visible, reel, onClose }: ReelPlayerProps) {
       <StatusBar hidden />
       <View style={styles.root}>
         {mediaUri ? (
-          <LoopingVideo uri={mediaUri} muted={!!reel.audioTrackUrl} />
+          // "contain": show the whole video, letterboxed on black, whatever its
+          // shape. "cover" cropped/zoomed any reel that wasn't exactly the
+          // screen's aspect ratio (landscape, square, or 9:16 on a taller phone).
+          <LoopingVideo uri={mediaUri} muted={!!reel.audioTrackUrl} contentFit="contain" />
         ) : (
           <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#1a1a2e' }]} />
         )}
@@ -143,20 +159,14 @@ export function ReelPlayer({ visible, reel, onClose }: ReelPlayerProps) {
         )}
 
         {!!reel.captionText && (
-          <View
-            style={[styles.stickerPos, { left: (reel.captionX ?? 0.5) * W, top: (reel.captionY ?? 0.4) * H }]}
-            pointerEvents="none"
-          >
+          <CenteredAt x={reel.captionX ?? 0.5} y={reel.captionY ?? 0.4}>
             <Text style={[styles.stickerCaptionText, { color: reel.captionColor || '#fff' }]}>{reel.captionText}</Text>
-          </View>
+          </CenteredAt>
         )}
         {!!reel.emoji && (
-          <View
-            style={[styles.stickerPos, { left: (reel.emojiX ?? 0.5) * W, top: (reel.emojiY ?? 0.6) * H }]}
-            pointerEvents="none"
-          >
+          <CenteredAt x={reel.emojiX ?? 0.5} y={reel.emojiY ?? 0.6}>
             <Text style={styles.stickerEmoji}>{reel.emoji}</Text>
-          </View>
+          </CenteredAt>
         )}
 
         <View style={styles.scrimBottom} pointerEvents="none" />
@@ -169,7 +179,15 @@ export function ReelPlayer({ visible, reel, onClose }: ReelPlayerProps) {
 
         <View style={styles.bottomRow}>
           <View style={styles.captionWrap}>
-            <Text style={styles.authorName} numberOfLines={1}>{reel.authorDisplayName}</Text>
+            <Text
+              style={styles.authorName}
+              numberOfLines={1}
+              suppressHighlighting
+              onPress={() => { onClose(); openProfile(profileRouter, reel.authorId, profileViewer?.firebaseUid); }}
+              accessibilityRole="button"
+            >
+              {reel.authorDisplayName}
+            </Text>
             {!!reel.caption && <Text style={styles.captionText} numberOfLines={2}>{reel.caption}</Text>}
           </View>
           <View style={styles.actionsCol}>
@@ -183,12 +201,58 @@ export function ReelPlayer({ visible, reel, onClose }: ReelPlayerProps) {
               <Eye color="#fff" size={26} strokeWidth={2} />
               <Text style={styles.actionCount}>{reel.viewCount}</Text>
             </View>
-            <Pressable onPress={() => setShowCommunityShare(true)} style={styles.actionBtn} hitSlop={10}>
+            <Pressable onPress={() => setShareMenuVisible(true)} style={styles.actionBtn} hitSlop={10} accessibilityLabel="Share reel">
               <Share2 color="#fff" size={26} strokeWidth={2} />
             </Pressable>
+            {reel.authorId === profileViewer?.firebaseUid && (
+              <Pressable
+                style={[styles.actionBtn, deleting && { opacity: 0.4 }]}
+                hitSlop={10}
+                disabled={deleting}
+                accessibilityLabel="Delete reel"
+                onPress={() => Alert.alert('Delete this reel?', 'It will be removed for everyone. This can’t be undone.', [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Delete', style: 'destructive', onPress: async () => {
+                      setDeleting(true);
+                      try {
+                        await reelApi.deleteReel(reel.id);
+                        contentEvents.markDeleted('reel', reel.id);
+                        onClose();
+                      } catch (err) {
+                        Alert.alert('Could not delete', extractApiError(err, 'Please try again.'));
+                      } finally {
+                        setDeleting(false);
+                      }
+                    },
+                  },
+                ])}
+              >
+                <Trash2 color="#fff" size={24} strokeWidth={2} />
+              </Pressable>
+            )}
           </View>
         </View>
       </View>
+
+      <ActionMenuSheet
+        visible={shareMenuVisible}
+        onClose={() => setShareMenuVisible(false)}
+        actions={[
+          {
+            key: 'external',
+            label: 'Share to WhatsApp & more',
+            icon: <Send color={colors.text} size={18} strokeWidth={2.2} />,
+            onPress: () => { shareContent('reel', reel.id, reel.authorDisplayName); },
+          },
+          {
+            key: 'community',
+            label: 'Share to a community',
+            icon: <Users color={colors.text} size={18} strokeWidth={2.2} />,
+            onPress: () => setShowCommunityShare(true),
+          },
+        ]}
+      />
 
       <ShareToCommunityModal
         visible={showCommunityShare}

@@ -6,6 +6,7 @@ import { useTheme } from '../context/ThemeContext';
 import { ReelSummary } from '../types/api';
 import { parseMediaUrl } from '../utils/postFormat';
 import { ReelPlayer } from './ReelPlayer';
+import { useWithoutDeleted } from '../stores/contentEvents';
 
 // Shared "grid of reel thumbnails with a live like/view badge, tap -> full
 // screen player" component, parallel to PostGrid's tile layout.
@@ -44,7 +45,9 @@ function ReelTile({ reel, onPress, styles }: { reel: ReelSummary; onPress: () =>
   );
 }
 
-export function ReelGrid({ reels, autoOpenReelId }: ReelGridProps) {
+export function ReelGrid({ reels: allReels, autoOpenReelId }: ReelGridProps) {
+  // Drop reels deleted this session (e.g. from the player's delete button).
+  const reels = useWithoutDeleted('reel', allReels, (r) => r.id);
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const [selectedReelId, setSelectedReelId] = useState<string | null>(null);

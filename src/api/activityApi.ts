@@ -51,6 +51,11 @@ export interface StoredActivity {
   // your account-level private-account+follow setting server-side, same as
   // Post.visibility. Defaults to 'friends'.
   visibility: ActivityVisibility;
+  /** Share-card design picked at save time (template + size); restored on the detail screen. */
+  shareTemplateId?: 'classic' | 'minimal' | 'bold' | 'mapview' | 'photo';
+  shareAspectRatio?: 'post' | 'story';
+  /** Local-only: the photo chosen for the "photo" design (kept in the app's documents folder). */
+  sharePhotoUri?: string;
 }
 
 // Present only when the activity belongs to someone other than the current
@@ -59,6 +64,7 @@ export interface StoredActivity {
 export interface ActivityWithAuthor extends StoredActivity {
   authorDisplayName?: string;
   authorProfileImageUrl?: string;
+  authorFirebaseUid?: string; // set for someone else's shared activity
 }
 
 export interface ActivityPersonalBests {
@@ -89,6 +95,15 @@ export interface ActivitySummary {
   // Rolling last-7-days / last-30-days totals, all types combined.
   weeklyProgress: ActivityPeriodProgress;
   monthlyProgress: ActivityPeriodProgress;
+  // Last 8 Monday-start weeks, oldest first. Absent on older servers.
+  weeklyTrend?: ActivityWeekBucket[];
+}
+
+export interface ActivityWeekBucket {
+  weekStart: string; // yyyy-MM-dd (Monday)
+  activityCount: number;
+  totalDistanceMeters: number;
+  totalDurationSeconds: number;
 }
 
 function fromActivityResponse(d: any): ActivityWithAuthor {
@@ -129,6 +144,8 @@ function fromActivityResponse(d: any): ActivityWithAuthor {
     endLatitude: d.endLatitude,
     endLongitude: d.endLongitude,
     visibility: (d.visibility === 'public' || d.visibility === 'private') ? d.visibility : 'friends',
+    shareTemplateId: ['classic', 'minimal', 'bold', 'mapview', 'photo'].includes(d.shareTemplate) ? d.shareTemplate : undefined,
+    shareAspectRatio: d.shareAspectRatio === 'story' || d.shareAspectRatio === 'post' ? d.shareAspectRatio : undefined,
     authorDisplayName: d.authorDisplayName ?? undefined,
     authorProfileImageUrl: d.authorProfileImageUrl ?? undefined,
   };
@@ -231,6 +248,8 @@ export const activityApi = {
         endLatitude: activity.endLatitude,
         endLongitude: activity.endLongitude,
         visibility: activity.visibility,
+        shareTemplate: activity.shareTemplateId,
+        shareAspectRatio: activity.shareAspectRatio,
         route: activity.routeCoordinates.map((p) => ({
           latitude: p.latitude,
           longitude: p.longitude,
@@ -289,6 +308,7 @@ export const activityApi = {
         recentActivities: (data.recentActivities ?? []).map(fromActivityResponse),
         weeklyProgress: data.weeklyProgress ?? { activityCount: 0, totalDistanceMeters: 0, totalDurationSeconds: 0 },
         monthlyProgress: data.monthlyProgress ?? { activityCount: 0, totalDistanceMeters: 0, totalDurationSeconds: 0 },
+        weeklyTrend: Array.isArray(data.weeklyTrend) ? data.weeklyTrend : [],
       };
     } catch {
       return null;

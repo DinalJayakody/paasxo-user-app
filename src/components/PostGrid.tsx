@@ -1,3 +1,4 @@
+import { videoQueue } from '../stores/videoQueue';
 import React, { useEffect, useRef, useState } from 'react';
 import { FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, ViewToken } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +9,7 @@ import { PostSummary } from '../types/api';
 import { parseMediaUrl } from '../utils/postFormat';
 import { usePostInteraction } from '../stores/postInteractionStore';
 import { PostCard } from './PostCard';
+import { contentEvents, useWithoutDeleted } from '../stores/contentEvents';
 
 // Shared "grid of post thumbnails with a live like-count badge, tap -> detail"
 // component - used identically by my Profile's Moments/Saved tabs and a
@@ -102,32 +104,33 @@ function PostDetailModal({
         <Pressable onPress={onCloseDetail} style={styles.modalBackBtn} hitSlop={8}>
           <X color={colors.text} size={20} strokeWidth={2.5} />
         </Pressable>
-        <Text style={styles.modalHeaderTitle}>
-          {posts.length > 1 ? `${activeIndex + 1} of ${posts.length}` : 'Post'}
-        </Text>
+        <Text style={styles.modalHeaderTitle}>{posts.length > 1 ? 'Posts' : 'Post'}</Text>
         <View style={{ width: 36 }} />
       </View>
       {visible && (
+        // Instagram-style: one vertical list of the profile's posts, opened
+        // at the tapped one — scroll up/down through the rest (not sideways).
         <FlatList
           ref={listRef}
           data={posts}
           keyExtractor={(p) => p.id}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          initialScrollIndex={selectedIndex}
-          getItemLayout={(_, index) => ({ length: screenWidth, offset: screenWidth * index, index })}
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
-          onScrollToIndexFailed={({ index }) => {
-            setTimeout(() => listRef.current?.scrollToIndex({ index, animated: false }), 50);
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.modalContent}
+          // Heights vary per post, so render enough up front to land on the
+          // tapped post precisely, then jump to it (see onLayout below).
+          initialNumToRender={Math.min(posts.length, Math.max(selectedIndex + 2, 4))}
+          onLayout={() => {
+            if (selectedIndex > 0) requestAnimationFrame(() => listRef.current?.scrollToIndex({ index: selectedIndex, animated: false, viewPosition: 0 }));
           }}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
+          onScrollToIndexFailed={({ index, averageItemLength }) => {
+            listRef.current?.scrollToOffset({ offset: averageItemLength * index, animated: false });
+            setTimeout(() => listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0 }), 80);
+          }}
+          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
           renderItem={({ item }) => (
-            <View style={{ width: screenWidth }}>
-              <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
-                <PostCard post={item} autoOpenComments={!!openComments && item.id === selectedPostId} />
-              </ScrollView>
-            </View>
+            <PostCard post={item} autoOpenComments={!!openComments && item.id === selectedPostId} />
           )}
         />
       )}
@@ -135,7 +138,9 @@ function PostDetailModal({
   );
 }
 
-export function PostGrid({ posts, selectedPostId, onSelectPost, onCloseDetail, openComments }: PostGridProps) {
+export function PostGrid({ posts: allPosts, selectedPostId, onSelectPost, onCloseDetail, openComments }: PostGridProps) {
+  // Drop anything deleted this session (from here or any other screen).
+  const posts = useWithoutDeleted('post', allPosts, (p) => p.id);
   const { colors } = useTheme();
   const styles = React.useMemo(() => createStyles(colors), [colors]);
   const { width: screenWidth } = useWindowDimensions();
@@ -148,6 +153,12 @@ export function PostGrid({ posts, selectedPostId, onSelectPost, onCloseDetail, o
   const selectedIndex = selectedPostId ? posts.findIndex((p) => p.id === selectedPostId) : -1;
   const visible = selectedIndex >= 0;
 
+  // The open post was just deleted (e.g. from its own menu) — close the viewer
+  // instead of leaving it on an empty page.
+  useEffect(() => {
+    if (selectedPostId && selectedIndex < 0 && contentEvents.isDeleted('post', selectedPostId)) onCloseDetail();
+  }, [selectedPostId, selectedIndex, onCloseDetail]);
+
   // FlatList's `initialScrollIndex` only applies on mount, but this list
   // stays mounted across opens (Modal just toggles `visible`) - re-seed the
   // active index (and jump the list, no animation) every time a new tile
@@ -155,7 +166,9 @@ export function PostGrid({ posts, selectedPostId, onSelectPost, onCloseDetail, o
   useEffect(() => {
     if (visible) {
       setActiveIndex(selectedIndex);
-      listRef.current?.scrollToIndex({ index: selectedIndex, animated: false });
+      // Videos opened from here page through this profile's videos.
+      videoQueue.set(posts);
+      listRef.current?.scrollToIndex({ index: Math.max(0, selectedIndex), animated: false, viewPosition: 0 });
     }
   }, [selectedPostId]);
 

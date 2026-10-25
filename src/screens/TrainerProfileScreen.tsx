@@ -11,7 +11,7 @@ import {
 import { ThemeColors } from '../styles/colors';
 import { useTheme } from '../context/ThemeContext';
 import { trainerApi } from '../api/trainerApi';
-import { TrainerProfile, TrainerSession } from '../types/api';
+import { TrainerPlan, TrainerProfile, TrainerSession } from '../types/api';
 import { resolveAvatarUri, resolveMediaUrl } from '../utils/mediaUrl';
 import TrainerHeroMascot from '../components/TrainerHeroMascot';
 import { LoadingScreen } from '../components/LoadingScreen';
@@ -19,9 +19,12 @@ import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
 import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import ScreenGlow from '../components/ScreenGlow';
 import { goBack } from '../utils/navigation';
+import { MediaGallery, SpecialityChips } from '../components/MediaGallery';
+import { PLAN_TYPE_LABEL, PlanIcon, planPriceLabel } from './TrainerPlanScreen';
+import { discountedPrice, promotionBlurb, todayIso as localTodayIso } from '../utils/promotion';
 
 const CATEGORY_LABELS: Record<string, string> = {
-  GYM: 'Gym', CALISTHENICS: 'Calisthenics', DANCING: 'Dancing', YOGA: 'Yoga',
+  GYM: 'Gym', BODYBUILDING: 'Bodybuilding', CALISTHENICS: 'Calisthenics', ZUMBA: 'Zumba', DANCING: 'Dancing', YOGA: 'Yoga',
   CROSSFIT: 'CrossFit', MARTIAL_ARTS: 'Martial Arts', PILATES: 'Pilates', OTHER: 'Training',
 };
 
@@ -43,6 +46,7 @@ export default function TrainerProfileScreen({ trainerId }: Props) {
   const router = useRouter();
   const [profile, setProfile] = useState<TrainerProfile | null>(null);
   const [sessions, setSessions] = useState<TrainerSession[]>([]);
+  const [plans, setPlans] = useState<TrainerPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -54,6 +58,8 @@ export default function TrainerProfileScreen({ trainerId }: Props) {
       setProfile(p);
       const s: TrainerSession[] = await trainerApi.getSessionsForTrainer(p.trainerFirebaseUid);
       setSessions(s.filter((sess) => sess.active));
+      // Plans are an extra — a failure here must not hide the profile.
+      trainerApi.getPlansForTrainer(p.trainerFirebaseUid).then(setPlans).catch(() => setPlans([]));
     } catch (err) {
       console.warn('Failed to load trainer profile', err);
       setError(true);
@@ -176,10 +182,22 @@ export default function TrainerProfileScreen({ trainerId }: Props) {
           </View>
         )}
 
+        {!!profile.specialities?.length && (
+          <View style={styles.section}>
+            <SpecialityChips items={profile.specialities} accent={colors.trainer} />
+          </View>
+        )}
+
         {!!profile.certifications && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Certifications</Text>
             <Text style={styles.bodyText}>{profile.certifications}</Text>
+          </View>
+        )}
+
+        {!!profile.media?.length && (
+          <View style={styles.section}>
+            <MediaGallery items={profile.media} title="Training Photos & Videos" />
           </View>
         )}
 
@@ -191,6 +209,29 @@ export default function TrainerProfileScreen({ trainerId }: Props) {
                 <Image key={i} source={{ uri: resolveMediaUrl(g) }} style={styles.galleryImage} />
               ))}
             </ScrollView>
+          </View>
+        )}
+
+        {plans.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Plans & Memberships</Text>
+            {plans.map((plan) => (
+              <TouchableOpacity
+                key={plan.id}
+                style={styles.planCard}
+                activeOpacity={0.88}
+                onPress={() => router.push(`/trainer-plan/${plan.id}` as any)}
+              >
+                <View style={styles.planIcon}><PlanIcon type={plan.type} color={colors.trainer} size={20} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.planKicker}>{(PLAN_TYPE_LABEL[plan.type] ?? 'Plan').toUpperCase()}</Text>
+                  <Text style={styles.sessionTitle} numberOfLines={1}>{plan.title}</Text>
+                  {!!plan.summary && <Text style={styles.metaText} numberOfLines={2}>{plan.summary}</Text>}
+                  <Text style={styles.sessionPrice}>{plan.purchased ? 'Owned ✓' : planPriceLabel(plan)}</Text>
+                </View>
+                <ChevronRight color={colors.trainer} size={16} strokeWidth={2.5} />
+              </TouchableOpacity>
+            ))}
           </View>
         )}
 
@@ -220,7 +261,10 @@ export default function TrainerProfileScreen({ trainerId }: Props) {
                     </Text>
                   </View>
                   <View style={styles.sessionFooterRow}>
-                    <Text style={styles.sessionPrice}>LKR {session.price} / session</Text>
+                    <Text style={styles.sessionPrice}>
+                      LKR {discountedPrice(session.price, session.promotion, localTodayIso()) ?? session.price} / session
+                      {session.promotion ? `  ·  ${promotionBlurb(session.promotion)}` : ''}
+                    </Text>
                     <ChevronRight color={colors.trainer} size={16} strokeWidth={2.5} />
                   </View>
                 </View>
@@ -286,4 +330,10 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   sessionTitle: { fontSize: 14.5, fontWeight: '700', color: colors.text },
   sessionFooterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
   sessionPrice: { fontSize: 13, fontWeight: '800', color: colors.trainer },
+  planCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, marginBottom: 10,
+    backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.divider,
+  },
+  planIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.trainer + '18', alignItems: 'center', justifyContent: 'center' },
+  planKicker: { fontSize: 10.5, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.6 },
 });

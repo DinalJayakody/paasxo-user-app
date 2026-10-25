@@ -13,6 +13,9 @@ interface TeamsSectionProps {
   // Only the viewer's own profile offers a "Create Team" card - a friend's
   // profile is read-only here (see ProfileScreen/FriendProfileScreen usage).
   showCreateButton?: boolean;
+  // Bumped by the parent screen's pull-to-refresh so this self-fetching section
+  // reloads with it (it's otherwise only fetched once, when it mounts).
+  refreshKey?: number;
 }
 
 /**
@@ -22,7 +25,7 @@ interface TeamsSectionProps {
  * Self-contained (fetches its own data from the uid prop) so it drops into
  * either screen's Stats tab without extra plumbing there.
  */
-export function TeamsSection({ uid, colors, showCreateButton }: TeamsSectionProps) {
+export function TeamsSection({ uid, colors, showCreateButton, refreshKey = 0 }: TeamsSectionProps) {
   const router = useRouter();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -31,13 +34,14 @@ export function TeamsSection({ uid, colors, showCreateButton }: TeamsSectionProp
   useEffect(() => {
     let cancelled = false;
     if (!uid) { setLoading(false); return; }
-    setLoading(true);
+    // Full spinner only on the first load; a refresh keeps showing current teams.
+    if (refreshKey === 0) setLoading(true);
     teamApi.getTeamsForUser(uid)
       .then((data) => { if (!cancelled) setTeams(data); })
       .catch(() => { if (!cancelled) setTeams([]); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [uid]);
+  }, [uid, refreshKey]);
 
   if (loading) {
     return (

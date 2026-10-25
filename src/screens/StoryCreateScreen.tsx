@@ -23,6 +23,17 @@ export default function StoryCreateScreen() {
       audioTrackId: payload.audioTrackId,
       audioTrackUrl: payload.audioTrackUrl,
       audioVolume: payload.audioVolume,
+      taggedUserIds: payload.taggedUserIds,
+      captionStyle: payload.captionStyle,
+      captionScale: payload.captionScale,
+      locationName: payload.locationName,
+      locationPlaceId: payload.locationPlaceId,
+      locationLat: payload.locationLat,
+      locationLng: payload.locationLng,
+      locationX: payload.locationX,
+      locationY: payload.locationY,
+      effect: payload.effect,
+      soundOff: payload.soundOff,
     });
   };
 
@@ -32,6 +43,8 @@ export default function StoryCreateScreen() {
       allowPhoto
       allowBoomerang
       allowMusic
+      allowTags
+      storyMode
       submitLabel="Share Story"
       submittingLabel="Uploading…"
       doneLabel="Shared!"

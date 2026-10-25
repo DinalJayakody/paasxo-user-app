@@ -1,3 +1,5 @@
+import { WhistleIcon } from '../components/icons/WhistleIcon';
+import { useActivityLocationGate } from '../components/activity/ActivityLocationGate';
 import React, { useState, useEffect, useContext, useRef, useMemo } from 'react';
 import {
   View,
@@ -18,6 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   Search,
   Bell,
+  MessageCircle,
   Zap,
   Trophy,
   Calendar,
@@ -35,6 +38,11 @@ import {
   Landmark,
   X,
   History,
+  Swords,
+  Globe,
+  Ticket,
+  Check,
+  Users2,
 } from 'lucide-react-native';
 import { notificationApi } from '../api/notificationApi';
 import * as Location from 'expo-location';
@@ -43,6 +51,7 @@ import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
 import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
 import HeaderIconButton from '../components/HeaderIconButton';
+import { useChat } from '../stores/chatStore';
 import ScreenGlow from '../components/ScreenGlow';
 import { PaasxoLogoLoader } from '../components/PaasxoLogoLoader';
 import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
@@ -61,9 +70,10 @@ import { activityStorage, StoredActivity } from '../api/activityApi';
 import { resolveMediaUrl } from '../utils/mediaUrl';
 import { TrainerBooking } from '../types/api';
 import { extractApiError } from '../utils/apiError';
+import { serverTimeAgo, serverTimeMs } from '../utils/serverTime';
 
 const TRAINER_CATEGORY_LABELS: Record<string, string> = {
-  GYM: 'Gym', CALISTHENICS: 'Calisthenics', DANCING: 'Dancing', YOGA: 'Yoga',
+  GYM: 'Gym', BODYBUILDING: 'Bodybuilding', CALISTHENICS: 'Calisthenics', ZUMBA: 'Zumba', DANCING: 'Dancing', YOGA: 'Yoga',
   CROSSFIT: 'CrossFit', MARTIAL_ARTS: 'Martial Arts', PILATES: 'Pilates', OTHER: 'Training',
 };
 
@@ -79,6 +89,10 @@ interface TrainerCard {
 interface MatchCard {
   id: string;
   title: string;
+  // When the booking was made / when the viewer joined (server UTC) — drive the
+  // newest-first order of My Bookings and Joined.
+  bookedAt?: string;
+  joinedAt?: string;
   sportType?: string;
   images?: string[];
   venueName?: string;
@@ -99,6 +113,12 @@ interface MatchCard {
   userId?: string;
   playerIds?: string[];
   status?: string;
+  /** Public game at a public space — PAASXO fee paid by the organiser, free to join. */
+  isPublicSpaceMatch?: boolean;
+  /** Venue match anyone can join directly (BookingResponse.isPublicMatch). */
+  isPublicMatch?: boolean;
+  /** Raw match price (LKR) — null/0 means free to join. */
+  totalPriceValue?: number | null;
 }
 
 // Same Haversine formula used by ExploreScreen and the backend's GeoUtils —
@@ -115,8 +135,43 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// Trainer-tab chips — values are backend TrainerCategory.
+const HOME_TRAINER_TYPES: { id: string | null; label: string }[] = [
+  { id: null, label: 'All' },
+  { id: 'GYM', label: 'Gym' },
+  { id: 'CALISTHENICS', label: 'Calisthenics' },
+  { id: 'BODYBUILDING', label: 'Bodybuilding' },
+  { id: 'ZUMBA', label: 'Zumba' },
+  { id: 'YOGA', label: 'Yoga' },
+  { id: 'CROSSFIT', label: 'CrossFit' },
+  { id: 'MARTIAL_ARTS', label: 'Martial Arts' },
+  { id: 'PILATES', label: 'Pilates' },
+  { id: 'DANCING', label: 'Dancing' },
+];
+
 type MainTab = 'MATCHES' | 'VENUES' | 'TOURNAMENTS' | 'TRAINER_SESSIONS' | 'WALKING_RUNNING';
 type MatchView = 'NEARBY' | 'MY_BOOKINGS' | 'JOINED';
+// Explore → Matches → Nearby filters (server-side, see BookingService.filterBookings).
+type MatchTypeFilter = 'ALL' | 'PUBLIC' | 'PAID';
+type MatchScope = 'NEARBY' | 'ANYWHERE';
+const NEARBY_RADIUS_KM = 20;
+const MAX_FILTER_PAGES = 5; // per load: pages scanned to fill one screen when filtering client-side
+
+/**
+ * Same rules as BookingService.filterBookings, applied again on the phone so the
+ * Public / Paid / sport filters are exact even against a server that predates
+ * them (it ignores unknown params and returns everything).
+ *  - PUBLIC: public games, plus venue matches open for anyone to join.
+ *  - PAID: venue matches that cost money to join — a public game's PAASXO fee is
+ *    paid once by its organiser, so it's never "paid" for players.
+ */
+function matchPassesFilters(m: Pick<MatchCard, 'isPublicSpaceMatch' | 'isPublicMatch' | 'totalPriceValue' | 'sportType'>,
+                            type: MatchTypeFilter, sports: string[]): boolean {
+  if (sports.length && !sports.includes((m.sportType ?? '').toUpperCase())) return false;
+  if (type === 'PUBLIC') return !!m.isPublicSpaceMatch || !!m.isPublicMatch;
+  if (type === 'PAID') return !m.isPublicSpaceMatch && (m.totalPriceValue ?? 0) > 0;
+  return true;
+}
 // Trainer tab's own 2-way view, mirroring Matches' Nearby/Joined split.
 type TrainerSessionsView = 'NEARBY' | 'JOINED';
 
@@ -191,6 +246,7 @@ const getSportMascots = (colors: ThemeColors) => [
 ];
 
 export default function HomeScreen() {
+  const chatUnread = useChat((st) => st.unreadTotal);
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const sportMascots = useMemo(() => getSportMascots(colors), [colors]);
@@ -208,6 +264,14 @@ export default function HomeScreen() {
   const [joinedMatches, setJoinedMatches] = useState<MatchCard[]>([]);
   const [matchView, setMatchView] = useState<MatchView>('NEARBY');
   const [loadingMatches, setLoadingMatches] = useState(true);
+  // Nearby feed = paginated server search. A typed search always covers every
+  // match on Paasxo (title, venue or place name), nearest first.
+  const [matchTypeFilter, setMatchTypeFilter] = useState<MatchTypeFilter>('ALL');
+  const [matchScope, setMatchScope] = useState<MatchScope>('NEARBY');
+  const [loadingMoreMatches, setLoadingMoreMatches] = useState(false);
+  const [matchesHasMore, setMatchesHasMore] = useState(false);
+  const [matchesError, setMatchesError] = useState(false);
+  const [matchesReloadKey, setMatchesReloadKey] = useState(0);
   const [loadingJoined, setLoadingJoined] = useState(false);
   const [joinedLoaded, setJoinedLoaded] = useState(false);
   const [tournaments, setTournaments] = useState<TournamentFeedItem[]>([]);
@@ -243,6 +307,8 @@ export default function HomeScreen() {
   const [loadingMoreTournaments, setLoadingMoreTournaments] = useState(false);
   const [tournamentSearchHasMore, setTournamentSearchHasMore] = useState(false);
   const router = useRouter();
+  // Location permission is explained/asked before the tracker opens.
+  const { launch: launchActivity, gate: activityGate } = useActivityLocationGate();
   const insets = useSafeAreaInsets();
   const { user } = useContext(AuthContext);
   const { active: isPro } = useSubscription();
@@ -263,7 +329,14 @@ export default function HomeScreen() {
   useEffect(() => { userLngRef.current = userLng; }, [userLng]);
   const venuesPageRef = useRef(0);
   const trainersPageRef = useRef(0);
+  // Training-type chips on the Trainer tab (Gym, Calisthenics, Bodybuilding…).
+  const [trainerTypeFilter, setTrainerTypeFilter] = useState<string | null>(null);
+  const trainerTypeRef = useRef<string | null>(null);
+  trainerTypeRef.current = trainerTypeFilter;
   const tournamentSearchPageRef = useRef(0);
+  const matchesPageRef = useRef(0);
+  const matchesRequestRef = useRef(0); // drops responses from superseded searches
+  const lastMatchSearchKeyRef = useRef<string | null>(null);
   const PAGE_SIZE = 20;
 
   useEffect(() => {
@@ -336,6 +409,64 @@ export default function HomeScreen() {
     </ScrollView>
   );
 
+  // Explore → Matches → Nearby: match type (All / Public games / Paid) and
+  // distance scope. A typed search always covers every match, so the scope
+  // pill then reads "Everywhere" and is informational only.
+  const MATCH_TYPE_OPTIONS: { key: MatchTypeFilter; label: string; Icon: typeof Globe; hint: string }[] = [
+    { key: 'ALL', label: 'All', Icon: Trophy, hint: 'All matches' },
+    { key: 'PUBLIC', label: 'Public games', Icon: Users2, hint: 'Open games anyone can ask to join' },
+    { key: 'PAID', label: 'Paid', Icon: Ticket, hint: 'Venue matches with a joining fee' },
+  ];
+  const renderMatchFilters = () => {
+    const typed = !!searchText.trim();
+    const nearbyOn = !typed && matchScope === 'NEARBY' && userLat != null;
+    return (
+      <View style={styles.matchFilterRow}>
+        <View style={styles.matchTypeGroup} accessibilityRole="radiogroup">
+          {MATCH_TYPE_OPTIONS.map(({ key, label, Icon, hint }) => {
+            const on = matchTypeFilter === key;
+            return (
+              <TouchableOpacity
+                key={key}
+                style={[styles.matchTypeChip, on && styles.matchTypeChipOn]}
+                onPress={() => setMatchTypeFilter(key)}
+                activeOpacity={0.8}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: on }}
+                accessibilityLabel={label}
+                accessibilityHint={hint}
+              >
+                <Icon size={12} color={on ? colors.white : colors.textMuted} strokeWidth={2.4} />
+                <Text style={[styles.matchTypeChipText, on && styles.matchTypeChipTextOn]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        {/* "Nearby" on/off: on = within NEARBY_RADIUS_KM, off = every open match.
+            A typed search always covers every match, so it's greyed out meanwhile. */}
+        <TouchableOpacity
+          style={[styles.nearbyToggle, nearbyOn && styles.nearbyToggleOn, typed && { opacity: 0.45 }]}
+          onPress={() => {
+            if (typed) return;
+            if (userLat == null) { loadNearbyAndMine(); return; } // ask for location again
+            setMatchScope((sc) => (sc === 'NEARBY' ? 'ANYWHERE' : 'NEARBY'));
+          }}
+          disabled={typed}
+          activeOpacity={0.8}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: nearbyOn, disabled: typed }}
+          accessibilityLabel={`Nearby, within ${NEARBY_RADIUS_KM} kilometres`}
+          accessibilityHint={typed ? 'Searches always cover every match' : userLat == null ? 'Turn on location to see matches near you' : nearbyOn ? 'Turn off to see all matches' : 'Turn on to see only matches near you'}
+        >
+          {nearbyOn
+            ? <Check size={13} color={colors.white} strokeWidth={3} />
+            : <MapPin size={13} color={colors.primary} strokeWidth={2.4} />}
+          <Text style={[styles.nearbyToggleText, nearbyOn && styles.nearbyToggleTextOn]} numberOfLines={1}>Nearby</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   const firstName = user?.displayName?.trim().split(' ')[0] || user?.email?.split('@')[0] || 'Player';
 
   const formatDateTime = (value?: string | number) => {
@@ -350,6 +481,8 @@ export default function HomeScreen() {
     if (Number.isNaN(parsed.getTime())) return String(value);
     return parsed.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   };
+
+  const timeAgo = serverTimeAgo;
 
   const parseMatches = (data: any[]): MatchCard[] =>
     data.map((item, index) => {
@@ -397,12 +530,18 @@ export default function HomeScreen() {
         // A Public Match (see CreateBookingPayload.isPublicMatch) always
         // carries a flat platform join fee even at $0 venue cost, so it's
         // never truly "Free" — surface that instead of a misleading label.
-        price: totalBookingPrice == null
+        // A public game's fee is paid once by the organiser — joining is free.
+        price: item.isPublicSpaceMatch
+          ? 'Free to join'
+          : totalBookingPrice == null
           ? (item.isPublicMatch && item.publicMatchJoinFee != null
               ? `LKR ${Number(item.publicMatchJoinFee).toFixed(2)} to join`
               : 'Free')
           : `LKR ${totalBookingPrice.toFixed(2)}`,
-        pricePerPlayer: perPlayer,
+        pricePerPlayer: item.isPublicSpaceMatch ? undefined : perPlayer,
+        isPublicSpaceMatch: !!item.isPublicSpaceMatch,
+        isPublicMatch: !!item.isPublicMatch,
+        totalPriceValue: totalBookingPrice,
         spotsLeft: item.spotsLeft ?? item.availableSpots ?? 0,
         maxSpots: maxP,
         joinedPlayers: item.joinedPlayersCount ?? item.joinedPlayers
@@ -411,6 +550,8 @@ export default function HomeScreen() {
         level: item.level || item.skillLevel || '',
         isOwn: !!user && item.userId === user.firebaseUid,
         userId: item.userId,
+        bookedAt: item.bookedAt ?? undefined,
+        joinedAt: item.joinedAt ?? undefined,
         status: item.status ?? item.vendorStatus ?? undefined,
         playerIds: Array.isArray(item.playerIds)
           ? item.playerIds
@@ -420,35 +561,74 @@ export default function HomeScreen() {
       };
     });
 
+  // GPS fix + "My bookings"; the Nearby feed itself is loaded by loadMatchSearch,
+  // which this triggers (matchesReloadKey) once the location is known.
   const loadNearbyAndMine = React.useCallback(async () => {
-    setLoadingMatches(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      let coords: { latitude: number; longitude: number } | null = null;
       if (status === 'granted') {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-        setUserLat(coords.latitude);
-        setUserLng(coords.longitude);
+        userLatRef.current = pos.coords.latitude;
+        userLngRef.current = pos.coords.longitude;
+        setUserLat(pos.coords.latitude);
+        setUserLng(pos.coords.longitude);
       }
-      // Nearby feed and "my bookings" are independent reads — run them together
-      // instead of sequentially so one call's latency doesn't block the other.
-      const [nearbyRaw, myRaw] = await Promise.all([
-        coords
-          ? bookingApi.getNearbyBookings(coords.latitude, coords.longitude, 20)
-          : bookingApi.getAllBookings(),
-        bookingApi.getMyBookings(),
-      ]);
-      setMatches(parseMatches(nearbyRaw));
-      setMyMatches(parseMatches(myRaw));
+    } catch { /* no location — the feed falls back to every match, soonest first */ }
+    setMatchesReloadKey((k) => k + 1);
+    try {
+      setMyMatches(parseMatches(await bookingApi.getMyBookings()));
+    } catch { /* keep what we had */ }
+  }, []);
+
+  // One page of the Explore match search. Reads live values from refs so its
+  // identity stays stable; a newer search always wins over a slower older one.
+  const matchSearchRef = useRef({ query: '', type: 'ALL' as MatchTypeFilter, scope: 'NEARBY' as MatchScope, sports: [] as string[] });
+  const loadMatchSearch = React.useCallback(async (reset: boolean) => {
+    const { query, type, scope, sports } = matchSearchRef.current;
+    const requestId = ++matchesRequestRef.current;
+    const pageToLoad = reset ? 0 : matchesPageRef.current + 1;
+    if (reset) { setLoadingMatches(true); setMatchesError(false); } else setLoadingMoreMatches(true);
+    const lat = userLatRef.current ?? undefined;
+    const lng = userLngRef.current ?? undefined;
+    try {
+      // Fetch until this load has something to show: when filters thin a page out
+      // (older server), keep reading the following pages, up to MAX_FILTER_PAGES.
+      let page = pageToLoad;
+      let lastFetched = pageToLoad;
+      let more = false;
+      const found: MatchCard[] = [];
+      for (let scanned = 0; scanned < MAX_FILTER_PAGES; scanned++, page++) {
+        const { content, hasMore } = await bookingApi.filterBookings({
+          query: query || undefined,
+          lat, lng,
+          radiusKm: NEARBY_RADIUS_KM,
+          // A typed search (or no GPS) reaches every match on Paasxo.
+          worldwide: !!query || scope === 'ANYWHERE' || lat == null,
+          type,
+          sport: sports.length ? sports.join(',') : undefined,
+          page,
+          size: PAGE_SIZE,
+        });
+        if (requestId !== matchesRequestRef.current) return;
+        lastFetched = page;
+        found.push(...parseMatches(content).filter((m) => matchPassesFilters(m, type, sports)));
+        more = hasMore;
+        if (!hasMore || found.length >= PAGE_SIZE / 2) break;
+      }
+      setMatches((prev) => {
+        if (reset) return found;
+        const seen = new Set(prev.map((m) => m.id));
+        return [...prev, ...found.filter((m) => !seen.has(m.id))];
+      });
+      matchesPageRef.current = lastFetched;
+      setMatchesHasMore(more);
     } catch {
-      try {
-        const myRaw = await bookingApi.getMyBookings();
-        setMatches(parseMatches(myRaw));
-        setMyMatches(parseMatches(myRaw));
-      } catch { /* show empty */ }
+      if (requestId !== matchesRequestRef.current) return;
+      if (reset) { setMatches([]); setMatchesHasMore(false); setMatchesError(true); }
     } finally {
-      setLoadingMatches(false);
+      if (requestId === matchesRequestRef.current) {
+        if (reset) setLoadingMatches(false); else setLoadingMoreMatches(false);
+      }
     }
   }, []);
 
@@ -593,7 +773,8 @@ export default function HomeScreen() {
       }
       const pageToLoad = reset ? 0 : trainersPageRef.current + 1;
       const { content, hasMore } = await trainerApi.filterTrainers({
-        query: query.trim() || undefined, lat, lng, radiusKm: 50, page: pageToLoad, size: PAGE_SIZE,
+        query: query.trim() || undefined, category: trainerTypeRef.current ?? undefined,
+        lat, lng, radiusKm: 50, page: pageToLoad, size: PAGE_SIZE,
       });
       const mapped = mapTrainerContent(content);
       trainersPageRef.current = pageToLoad;
@@ -701,12 +882,34 @@ export default function HomeScreen() {
       const t = setTimeout(() => loadNearbyTrainers(searchText, true), delay);
       return () => clearTimeout(t);
     }
-  }, [activeTab, trainerSessionsView, searchText, loadVenues, loadTournamentSearch, loadNearbyTrainers]);
+  }, [activeTab, trainerSessionsView, searchText, trainerTypeFilter, loadVenues, loadTournamentSearch, loadNearbyTrainers]);
+
+  // Explore match search: re-runs when the query (typed on the Matches tab), the
+  // Public/Paid filter, the Near me/Anywhere scope or the sport chips change, and
+  // on every focus/refresh (matchesReloadKey). Typing is debounced; identical
+  // searches (e.g. just switching tabs back) are not refetched.
+  const sportsKey = selectedSportFilters.slice().sort().join(',');
+  useEffect(() => {
+    if (matchesReloadKey === 0) return; // wait for the first location attempt
+    if (activeTab !== 'MATCHES' && lastMatchSearchKeyRef.current !== null) return;
+    const query = activeTab === 'MATCHES' ? searchText.trim().slice(0, 80) : matchSearchRef.current.query;
+    const key = `${matchesReloadKey}|${query.toLowerCase()}|${matchTypeFilter}|${matchScope}|${sportsKey}`;
+    if (key === lastMatchSearchKeyRef.current) return;
+    const typed = query !== matchSearchRef.current.query;
+    const t = setTimeout(() => {
+      lastMatchSearchKeyRef.current = key;
+      matchSearchRef.current = { query, type: matchTypeFilter, scope: matchScope, sports: sportsKey ? sportsKey.split(',') : [] };
+      loadMatchSearch(true);
+    }, typed && query ? 350 : 0);
+    return () => clearTimeout(t);
+  }, [activeTab, searchText, matchTypeFilter, matchScope, sportsKey, matchesReloadKey, loadMatchSearch]);
 
   // Infinite scroll: called from the main ScrollView's onScroll handler when
   // the user nears the bottom while an active, has-more search tab is open.
   const loadMoreForActiveTab = React.useCallback(() => {
-    if (activeTab === 'VENUES' && venuesHasMore && !loadingVenues && !loadingMoreVenues) {
+    if (activeTab === 'MATCHES' && matchView === 'NEARBY' && matchesHasMore && !loadingMatches && !loadingMoreMatches) {
+      loadMatchSearch(false);
+    } else if (activeTab === 'VENUES' && venuesHasMore && !loadingVenues && !loadingMoreVenues) {
       loadVenues(searchText, false);
     } else if (activeTab === 'TOURNAMENTS' && searchText.trim().length > 0
       && tournamentSearchHasMore && !loadingTournamentSearch && !loadingMoreTournaments) {
@@ -717,6 +920,7 @@ export default function HomeScreen() {
     }
   }, [
     activeTab, searchText, trainerSessionsView,
+    matchView, matchesHasMore, loadingMatches, loadingMoreMatches, loadMatchSearch,
     venuesHasMore, loadingVenues, loadingMoreVenues, loadVenues,
     tournamentSearchHasMore, loadingTournamentSearch, loadingMoreTournaments, loadTournamentSearch,
     trainersHasMore, loadingTrainers, loadingMoreTrainers, loadNearbyTrainers,
@@ -809,16 +1013,27 @@ export default function HomeScreen() {
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
-      const tasks: Promise<any>[] = [loadNearbyAndMine(), loadTournaments()];
-      if (matchView === 'JOINED') tasks.push(loadJoinedMatches());
-      if (activeTab === 'TRAINER_SESSIONS') tasks.push(loadNearbyTrainers(searchText, true));
+      // Everything the screen loads on first open, fresh from the server:
+      const tasks: Promise<any>[] = [
+        loadNearbyAndMine(),
+        loadTournaments(),
+        notificationApi.getUnreadCount('GENERAL').then(setUnreadNotifications).catch(() => {}),
+        activityStorage.getAll().then((all) => setRecentActivities(all.slice(0, 3))).catch(() => {}),
+      ];
+      // Joined matches: reload now if on screen, otherwise mark stale so the next
+      // switch to that view fetches fresh data (it's lazy-loaded once).
+      if (matchView === 'JOINED') tasks.push(loadJoinedMatches()); else setJoinedLoaded(false);
+      if (activeTab === 'TRAINER_SESSIONS') {
+        tasks.push(trainerSessionsView === 'JOINED' ? loadJoinedTrainerSessions() : loadNearbyTrainers(searchText, true));
+      }
       if (activeTab === 'VENUES') tasks.push(loadVenues(searchText, true));
       if (activeTab === 'TOURNAMENTS' && searchText.trim()) tasks.push(loadTournamentSearch(searchText, true));
       await Promise.all(tasks);
     } finally {
       setRefreshing(false);
     }
-  }, [loadNearbyAndMine, loadTournaments, loadJoinedMatches, loadNearbyTrainers, loadVenues, loadTournamentSearch, matchView, activeTab, searchText]);
+  }, [loadNearbyAndMine, loadTournaments, loadJoinedMatches, loadJoinedTrainerSessions, loadNearbyTrainers, loadVenues,
+      loadTournamentSearch, matchView, activeTab, trainerSessionsView, searchText]);
 
   const renderJoinedTrainerSessionCard = (session: TrainerBooking) => {
     const cancelled = session.status === 'CANCELLED';
@@ -910,8 +1125,6 @@ export default function HomeScreen() {
       return `${item.spotsLeft ?? 0} spots left`;
     })();
 
-    const sportEmoji = item.sportType?.toLowerCase().includes('cricket') ? '🏏'
-      : item.sportType?.toLowerCase().includes('pickle') ? '🏓' : '⚽';
 
     return (
       <TouchableOpacity
@@ -921,19 +1134,31 @@ export default function HomeScreen() {
         style={styles.matchCard}
       >
         <View style={styles.matchCardHeader}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, rowGap: 5, flex: 1, marginRight: 10 }}>
             <View style={[styles.sportTag, { backgroundColor: colors.primaryLight }]}>
               <Text style={styles.sportTagText}>{item.sportType?.toUpperCase()}</Text>
             </View>
+            {item.isPublicSpaceMatch && (
+              <View style={[styles.statusBadge, { backgroundColor: colors.success + '18', borderColor: colors.success + '55' }]}>
+                <Text style={[styles.statusBadgeText, { color: colors.success }]}>PUBLIC GAME</Text>
+              </View>
+            )}
+            {item.isOwn && matchView !== 'MY_BOOKINGS' && (
+              <View style={[styles.statusBadge, { backgroundColor: colors.primary + '14', borderColor: colors.primary + '50' }]}>
+                <Text style={[styles.statusBadgeText, { color: colors.primary }]}>You're hosting</Text>
+              </View>
+            )}
             {/* Vendor status badge — shown in My Bookings */}
-            {item.isOwn && (() => {
+            {item.isOwn && matchView === 'MY_BOOKINGS' && (() => {
               const s = item.status ?? '';
               const isPending = s === 'PENDING_VENDOR' || s === 'PENDING';
               const isActive = s === 'ACTIVE_MATCH' || s === 'CONFIRMED';
               const isCancelled = s === 'CANCELLED';
               if (isPending) return (
                 <View style={[styles.statusBadge, { backgroundColor: '#FEF3C7', borderColor: '#FCD34D' }]}>
-                  <Text style={[styles.statusBadgeText, { color: '#92400E' }]}>⏳ Pending Venue</Text>
+                  <Text style={[styles.statusBadgeText, { color: '#92400E' }]}>
+                    {item.isPublicSpaceMatch ? '💳 Pay fee to publish' : '⏳ Pending Venue'}
+                  </Text>
                 </View>
               );
               if (isActive) return (
@@ -949,7 +1174,7 @@ export default function HomeScreen() {
               return null;
             })()}
           </View>
-          <View style={{ alignItems: 'flex-end' }}>
+          <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
             {item.pricePerPlayer ? (
               <>
                 <Text style={styles.matchPrice}>{item.pricePerPlayer}</Text>
@@ -965,13 +1190,19 @@ export default function HomeScreen() {
           <Image source={{ uri: item.images[0] }} style={styles.matchImage} resizeMode="cover" />
         ) : (
           <LinearGradient colors={[colors.primary + '30', colors.primaryDark + '20']} style={styles.matchImagePlaceholder}>
-            <Text style={styles.matchImagePlaceholderEmoji}>{sportEmoji}</Text>
+            <SportIcon sport={(item.sportType ?? '').toUpperCase()} size={44} color={colors.primary} />
             <Text style={styles.matchImagePlaceholderText}>{item.title}</Text>
           </LinearGradient>
         )}
 
         <View style={styles.matchDetails}>
           <Text style={styles.matchTitle}>{item.title}</Text>
+          {matchView === 'MY_BOOKINGS' && timeAgo(item.bookedAt) && (
+            <Text style={styles.matchRecency}>Booked {timeAgo(item.bookedAt)}</Text>
+          )}
+          {matchView === 'JOINED' && timeAgo(item.joinedAt ?? item.bookedAt) && (
+            <Text style={styles.matchRecency}>Joined {timeAgo(item.joinedAt ?? item.bookedAt)}</Text>
+          )}
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => {/* could open maps */ }}
@@ -979,7 +1210,7 @@ export default function HomeScreen() {
           >
             <MapPin color={colors.primary} size={13} strokeWidth={2} />
             <Text style={[styles.matchMetaText, { color: colors.primary }]} numberOfLines={1}>
-              {item.venueName ? `${item.venueName} · ${item.locationName}` : item.locationName}
+              {item.venueName && item.venueName !== item.locationName ? `${item.venueName} · ${item.locationName}` : item.locationName}
             </Text>
           </TouchableOpacity>
           <View style={styles.matchMetaRow}>
@@ -1037,7 +1268,7 @@ export default function HomeScreen() {
       <TouchableOpacity
         key={venue.id}
         activeOpacity={0.88}
-        onPress={() => router.push('/create-match' as any)}
+        onPress={() => router.push(`/venue/${venue.id}` as any)}
         style={styles.matchCard}
       >
         <View style={styles.matchCardHeader}>
@@ -1076,7 +1307,7 @@ export default function HomeScreen() {
               </View>
             </View>
           )}
-          <Button title="Book Now" onPress={() => router.push('/create-match' as any)} style={styles.joinBtn} />
+          <Button title="Book Now" onPress={() => router.push({ pathname: '/create-match', params: { venueId: venue.id } } as any)} style={styles.joinBtn} />
         </View>
       </TouchableOpacity>
     );
@@ -1086,11 +1317,12 @@ export default function HomeScreen() {
   // MY_BOOKINGS shows everything (organizer needs to see pending status too). Nearby also
   // excludes matches the current user organized themselves — those already live under My
   // Bookings, and the point of Nearby is finding OTHER people's matches to join.
-  const activeMatchSource = matchView === 'NEARBY'
-    ? matches.filter((m) =>
-        m.status !== 'PENDING_VENDOR' && m.status !== 'PENDING' &&
-        (!user?.firebaseUid || m.userId !== user.firebaseUid)
-      )
+  // Nearby is already searched, filtered and ordered by the server (only live
+  // matches). Your own matches stay in it, tagged "You're hosting", so a match
+  // you just published can be found like everyone else's.
+  const isNearbyView = matchView === 'NEARBY';
+  const activeMatchSource = isNearbyView
+    ? matches
     : matchView === 'MY_BOOKINGS'
     ? myMatches
     : joinedMatches.filter((m) => m.status !== 'PENDING_VENDOR' && m.status !== 'PENDING');
@@ -1099,6 +1331,7 @@ export default function HomeScreen() {
   // against all three fields so "CR7", "Wattala", and "Friday Futsal" all work.
   const filteredMatches = activeMatchSource
     .filter((m) => {
+      if (isNearbyView) return true;
       const q = searchText.trim().toLowerCase();
       const textMatch = !q ||
         m.title?.toLowerCase().includes(q) ||
@@ -1115,10 +1348,17 @@ export default function HomeScreen() {
           ? haversineKm(userLat, userLng, m.latitude, m.longitude)
           : undefined,
     }))
-    // Closest-first only makes sense for the location-driven Nearby feed — My
-    // Bookings/Joined stay in the order the backend returns (most-recent-first).
+    // Nearby: closest first. My Bookings: newest booking first. Joined: most
+    // recent join first (falls back to when the match was booked). The server
+    // already returns this order; sorting here keeps it right after any merge/filter.
     .sort((a, b) => {
-      if (matchView !== 'NEARBY') return 0;
+      if (matchView === 'MY_BOOKINGS') {
+        return serverTimeMs(b.bookedAt) - serverTimeMs(a.bookedAt) || Number(b.id) - Number(a.id);
+      }
+      if (matchView === 'JOINED') {
+        return serverTimeMs(b.joinedAt ?? b.bookedAt) - serverTimeMs(a.joinedAt ?? a.bookedAt) || Number(b.id) - Number(a.id);
+      }
+      if (isNearbyView) return 0; // keep the server's nearest-first / soonest-first order
       if (a.distanceKm == null && b.distanceKm == null) return 0;
       if (a.distanceKm == null) return 1;
       if (b.distanceKm == null) return -1;
@@ -1130,7 +1370,11 @@ export default function HomeScreen() {
   // without this, a freshly-created match reads as "nearby is broken" instead of
   // "awaiting venue approval".
   const pendingOwnCount = myMatches.filter(
-    (m) => m.status === 'PENDING_VENDOR' || m.status === 'PENDING'
+    (m) => (m.status === 'PENDING_VENDOR' || m.status === 'PENDING') && !m.isPublicSpaceMatch
+  ).length;
+  // Public games don't wait for a venue — they go live once the PAASXO fee is paid.
+  const unpaidPublicCount = myMatches.filter(
+    (m) => (m.status === 'PENDING_VENDOR' || m.status === 'PENDING') && m.isPublicSpaceMatch
   ).length;
 
   // A non-empty search on the Tournaments tab switches from the tracked
@@ -1151,15 +1395,20 @@ export default function HomeScreen() {
     : activeTab === 'TOURNAMENTS' ? 'Search tournaments...'
     : activeTab === 'TRAINER_SESSIONS'
     ? (trainerSessionsView === 'JOINED' ? 'Search your joined sessions...' : 'Search trainers...')
-    : 'Search matches by title, venue...';
+    : 'Search all matches by title, venue or place...';
 
+  const matchQuery = searchText.trim();
+  const searchingEverywhere = !!matchQuery || matchScope === 'ANYWHERE' || userLat == null;
   const matchViewTitle =
-    matchView === 'NEARBY' ? 'Nearby Matches'
+    matchView === 'NEARBY' ? (matchQuery ? 'Search Results' : 'Matches')
     : matchView === 'MY_BOOKINGS' ? 'My Bookings'
     : 'My Joined Matches';
 
   const matchViewSubtitle =
-    matchView === 'NEARBY' ? 'Within 20 km of you'
+    matchView === 'NEARBY'
+      ? (matchQuery ? `Every match matching “${matchQuery}”${userLat != null ? ', nearest first' : ''}`
+        : searchingEverywhere ? (userLat != null ? 'All open matches, nearest first' : 'All open matches, soonest first')
+        : `Nearby · within ${NEARBY_RADIUS_KM} km of you`)
     : matchView === 'MY_BOOKINGS' ? 'Matches you organised'
     : 'Matches you joined as a player';
 
@@ -1216,10 +1465,22 @@ export default function HomeScreen() {
             <Text style={styles.headerSubtitle}>Ready to play today?</Text>
           </View>
           <HeaderIconButton
+            onPress={() => router.push('/messages' as any)}
+            style={[styles.notificationBell, { marginRight: 8 }]}
+          >
+            <MessageCircle color={colors.white} size={19} strokeWidth={2} />
+            {chatUnread > 0 && (
+              <View style={styles.bellBadge}>
+                <Text style={styles.bellBadgeText}>{chatUnread > 9 ? '9+' : chatUnread}</Text>
+              </View>
+            )}
+          </HeaderIconButton>
+          <HeaderIconButton
             onPress={() => router.push('/notifications?category=GENERAL' as any)}
             style={styles.notificationBell}
+            accessibilityLabel={unreadNotifications > 0 ? `Notifications, ${unreadNotifications} unread` : 'Notifications'}
           >
-            <Bell color={colors.white} size={19} strokeWidth={2} />
+            <WhistleIcon color={colors.white} size={21} strokeWidth={1.9} />
             {unreadNotifications > 0 && (
               <View style={styles.bellBadge}>
                 <Text style={styles.bellBadgeText}>
@@ -1253,9 +1514,20 @@ export default function HomeScreen() {
               onChangeText={setSearchText}
             />
             <TouchableOpacity
-              onPress={() => router.push('/explore')}
+              onPress={() => {
+                // Open the filter page on the matching category, carrying the
+                // typed text along (the filter page has no search box of its own).
+                const cat = activeTab === 'VENUES' ? 'VENUES'
+                  : activeTab === 'TOURNAMENTS' ? 'EVENTS'
+                  : activeTab === 'TRAINER_SESSIONS' ? 'TRAINERS'
+                  : 'GAMES';
+                const q = searchText.trim();
+                router.push(`/explore?category=${cat}${q ? `&q=${encodeURIComponent(q)}` : ''}` as any);
+              }}
               activeOpacity={0.8}
               style={styles.searchFilterBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Filters"
             >
               <Filter color={colors.primary} size={18} strokeWidth={2.5} />
             </TouchableOpacity>
@@ -1292,6 +1564,38 @@ export default function HomeScreen() {
         {/* ── MATCHES TAB ─────────────────────────────────────────── */}
         {activeTab === 'MATCHES' && (
           <>
+            {/* Team vs Team — its own screen (TeamMatchesScreen): open matches a team
+                has booked and paid for, waiting for another team to take them on.
+                Static entry card on purpose — no extra request on every Explore load. */}
+            <TouchableOpacity
+              style={styles.teamVsTeamCard}
+              activeOpacity={0.88}
+              onPress={() => router.push('/team-matches' as any)}
+            >
+              <LinearGradient
+                colors={[colors.primary + '1F', colors.primary + '08']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <View style={styles.teamVsTeamIcon}>
+                <Swords color={colors.white} size={22} strokeWidth={2.3} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={styles.teamVsTeamTitleRow}>
+                  <Text style={styles.teamVsTeamTitle}>Team vs Team</Text>
+                  <View style={styles.teamVsTeamBadge}>
+                    <Text style={styles.teamVsTeamBadgeText}>50/50</Text>
+                  </View>
+                </View>
+                <Text style={styles.teamVsTeamSub}>
+                  Take on teams near you with your own team. Each team pays half.
+                </Text>
+                <Text style={styles.teamVsTeamSports}>Futsal · Cricket · Pickleball · Paddleball</Text>
+              </View>
+              <ChevronRight color={colors.primary} size={20} strokeWidth={2.4} />
+            </TouchableOpacity>
+
             {/* Pro banner */}
             {/* Fixed dark gradient (not theme-reactive) — this is a permanent
                 "premium/dark" promo card whose text (proBannerTitle) is fixed
@@ -1329,13 +1633,13 @@ export default function HomeScreen() {
                 onPress={() => setMatchView('NEARBY')}
                 activeOpacity={0.75}
               >
-                <MapPin
+                <Trophy
                   size={11}
                   color={matchView === 'NEARBY' ? colors.white : colors.textMuted}
                   strokeWidth={2}
                 />
                 <Text style={[styles.segmentText, matchView === 'NEARBY' && styles.segmentTextActive]}>
-                  Nearby
+                  Matches
                 </Text>
               </TouchableOpacity>
 
@@ -1370,6 +1674,7 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
 
+            {matchView === 'NEARBY' && renderMatchFilters()}
             {renderSportFilterRow()}
 
             {/* Pending-approval hint — a freshly-created match is intentionally hidden from
@@ -1377,6 +1682,21 @@ export default function HomeScreen() {
                 without this callout an organizer reasonably reads that as "nearby is broken"
                 instead of "awaiting venue approval". Only relevant in the Nearby view since
                 My Bookings already shows the ⏳ Pending Venue badge on the card itself. */}
+            {matchView === 'NEARBY' && unpaidPublicCount > 0 && (
+              <TouchableOpacity
+                style={styles.pendingHint}
+                activeOpacity={0.85}
+                onPress={() => setMatchView('MY_BOOKINGS')}
+              >
+                <Clock color={colors.warning} size={15} strokeWidth={2.2} />
+                <Text style={styles.pendingHintText}>
+                  {unpaidPublicCount === 1
+                    ? 'Your public game goes live once the PAASXO fee is paid — open it in My Bookings to pay.'
+                    : `${unpaidPublicCount} public games go live once their PAASXO fee is paid — open them in My Bookings to pay.`}
+                </Text>
+                <ChevronRight color={colors.warning} size={15} strokeWidth={2.2} />
+              </TouchableOpacity>
+            )}
             {matchView === 'NEARBY' && pendingOwnCount > 0 && (
               <TouchableOpacity
                 style={styles.pendingHint}
@@ -1398,28 +1718,92 @@ export default function HomeScreen() {
               <View style={styles.loadingContainer}>
                 <PaasxoLogoLoader size={40} elevated={false} />
               </View>
+            ) : matchView === 'NEARBY' && matchesError ? (
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIconWrap}>
+                  <Trophy color={colors.neutral400} size={36} strokeWidth={1.5} />
+                </View>
+                <Text style={styles.emptyStateTitle}>Couldn't load matches</Text>
+                <Text style={styles.emptyStateText}>Check your connection and try again.</Text>
+                <TouchableOpacity style={styles.emptyActionBtn} onPress={() => loadMatchSearch(true)} activeOpacity={0.85}>
+                  <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.emptyActionGrad}>
+                    <Text style={styles.emptyActionText}>Try again</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
             ) : filteredMatches.length > 0 ? (
-              filteredMatches.map((match) => renderMatchCard(match))
+              <>
+                {filteredMatches.map((match) => renderMatchCard(match))}
+                {matchView === 'NEARBY' && loadingMoreMatches && (
+                  <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
+                )}
+                {matchView === 'NEARBY' && !matchesHasMore && !searchingEverywhere && filteredMatches.length > 0 && (
+                  <TouchableOpacity style={styles.seeEverywhere} onPress={() => setMatchScope('ANYWHERE')} activeOpacity={0.8}>
+                    <Globe size={14} color={colors.primary} strokeWidth={2.4} />
+                    <Text style={styles.seeEverywhereText}>Turn off Nearby to see all matches</Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            ) : matchView === 'NEARBY' ? (
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIconWrap}>
+                  {searchingEverywhere
+                    ? <Globe color={colors.neutral400} size={36} strokeWidth={1.5} />
+                    : <MapPin color={colors.neutral400} size={36} strokeWidth={1.5} />}
+                </View>
+                <Text style={styles.emptyStateTitle}>
+                  {matchQuery ? 'No matches found'
+                    : matchTypeFilter === 'PUBLIC' ? 'No public games yet'
+                    : matchTypeFilter === 'PAID' ? 'No paid matches yet'
+                    : searchingEverywhere ? 'No open matches yet' : 'No matches nearby'}
+                </Text>
+                <Text style={styles.emptyStateText}>
+                  {matchQuery
+                    ? `Nothing on Paasxo matches “${matchQuery}”. Try the match title, venue or place name.`
+                    : !searchingEverywhere
+                    ? `No open matches within ${NEARBY_RADIUS_KM} km right now. Turn off Nearby to see every match, or create one.`
+                    : 'Be the first — create a match and players can find and join it.'}
+                </Text>
+                {(matchTypeFilter !== 'ALL' || selectedSportFilters.length > 0) && (
+                  <TouchableOpacity
+                    style={styles.clearFiltersBtn}
+                    onPress={() => { setMatchTypeFilter('ALL'); setSelectedSportFilters([]); }}
+                    activeOpacity={0.8}
+                  >
+                    <X size={13} color={colors.primary} strokeWidth={2.4} />
+                    <Text style={styles.seeEverywhereText}>Clear filters</Text>
+                  </TouchableOpacity>
+                )}
+                {!searchingEverywhere && (
+                  <TouchableOpacity style={styles.seeEverywhere} onPress={() => setMatchScope('ANYWHERE')} activeOpacity={0.8}>
+                    <Globe size={14} color={colors.primary} strokeWidth={2.4} />
+                    <Text style={styles.seeEverywhereText}>Show all matches</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.emptyActionBtn}
+                  onPress={() => router.push((matchTypeFilter === 'PUBLIC' ? '/create-public-match' : '/create-match') as any)}
+                  activeOpacity={0.85}
+                >
+                  <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.emptyActionGrad}>
+                    <Text style={styles.emptyActionText}>{matchTypeFilter === 'PUBLIC' ? 'Create a Public Game' : 'Create a Match'}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
             ) : (
               <View style={styles.emptyState}>
                 <View style={styles.emptyIconWrap}>
                   <Trophy color={colors.neutral400} size={36} strokeWidth={1.5} />
                 </View>
                 <Text style={styles.emptyStateTitle}>
-                  {matchView === 'JOINED' ? 'No joined matches'
-                    : matchView === 'NEARBY' ? 'No public matches nearby'
-                    : 'No active bookings'}
+                  {matchView === 'JOINED' ? 'No joined matches' : 'No active bookings'}
                 </Text>
                 <Text style={styles.emptyStateText}>
                   {searchText
                     ? 'No matches found for your search.'
                     : matchView === 'JOINED'
                     ? 'Accept an invitation or join a nearby match to see it here.'
-                    : matchView === 'MY_BOOKINGS'
-                    ? 'Create a match to get started!'
-                    : userLat == null
-                    ? 'Enable location access so we can find matches near you.'
-                    : 'No public matches within 20 km of you right now. Be the first to create one!'}
+                    : 'Create a match to get started!'}
                 </Text>
                 {matchView !== 'JOINED' && (
                   <TouchableOpacity
@@ -1596,6 +1980,40 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
 
+            {trainerSessionsView === 'NEARBY' && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sportFilterRow} contentContainerStyle={styles.sportFilterRowContent}>
+                {HOME_TRAINER_TYPES.map((t) => {
+                  const active = trainerTypeFilter === t.id;
+                  return (
+                    <TouchableOpacity
+                      key={t.id ?? 'ALL'}
+                      style={[styles.sportFilterChip, { borderColor: colors.trainer, backgroundColor: active ? colors.trainer : 'transparent' }]}
+                      onPress={() => setTrainerTypeFilter(t.id)}
+                      activeOpacity={0.8}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: active }}
+                    >
+                      <Dumbbell color={active ? colors.white : colors.trainer} size={13} strokeWidth={2.2} />
+                      <Text style={[styles.sportFilterChipText, { color: active ? colors.white : colors.trainer }]}>{t.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            {trainerSessionsView === 'JOINED' && (
+              <TouchableOpacity
+                style={styles.myPlansLink}
+                onPress={() => router.push('/my-plans' as any)}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+              >
+                <Dumbbell color={colors.trainer} size={16} strokeWidth={2.2} />
+                <Text style={styles.myPlansLinkText}>My plans & memberships</Text>
+                <ChevronRight color={colors.trainer} size={16} strokeWidth={2.4} />
+              </TouchableOpacity>
+            )}
+
             {trainerSessionsView === 'JOINED' ? (
               joinedTrainerSessionsShowHistory && (
                 <Text style={styles.joinedHistoryHint}>Showing past & cancelled sessions too</Text>
@@ -1691,7 +2109,7 @@ export default function HomeScreen() {
             {/* Start activity hero card */}
             <TouchableOpacity
               activeOpacity={0.88}
-              onPress={() => router.push('/activity-tracker' as any)}
+              onPress={() => launchActivity('/activity-tracker')}
             >
               <LinearGradient
                 colors={['#059669', '#047857', '#065F46']}
@@ -1715,12 +2133,14 @@ export default function HomeScreen() {
 
             {/* Activity type quick picks */}
             <View style={styles.activityTypeRow}>
-              {([['🚶', 'Walk'], ['🏃', 'Run'], ['🚴', 'Cycle']] as [string, string][]).map(([emoji, label]) => (
+              {([['🚶', 'Walk', 'WALK'], ['🏃', 'Run', 'RUN'], ['🚴', 'Cycle', 'CYCLING']] as [string, string, string][]).map(([emoji, label, type]) => (
                 <TouchableOpacity
                   key={label}
                   style={styles.activityTypeChip}
                   activeOpacity={0.8}
-                  onPress={() => router.push('/activity-tracker' as any)}
+                  onPress={() => launchActivity(`/activity-tracker?type=${type}`)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Start ${label.toLowerCase()}`}
                 >
                   <Text style={{ fontSize: 22 }}>{emoji}</Text>
                   <Text style={styles.activityTypeChipLabel}>{label}</Text>
@@ -1792,6 +2212,7 @@ export default function HomeScreen() {
       </View>
 
       <BottomNavbar activeTab="EXPLORE" showCreateButton={false} />
+      {activityGate}
     </SafeAreaView>
   );
 }
@@ -1891,6 +2312,36 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     marginRight: 8, borderWidth: 1.5,
   },
   sportFilterChipText: { fontSize: 11.5, fontWeight: '700' },
+  matchFilterRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  matchTypeGroup: {
+    flex: 1, flexDirection: 'row', padding: 3, borderRadius: 14,
+    backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.divider,
+  },
+  matchTypeChip: {
+    flexGrow: 1, flexShrink: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    paddingVertical: 7, paddingHorizontal: 8, borderRadius: 11, minHeight: 32,
+  },
+  matchTypeChipOn: { backgroundColor: colors.primary },
+  matchTypeChipText: { flexShrink: 1, fontSize: 11.5, fontWeight: '700', color: colors.textMuted },
+  matchTypeChipTextOn: { color: colors.white },
+  nearbyToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, minHeight: 38,
+    borderRadius: 14, borderWidth: 1.5, borderColor: colors.primary + '55', backgroundColor: colors.cardBg,
+  },
+  nearbyToggleOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  nearbyToggleText: { fontSize: 12, fontWeight: '800', color: colors.primary },
+  nearbyToggleTextOn: { color: colors.white },
+  seeEverywhere: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, alignSelf: 'center',
+    paddingVertical: 10, paddingHorizontal: 16, marginVertical: 6, borderRadius: 20,
+    backgroundColor: colors.primary + '12',
+  },
+  clearFiltersBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'center',
+    paddingVertical: 8, paddingHorizontal: 14, marginTop: 4, borderRadius: 20,
+    borderWidth: 1, borderColor: colors.primary + '40',
+  },
+  seeEverywhereText: { fontSize: 13, fontWeight: '700', color: colors.primary },
 
   // Tab bar
   tabBarWrap: { marginBottom: 20 },
@@ -1930,6 +2381,21 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   tabLabel: { fontSize: 10.5, fontWeight: '700', color: colors.neutral400, letterSpacing: 0.1 },
   tabLabelActive: { color: colors.primary },
 
+  teamVsTeamCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 18, padding: 14, marginBottom: 16, overflow: 'hidden',
+    backgroundColor: colors.cardBg, borderWidth: 1.5, borderColor: colors.primary + '40',
+  },
+  teamVsTeamIcon: {
+    width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  teamVsTeamTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  teamVsTeamTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
+  teamVsTeamBadge: { backgroundColor: colors.success + '22', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  teamVsTeamBadgeText: { fontSize: 10, fontWeight: '800', color: colors.success, letterSpacing: 0.4 },
+  teamVsTeamSub: { fontSize: 12.5, color: colors.textSecondary, marginTop: 3, lineHeight: 17, fontWeight: '600' },
+  teamVsTeamSports: { fontSize: 11, color: colors.textMuted, marginTop: 4, fontWeight: '700' },
   proBanner: {
     borderRadius: 18, padding: 16, marginBottom: 22, gap: 12,
   },
@@ -1990,6 +2456,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   joinedHistoryToggle: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
   joinedHistoryToggleText: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
   joinedHistoryHint: { fontSize: 11.5, color: colors.textMuted, fontWeight: '600', marginBottom: 8 },
+  myPlansLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 10, paddingHorizontal: 14,
+    paddingVertical: 12, borderRadius: 14, backgroundColor: colors.trainer + '14', borderWidth: 1, borderColor: colors.trainer + '33',
+  },
+  myPlansLinkText: { flex: 1, fontSize: 14, fontWeight: '800', color: colors.trainer },
   joinedSessionCard: {
     backgroundColor: colors.cardBg, borderRadius: 16, padding: 14, marginBottom: 16,
     borderWidth: 1, borderColor: colors.neutral200,
@@ -2066,6 +2537,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   matchImagePlaceholderText: { fontSize: 13, color: colors.primary, fontWeight: '600' },
   matchDetails: { padding: 14, gap: 8 },
   matchTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
+  matchRecency: { fontSize: 11.5, fontWeight: '700', color: colors.primary, marginTop: -2 },
   matchMetaRow: { flexDirection: 'row', gap: 16, flexWrap: 'wrap' },
   matchMeta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   matchMetaText: { fontSize: 12, color: colors.textMuted },

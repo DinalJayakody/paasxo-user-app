@@ -11,6 +11,10 @@ import { extractApiError } from '../utils/apiError';
 import { PaasxoLogoLoader } from '../components/PaasxoLogoLoader';
 import ScreenGlow from '../components/ScreenGlow';
 import { goBack } from '../utils/navigation';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
+import { serverTimeAgo, serverTimeMs } from '../utils/serverTime';
 
 // Must match BookingService.CANCELLATION_REFUND_LEAD_HOURS on the backend — purely for
 // client-side copy; isWithinCancellationWindow on each match (computed server-side) is
@@ -30,6 +34,8 @@ interface JoinedMatch {
   status?: string;
   paymentStatus?: string;
   isWithinCancellationWindow?: boolean;
+  bookedAt?: string;
+  joinedAt?: string; // when you joined (server); list is most-recent-join first
 }
 
 function timeLabel(t?: string) {
@@ -67,6 +73,7 @@ export default function MyJoinedMatchesScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  const { refreshing, onRefresh } = usePullToRefresh(load);
 
   // Past/cancelled matches are hidden from the default view (nothing to join or act
   // on there) but stay reachable: typing a search term, or toggling "show history",
@@ -83,9 +90,8 @@ export default function MyJoinedMatchesScreen() {
         }
         return true;
       })
-      .sort((a, b) => (a.slotDate === b.slotDate
-        ? a.startTime.localeCompare(b.startTime)
-        : (a.slotDate < b.slotDate ? -1 : 1)));
+      // Most recent join first (falls back to when the match was booked).
+      .sort((a, b) => serverTimeMs(b.joinedAt ?? b.bookedAt) - serverTimeMs(a.joinedAt ?? a.bookedAt) || b.id - a.id);
   }, [matches, query, showPast]);
 
   const handleLeave = (m: JoinedMatch) => {
@@ -152,7 +158,15 @@ export default function MyJoinedMatchesScreen() {
           <PaasxoLogoLoader size={44} elevated={false} />
           <Text style={styles.loadingText}>Loading your matches…</Text>
         </View>
-      ) : filtered.length === 0 ? (
+      ) : (
+        <View style={{ flex: 1 }}>
+        <PaasxoRefreshLogo refreshing={refreshing} />
+        <ScrollView
+          contentContainerStyle={[styles.listContent, filtered.length === 0 && { flexGrow: 1 }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        >
+        {filtered.length === 0 ? (
         <View style={styles.centerWrap}>
           <Text style={styles.emptyEmoji}>⚽</Text>
           <Text style={styles.emptyTitle}>{query ? 'No matches found' : 'No joined matches yet'}</Text>
@@ -160,9 +174,8 @@ export default function MyJoinedMatchesScreen() {
             {query ? 'Try a different search term.' : 'Matches you join as a player will show up here.'}
           </Text>
         </View>
-      ) : (
-        <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-          {filtered.map((m) => {
+        ) : (
+          filtered.map((m) => {
             const cancelled = m.status === 'CANCELLED';
             const past = isPast(m.slotDate, m.endTime);
             const canLeave = !cancelled && !past;
@@ -174,7 +187,12 @@ export default function MyJoinedMatchesScreen() {
                 onPress={() => router.push(`/match/${m.id}`)}
               >
                 <View style={styles.cardHeader}>
-                  <Text style={styles.cardTitle} numberOfLines={1}>{m.title || m.sport || 'Match'}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardTitle} numberOfLines={1}>{m.title || m.sport || 'Match'}</Text>
+                    {!!serverTimeAgo(m.joinedAt ?? m.bookedAt) && (
+                      <Text style={styles.recency}>Joined {serverTimeAgo(m.joinedAt ?? m.bookedAt)}</Text>
+                    )}
+                  </View>
                   {cancelled ? (
                     <View style={[styles.badge, styles.badgeCancelled]}>
                       <Text style={styles.badgeTextCancelled}>Cancelled</Text>
@@ -224,8 +242,10 @@ export default function MyJoinedMatchesScreen() {
                 </View>
               </Pressable>
             );
-          })}
+          })
+        )}
         </ScrollView>
+        </View>
       )}
     </SafeAreaView>
   );
@@ -266,6 +286,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   cardMuted: { opacity: 0.6 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   cardTitle: { flex: 1, fontSize: 15, fontWeight: '800', color: colors.text },
+  recency: { fontSize: 11.5, fontWeight: '700', color: colors.primary, marginTop: 2 },
   badge: { backgroundColor: colors.neutral100, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
   badgeText: { fontSize: 10.5, fontWeight: '700', color: colors.neutral600, textTransform: 'uppercase' },
   badgeCancelled: { backgroundColor: colors.error + '1A' },

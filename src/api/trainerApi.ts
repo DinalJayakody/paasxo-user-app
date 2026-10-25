@@ -1,5 +1,6 @@
 import axiosInstance from './axios';
 import { ENDPOINTS } from './endpoints';
+import type { TrainerPlan, TrainerPlanOrderResponse, TrainerPlanPurchase } from '../types/api';
 
 // Normalizes the backend's PagedResponse<T> ({content, page, hasMore}) shape,
 // falling back gracefully if an older/unpaginated endpoint returns a raw array.
@@ -62,6 +63,38 @@ export const trainerApi = {
 
   cancelBooking: async (bookingId: string | number) => {
     const { data } = await axiosInstance.patch(ENDPOINTS.TRAINER.CANCEL_BOOKING(bookingId));
+    return data;
+  },
+  // ─── Plans & memberships (T4/T5/T6) ─────────────────────────────────────
+  getPlansForTrainer: async (trainerFirebaseUid: string): Promise<TrainerPlan[]> => {
+    const { data } = await axiosInstance.get(ENDPOINTS.TRAINER.PLANS_FOR_TRAINER(trainerFirebaseUid));
+    return Array.isArray(data) ? data : [];
+  },
+
+  getPlan: async (planId: string | number): Promise<TrainerPlan> => {
+    const { data } = await axiosInstance.get(ENDPOINTS.TRAINER.PLAN(planId));
+    return data;
+  },
+
+  /** Free plans are granted immediately; paid ones return a paymentOrderId for PAYMENTS.INITIATE('TRAINER_PLAN', …). */
+  orderPlan: async (planId: string | number): Promise<TrainerPlanOrderResponse> => {
+    const { data } = await axiosInstance.post(ENDPOINTS.TRAINER.PLAN_ORDER(planId));
+    return data;
+  },
+
+  getMyPlanPurchases: async (): Promise<TrainerPlanPurchase[]> => {
+    const { data } = await axiosInstance.get(ENDPOINTS.TRAINER.MY_PLAN_PURCHASES);
+    return Array.isArray(data) ? data : [];
+  },
+
+  cancelPlanPurchase: async (purchaseId: string | number): Promise<TrainerPlanPurchase> => {
+    const { data } = await axiosInstance.post(ENDPOINTS.TRAINER.CANCEL_PLAN_PURCHASE(purchaseId));
+    return data;
+  },
+
+  /** Tell the trainer your goals / allergies / injuries for your personal plan. */
+  updatePlanClientNote: async (purchaseId: string | number, note: string): Promise<TrainerPlanPurchase> => {
+    const { data } = await axiosInstance.put(ENDPOINTS.TRAINER.PLAN_CLIENT_NOTE(purchaseId), { note });
     return data;
   },
 };

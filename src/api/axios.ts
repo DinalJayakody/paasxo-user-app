@@ -10,6 +10,9 @@ const axiosInstance = axios.create({
   timeout: 15000,
   headers: {
     Accept: 'application/json',
+    // Identifies the player app to /auth/login*: a Service Provider whose
+    // account is still under review may use Paasxo as a player meanwhile.
+    'X-Paasxo-Client': 'player',
   },
 });
 
@@ -178,6 +181,49 @@ export const refreshTokenIfNeeded = async (): Promise<void> => {
   }
 };
 
+const SIGN_IN_PATHS = [
+  ENDPOINTS.AUTH.LOGIN, ENDPOINTS.AUTH.REGISTER, ENDPOINTS.AUTH.GOOGLE_LOGIN,
+  ENDPOINTS.AUTH.APPLE_LOGIN, ENDPOINTS.AUTH.FORGOT_PASSWORD,
+];
+
+// Fallback copy per status, used only when the server sent no message of its
+// own. Never shown for 401 (handled by the refresh flow below).
+const STATUS_FALLBACK: Record<number, string> = {
+  400: 'Some details look invalid. Please check and try again.',
+  403: "You don't have permission to do that.",
+  404: 'That item could not be found.',
+  409: 'That already exists.',
+  413: 'That file is too large to upload.',
+  429: 'Too many attempts. Please wait a moment and try again.',
+};
+
+/**
+ * axios rejects with "Request failed with status code 400", which every screen
+ * then shows verbatim. Swap in the backend's own message ({error} or {message})
+ * so users see the real reason — the original response stays on error.response
+ * for callers that branch on status/code.
+ */
+function withReadableMessage(error: any) {
+  const status: number | undefined = error?.response?.status;
+  if (!status) {
+    if (error?.code === 'ECONNABORTED') error.message = 'The request timed out. Please check your connection and try again.';
+    else if (error?.message === 'Network Error') error.message = "Can't reach Paasxo right now. Please check your connection.";
+    return error;
+  }
+  const data = error.response.data;
+  const serverMessage = typeof data === 'string'
+    ? (data.length > 0 && data.length < 300 && !data.trimStart().startsWith('<') ? data : undefined)
+    : (data?.error || data?.message);
+  if (typeof serverMessage === 'string' && serverMessage.trim()) {
+    error.message = serverMessage.trim();
+  } else if (status >= 500) {
+    error.message = 'Something went wrong on our side. Please try again shortly.';
+  } else if (STATUS_FALLBACK[status]) {
+    error.message = STATUS_FALLBACK[status];
+  }
+  return error;
+}
+
 // ─── Response interceptor: 401 → refresh → retry ─────────────────────────────
 axiosInstance.interceptors.response.use(
   (response) => response,
@@ -187,10 +233,14 @@ axiosInstance.interceptors.response.use(
     // Only intercept 401s that are not already retried and not from the refresh call itself.
     if (
       error.response?.status !== 401 ||
+      !originalRequest ||
       originalRequest._retry ||
-      originalRequest.url?.includes(ENDPOINTS.AUTH.REFRESH)
+      originalRequest.url?.includes(ENDPOINTS.AUTH.REFRESH) ||
+      // Credential endpoints answer 401 for a wrong password / bad token —
+      // that's the answer, not an expired session to refresh.
+      SIGN_IN_PATHS.some((p) => originalRequest.url?.includes(p))
     ) {
-      return Promise.reject(error);
+      return Promise.reject(withReadableMessage(error));
     }
 
     if (isRefreshing) {

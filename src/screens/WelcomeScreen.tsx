@@ -8,6 +8,7 @@ import {
   Animated,
   Dimensions,
   ScrollView,
+  useWindowDimensions,
   Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,28 +27,28 @@ const SLIDES = [
     id: 1,
     title: 'Discover sports &\nactivities around you',
     subtitle: 'Find local games, classes, and events\nand connect with people nearby instantly.',
-    image: require('../../assets/pickleball.png'),
+    image: require('../../assets/intro/discover.jpg'),
     badge: 'JOIN NOW',
   },
   {
     id: 2,
     title: 'Join teams &\ncompete locally',
     subtitle: 'Form your squad, challenge rivals, and\nclimb the leaderboards.',
-    image: require('../../assets/futsal.png'),
-    badge: '0.4 mi away',
+    image: require('../../assets/intro/compete.jpg'),
+    badge: '0.4 km away',
   },
   {
     id: 3,
     title: 'Track your\nathletic journey',
     subtitle: 'Monitor performance stats and celebrate\nevery milestone.',
-    image: require('../../assets/pickleball.png'),
+    image: require('../../assets/intro/track.jpg'),
     badge: 'LIVE NEARBY',
   },
   {
     id: 4,
     title: 'Connect with\nyour community',
     subtitle: 'Meet like-minded people and build\nlasting friendships through sport & fun.',
-    image: require('../../assets/futsal.png'),
+    image: require('../../assets/intro/community.jpg'),
     badge: '3 SPOTS LEFT',
   },
 ];
@@ -60,6 +61,12 @@ export default function WelcomeScreen() {
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  // Each slide is exactly the slider's height: the photo takes whatever is
+  // left after the (never clipped) title/subtitle, so the full wording is
+  // always visible without scrolling — even on an iPhone SE.
+  const [sliderHeight, setSliderHeight] = useState(0);
+  const { height: windowHeight } = useWindowDimensions();
+  const compact = windowHeight < 720;
 
   // Animation refs
   const logoScale = useRef(new Animated.Value(1)).current;
@@ -135,10 +142,11 @@ export default function WelcomeScreen() {
       </View>
 
       {/* Hero: Centered logo */}
-      <View style={styles.hero}>
+      <View style={[styles.hero, compact && { paddingBottom: 10, paddingTop: 0 }]}>
         <Animated.View
           style={[
             styles.logoWrapper,
+            compact && { width: 64, height: 64 },
             {
               opacity: logoOpacity,
               transform: [{ scale: logoScale }],
@@ -147,7 +155,7 @@ export default function WelcomeScreen() {
         >
           <AdaptiveLogo style={styles.logo} />
         </Animated.View>
-        <Text style={styles.heroTagline}>Play. Connect. Compete.</Text>
+        <Text style={[styles.heroTagline, compact && { marginTop: 6 }]}>Play. Connect. Compete.</Text>
       </View>
 
       {/* Swipeable Slides */}
@@ -159,11 +167,12 @@ export default function WelcomeScreen() {
         onMomentumScrollEnd={handleScroll}
         scrollEventThrottle={16}
         style={styles.slider}
+        onLayout={(e) => setSliderHeight(Math.round(e.nativeEvent.layout.height))}
       >
         {SLIDES.map((slide) => (
-          <View key={slide.id} style={styles.slide}>
+          <View key={slide.id} style={[styles.slide, sliderHeight > 0 && { height: sliderHeight }]}>
             {/* Hero Image with a single subtle badge */}
-            <View style={styles.mapContainer}>
+            <View style={styles.mapContainer} accessible accessibilityRole="image" accessibilityLabel={slide.title.replace('\n', ' ')}>
               <Image source={slide.image} style={styles.mapImage} resizeMode="cover" />
 
               {/* Bottom shade for readability */}
@@ -171,7 +180,7 @@ export default function WelcomeScreen() {
 
               {/* Single corner badge */}
               <View style={styles.badge}>
-                {slide.badge.includes('mi') ? (
+                {slide.badge.includes('km') ? (
                   <MapPin color={colors.white} size={13} strokeWidth={2.2} />
                 ) : (
                   <Trophy color={colors.white} size={13} strokeWidth={2.2} />
@@ -181,9 +190,9 @@ export default function WelcomeScreen() {
             </View>
 
             {/* Text */}
-            <View style={styles.textContainer}>
-              <Text style={styles.title}>{slide.title}</Text>
-              <Text style={styles.subtitle}>{slide.subtitle}</Text>
+            <View style={[styles.textContainer, compact && { paddingTop: 16 }]}>
+              <Text style={[styles.title, compact && { fontSize: 23, lineHeight: 29 }]}>{slide.title}</Text>
+              <Text style={[styles.subtitle, compact && { fontSize: 14, lineHeight: 21 }]}>{slide.subtitle}</Text>
             </View>
           </View>
         ))}
@@ -317,11 +326,16 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   slide: {
     width: SCREEN_WIDTH,
     paddingHorizontal: 20,
+    justifyContent: 'center',
   },
   mapContainer: {
     borderRadius: 20,
     overflow: 'hidden',
-    height: 300,
+    // Fills the space the text doesn't need (see sliderHeight), capped so
+    // tall phones don't get a towering photo.
+    flex: 1,
+    minHeight: 120,
+    maxHeight: 340,
     backgroundColor: colors.neutral200,
     position: 'relative',
   },
@@ -382,8 +396,8 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   // ---- Bottom ----
   bottom: {
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 24,
+    paddingTop: 8,
+    paddingBottom: 16,
     alignItems: 'center',
   },
   dots: {

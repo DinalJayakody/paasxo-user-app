@@ -1,3 +1,4 @@
+import { formatProfileActivities } from '../constants/sports';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -12,19 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import {
-  Menu,
-  Activity,
-  Target,
-  Star,
-  Trophy,
-  Share2,
-  TrendingUp,
-  Zap,
-  Award,
-  Shield,
-  Users,
-} from 'lucide-react-native';
+import { Menu, Share2, Zap } from 'lucide-react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { BottomNavbar, useBottomNavBarHeight } from '../components/BottomNavbar';
 import { Colors, ThemeColors } from '../styles/colors';
@@ -36,10 +25,12 @@ import { userApi } from '../api/userApi';
 import { resolveAvatarUri } from '../utils/mediaUrl';
 import { PostGrid } from '../components/PostGrid';
 import { ReelGrid } from '../components/ReelGrid';
+import { TaggedPostsTab } from '../components/TaggedPostsTab';
 import { PostSummary, ReelSummary } from '../types/api';
 import { reelApi } from '../api/reelApi';
 import { activityApi, ActivitySummary } from '../api/activityApi';
 import { ActivityStatsSection } from '../components/activity/ActivityStatsSection';
+import { PlayerStatsSection } from '../components/stats/PlayerStatsSection';
 import { FullScreenImageViewer } from '../components/FullScreenImageViewer';
 import { AvatarActionSheet } from '../components/AvatarActionSheet';
 import { LoadingScreen } from '../components/LoadingScreen';
@@ -49,41 +40,6 @@ import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
 import ScreenGlow from '../components/ScreenGlow';
 import { FollowListModal } from '../components/FollowListModal';
 import { TeamsSection } from '../components/team/TeamsSection';
-
-// Module-scope, always light-palette accent colors regardless of theme (see
-// SPORT_MASCOTS in HomeScreen.tsx for the same deliberate choice).
-const SPORT_STATS: Record<string, { icon: any; value: string; label: string; color: string }[]> = {
-  CRICKET: [
-    { icon: Activity, value: '87', label: 'Matches', color: Colors.cricket },
-    { icon: TrendingUp, value: '1,240', label: 'Runs', color: Colors.primaryDark },
-    { icon: Target, value: '6', label: 'Wickets', color: Colors.success },
-    { icon: Zap, value: '138.4', label: 'Strike Rate', color: Colors.primaryAccent },
-    { icon: Star, value: '12', label: 'Half-Centuries', color: Colors.warning },
-    { icon: Award, value: '3', label: 'Centuries', color: Colors.liveRed },
-    { icon: Shield, value: '42.6', label: 'Avg. Score', color: Colors.cricket },
-    { icon: Trophy, value: '5', label: 'MVP Awards', color: Colors.primaryDark },
-  ],
-  FUTSAL: [
-    { icon: Activity, value: '64', label: 'Matches', color: Colors.futsal },
-    { icon: Target, value: '42', label: 'Goals', color: Colors.liveRed },
-    { icon: Users, value: '28', label: 'Assists', color: Colors.success },
-    { icon: Zap, value: '0.65', label: 'Goals/Match', color: Colors.primaryAccent },
-    { icon: Shield, value: '18', label: 'Clean Sheets', color: Colors.primaryDark },
-    { icon: Star, value: '8', label: 'Hat-tricks', color: Colors.warning },
-    { icon: Award, value: '4', label: 'MVP Awards', color: Colors.futsal },
-    { icon: Trophy, value: '2', label: 'Trophies', color: Colors.primaryDark },
-  ],
-  PICKLEBALL: [
-    { icon: Activity, value: '53', label: 'Matches', color: Colors.pickleball },
-    { icon: TrendingUp, value: '34', label: 'Wins', color: Colors.success },
-    { icon: Target, value: '64%', label: 'Win Rate', color: Colors.primaryAccent },
-    { icon: Zap, value: '87%', label: 'Serve Acc.', color: Colors.pickleball },
-    { icon: Shield, value: '19', label: 'Sets Won', color: Colors.primaryDark },
-    { icon: Star, value: '6', label: 'Perfect Games', color: Colors.warning },
-    { icon: Award, value: '3', label: 'Tournaments', color: Colors.pickleball },
-    { icon: Trophy, value: '1', label: 'Title', color: Colors.primaryDark },
-  ],
-};
 
 const PROFILE_TABS = ['Moments', 'Stats', 'Teams', 'Reels', 'Tagged'] as const;
 type ProfileTab = (typeof PROFILE_TABS)[number];
@@ -110,29 +66,6 @@ const AnimatedPressable = ({
   );
 };
 
-const StatCard = ({ icon: Icon, value, label, color, index, styles }: any) => {
-  const slideAnim = useRef(new Animated.Value(30)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const delay = index * 80;
-    Animated.parallel([
-      Animated.timing(slideAnim, { toValue: 0, duration: 400, delay, useNativeDriver: true }),
-      Animated.timing(fadeAnim, { toValue: 1, duration: 400, delay, useNativeDriver: true }),
-    ]).start();
-  }, [index]);
-
-  return (
-    <Animated.View style={[styles.statCard, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-      <View style={[styles.statCardIcon, { backgroundColor: color + '18' }]}>
-        <Icon color={color} size={18} strokeWidth={2.5} />
-      </View>
-      <Text style={[styles.statCardValue, { color }]}>{value}</Text>
-      <Text style={styles.statCardLabel}>{label}</Text>
-    </Animated.View>
-  );
-};
-
 export default function ProfileScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -153,6 +86,8 @@ export default function ProfileScreen() {
   // Posts
   const [userPosts, setUserPosts] = useState<PostSummary[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
+  // True once the first page of posts has arrived (successfully or not).
+  const [postsLoadedOnce, setPostsLoadedOnce] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   // Set alongside selectedPostId only by the notification deep link below,
   // and cleared the moment the detail view closes — a one-shot flag, not a
@@ -216,6 +151,7 @@ export default function ProfileScreen() {
       setUserPosts([]);
     } finally {
       setPostsLoading(false);
+      setPostsLoadedOnce(true);
     }
   }, [userId]);
 
@@ -225,15 +161,28 @@ export default function ProfileScreen() {
   // exact post once its data has loaded. Only ever consumed once so closing
   // the detail view afterwards doesn't reopen it.
   const openedFromLinkRef = useRef(false);
+  const fetchedLinkedPostRef = useRef(false);
   useEffect(() => {
-    if (!openPostId || openedFromLinkRef.current || userPosts.length === 0) return;
+    if (!openPostId || openedFromLinkRef.current || postsLoading || !postsLoadedOnce) return;
     if (userPosts.some((p) => p.id === openPostId)) {
       openedFromLinkRef.current = true;
       setSelectedTab('Moments');
       setSelectedPostId(openPostId);
       setAutoOpenComments(openComments === '1');
+      return;
     }
-  }, [openPostId, openComments, userPosts]);
+    // Older than the first page of the grid: fetch that one post and add it,
+    // but only if it really is this profile's post.
+    if (fetchedLinkedPostRef.current || !userId) return;
+    fetchedLinkedPostRef.current = true;
+    socialMediaApi.getPost(openPostId)
+      .then((post) => {
+        if (post?.id === openPostId && post?.authorId === userId) {
+          setUserPosts((prev) => (prev.some((p) => p.id === post.id) ? prev : [post, ...prev]));
+        }
+      })
+      .catch(() => {});
+  }, [openPostId, openComments, userPosts, postsLoading, postsLoadedOnce, userId]);
 
   const fetchReels = React.useCallback(async () => {
     if (!userId) return;
@@ -281,21 +230,30 @@ export default function ProfileScreen() {
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
-      const tasks = [fetchProfile(), fetchPosts()];
-      if (selectedTab === 'Reels') tasks.push(fetchReels());
-      if (selectedTab === 'Stats') tasks.push(fetchActivitySummary());
+      // Same fresh loads as a first visit: profile + posts always; the open tab's
+      // own data now; every other lazy tab is marked stale so it reloads fresh the
+      // next time it's opened instead of showing pre-refresh data.
+      const tasks: Promise<unknown>[] = [fetchProfile(), fetchPosts()];
+      if (selectedTab === 'Reels') tasks.push(fetchReels()); else setReelsLoaded(false);
+      if (selectedTab === 'Stats') tasks.push(fetchActivitySummary()); else setActivitySummaryLoaded(false);
+      setTeamsRefreshKey((k) => k + 1);
+      setTaggedRefreshKey(Date.now());
+      setStatsRefreshKey(Date.now());
       await Promise.all(tasks);
     } finally {
       setRefreshing(false);
     }
   }, [fetchProfile, fetchPosts, fetchReels, fetchActivitySummary, selectedTab]);
+  const [teamsRefreshKey, setTeamsRefreshKey] = useState(0);
+  // A new visit (and every pull-to-refresh) loads tagged posts fresh; switching tabs reuses them.
+  const [taggedRefreshKey, setTaggedRefreshKey] = useState(() => Date.now());
+  const [statsRefreshKey, setStatsRefreshKey] = useState(() => Date.now());
 
   const sport = useMemo(() => {
     const s = Array.isArray(user?.sport) ? user?.sport[0] : user?.sport;
     return (s || 'FUTSAL').toUpperCase();
   }, [user]);
 
-  const statCards = useMemo(() => SPORT_STATS[sport] || SPORT_STATS['FUTSAL'], [sport]);
 
   const sportEmoji = { CRICKET: '🏏', FUTSAL: '⚽', PICKLEBALL: '🏓' }[sport] || '🏅';
   const sportColor = { CRICKET: colors.cricket, FUTSAL: colors.futsal, PICKLEBALL: colors.pickleball }[sport] || colors.primary;
@@ -383,7 +341,7 @@ export default function ProfileScreen() {
   };
 
   const displayName = user?.displayName || 'Sports Player';
-  const sportsText = Array.isArray(user?.sport) ? user.sport.join(' • ').toUpperCase() : (user?.sport || 'SPORT PLAYER').toUpperCase();
+  const sportsText = formatProfileActivities(user?.sports?.length ? user.sports : user?.sport, user?.otherSports);
   const skillLevel = user?.skillLevel ? ` • ${String(user.skillLevel).toUpperCase()}` : '';
   const bioText = user?.bio || 'Begin your Journey. Grow and make friends along the way.';
 
@@ -395,50 +353,22 @@ export default function ProfileScreen() {
 
   const renderStatsTab = () => (
     <View>
+      {!!userId && (
+        <PlayerStatsSection userId={userId} isOwn refreshKey={statsRefreshKey} colors={colors} displayName={user?.displayName} />
+      )}
       <ActivityStatsSection
         summary={activitySummary}
         loading={activitySummaryLoading}
         loaded={activitySummaryLoaded}
         colors={colors}
+        isOwn
       />
-
-      <View style={styles.statsSportBadge}>
-        <Text style={styles.statsSportEmoji}>{sportEmoji}</Text>
-        <Text style={[styles.statsSportLabel, { color: sportColor }]}>{sport} STATISTICS</Text>
-      </View>
-      <View style={styles.statsGrid}>
-        {statCards.map((card, index) => (
-          <StatCard key={card.label} {...card} index={index} styles={styles} />
-        ))}
-      </View>
-
-      <View style={styles.recentMatchesSection}>
-        <Text style={styles.recentMatchesTitle}>Recent Matches</Text>
-        {[
-          { opponent: 'Thunder Squad', result: 'WIN', score: '3-1', date: 'Jun 14' },
-          { opponent: 'Blue Eagles FC', result: 'DRAW', score: '2-2', date: 'Jun 10' },
-          { opponent: 'City Warriors', result: 'WIN', score: '5-0', date: 'Jun 6' },
-        ].map((match, i) => (
-          <View key={i} style={styles.recentMatchRow}>
-            <View style={styles.recentMatchLeft}>
-              <View style={[styles.resultBadge, { backgroundColor: match.result === 'WIN' ? colors.success + '20' : match.result === 'DRAW' ? colors.warning + '20' : colors.error + '20' }]}>
-                <Text style={[styles.resultBadgeText, { color: match.result === 'WIN' ? colors.success : match.result === 'DRAW' ? colors.warning : colors.error }]}>{match.result}</Text>
-              </View>
-              <Text style={styles.recentMatchOpponent}>vs {match.opponent}</Text>
-            </View>
-            <View style={styles.recentMatchRight}>
-              <Text style={styles.recentMatchScore}>{match.score}</Text>
-              <Text style={styles.recentMatchDate}>{match.date}</Text>
-            </View>
-          </View>
-        ))}
-      </View>
     </View>
   );
 
   const renderTeamsTab = () => (
     <View>
-      <TeamsSection uid={userId} colors={colors} showCreateButton />
+      <TeamsSection uid={userId} colors={colors} showCreateButton refreshKey={teamsRefreshKey} />
     </View>
   );
 
@@ -492,13 +422,6 @@ export default function ProfileScreen() {
     return <ReelGrid reels={userReels} autoOpenReelId={openReelId} />;
   };
 
-  const renderEmptyTab = (label: string) => (
-    <View style={styles.emptyTabContent}>
-      <Text style={styles.emptyTabEmoji}>🎬</Text>
-      <Text style={styles.emptyTabTitle}>No {label} yet</Text>
-      <Text style={styles.emptyTabSubtitle}>Play matches and capture moments to fill your profile!</Text>
-    </View>
-  );
 
 
   // ── Main render ──────────────────────────────────────────────────────────
@@ -590,7 +513,7 @@ export default function ProfileScreen() {
         {selectedTab === 'Stats' && renderStatsTab()}
         {selectedTab === 'Teams' && renderTeamsTab()}
         {selectedTab === 'Reels' && renderReelsTab()}
-        {selectedTab === 'Tagged' && renderEmptyTab('Tags')}
+        {selectedTab === 'Tagged' && !!userId && <TaggedPostsTab userId={userId} refreshKey={taggedRefreshKey} isOwn={true} />}
       </ScrollView>
 
       <BottomNavbar activeTab="PROFILE" showCreateButton={false} />

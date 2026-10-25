@@ -22,7 +22,11 @@ import { useTheme } from '../context/ThemeContext';
 import { InputField } from '../components/InputField';
 import HeaderIconButton from '../components/HeaderIconButton';
 import ScreenGlow from '../components/ScreenGlow';
-import { SPORTS } from '../constants/sports';
+import { SPORTS as ALL_SPORTS } from '../constants/sports';
+import { isTeamMatchSport } from '../constants/teamMatchSports';
+
+// Teams play Team Matches, which only exist for Futsal/Cricket/Pickleball/Paddleball.
+const SPORTS = ALL_SPORTS.filter((s) => isTeamMatchSport(s.id));
 import { teamApi } from '../api/teamApi';
 import { goBack } from '../utils/navigation';
 

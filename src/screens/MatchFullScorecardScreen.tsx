@@ -10,6 +10,8 @@ import { MatchScoreEvent } from '../types/api';
 import { LoadingScreen } from '../components/LoadingScreen';
 import ScreenGlow from '../components/ScreenGlow';
 import { goBack } from '../utils/navigation';
+import { openProfile } from '../utils/openProfile';
+import { useAuth } from '../context/AuthContext';
 
 interface MatchFullScorecardScreenProps {
   matchId: string;
@@ -45,6 +47,7 @@ export default function MatchFullScorecardScreen({ matchId }: MatchFullScorecard
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const router = useRouter();
+  const { user } = useAuth();
   const { scorecard, loading, error } = useMatchScorecard(matchId, true);
 
   if (loading) return <LoadingScreen message="Loading scorecard…" />;
@@ -60,6 +63,18 @@ export default function MatchFullScorecardScreen({ matchId }: MatchFullScorecard
 
   const accent = SPORT_ACCENT[scorecard.sport] || colors.primary;
   const isCricket = scorecard.sport === 'CRICKET';
+  // Scorecard rows reference roster entries by id; real app users on the rosters
+  // carry a uid, so their names open their profile (typed-in names don't).
+  const uidByPlayerId = new Map<number, string>();
+  [...(scorecard.teamA ?? []), ...(scorecard.teamB ?? [])].forEach((p) => {
+    if (p.id != null && p.playerFirebaseUid) uidByPlayerId.set(p.id, p.playerFirebaseUid);
+  });
+  const profileLink = (playerId: number) => {
+    const uid = uidByPlayerId.get(playerId);
+    return uid
+      ? { onPress: () => openProfile(router, uid, user?.firebaseUid), suppressHighlighting: true, accessibilityRole: 'link' as const }
+      : {};
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -89,63 +104,163 @@ export default function MatchFullScorecardScreen({ matchId }: MatchFullScorecard
 
         {isCricket && scorecard.innings && scorecard.innings.map((inn) => {
           const battingTeamName = inn.battingTeamLabel === 'A' ? scorecard.teamAName : scorecard.teamBName;
+          const balls = inn.overs * 6 + inn.ballsInOver;
+          const runRate = balls > 0 ? (inn.runs / (balls / 6)).toFixed(2) : '0.00';
+          const extras = (inn.extrasWides ?? 0) + (inn.extrasNoBalls ?? 0) + (inn.extrasByes ?? 0) + (inn.extrasLegByes ?? 0);
           return (
             <View key={inn.inningsNumber} style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>
-                Innings {inn.inningsNumber} — {battingTeamName} batting
-              </Text>
-              <Text style={styles.inningsTally}>
-                {inn.runs}/{inn.wickets} <Text style={styles.inningsOvers}>({inn.overs}.{inn.ballsInOver} overs)</Text>
-              </Text>
-
-              <Text style={styles.tableHeader}>Batting</Text>
-              <View style={styles.table}>
-                {inn.batting.map((b) => (
-                  <View key={b.playerId} style={styles.tableRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.tableName} numberOfLines={1}>{b.playerName}</Text>
-                      {b.out && !!b.howOut && <Text style={styles.howOut}>{b.howOut}</Text>}
-                      {!b.out && <Text style={styles.notOut}>not out</Text>}
-                    </View>
-                    <Text style={styles.tableStat}>{b.runs}</Text>
-                    <Text style={styles.tableStatMuted}>({b.ballsFaced})</Text>
-                    <Text style={styles.tableStatMuted}>{b.fours}x4</Text>
-                    <Text style={styles.tableStatMuted}>{b.sixes}x6</Text>
-                  </View>
-                ))}
-                {inn.batting.length === 0 && <Text style={styles.emptyTableText}>No deliveries yet</Text>}
+              <View style={styles.inningsHead}>
+                <Text style={styles.sectionTitle}>Innings {inn.inningsNumber} · {battingTeamName}</Text>
+                <Text style={styles.inningsTally}>
+                  {inn.runs}/{inn.wickets} <Text style={styles.inningsOvers}>({inn.overs}.{inn.ballsInOver} ov · RR {runRate})</Text>
+                </Text>
               </View>
 
-              <Text style={styles.tableHeader}>Bowling</Text>
-              <View style={styles.table}>
-                {inn.bowling.map((b) => (
-                  <View key={b.playerId} style={styles.tableRow}>
-                    <Text style={[styles.tableName, { flex: 1 }]} numberOfLines={1}>{b.playerName}</Text>
-                    <Text style={styles.tableStatMuted}>{b.completedOvers}.{b.ballsInCurrentOver} ov</Text>
-                    <Text style={styles.tableStat}>{b.runsConceded}</Text>
-                    <Text style={styles.tableStatMuted}>-{b.wickets}</Text>
-                  </View>
-                ))}
-                {inn.bowling.length === 0 && <Text style={styles.emptyTableText}>No deliveries yet</Text>}
+              {inn.ballByBall === false ? (
+                <Text style={styles.emptyTableText}>
+                  This innings was scored with totals only, so there's no batting or bowling breakdown. Choose the batter and bowler when scoring to get a full card.
+                </Text>
+              ) : (
+                <>
+              {/* Batting card */}
+              <View style={[styles.gridRow, styles.gridHeadRow]}>
+                <Text style={[styles.gridHead, styles.colName]}>Batter</Text>
+                <Text style={styles.gridHead}>R</Text>
+                <Text style={styles.gridHead}>B</Text>
+                <Text style={styles.gridHead}>4s</Text>
+                <Text style={styles.gridHead}>6s</Text>
+                <Text style={[styles.gridHead, styles.colWide]}>SR</Text>
               </View>
+              {inn.batting.map((b) => (
+                <View key={b.playerId} style={styles.gridRow}>
+                  <View style={styles.colName}>
+                    <Text style={styles.tableName} numberOfLines={1} {...profileLink(b.playerId)}>{b.playerName}</Text>
+                    {b.out && !!b.howOut ? <Text style={styles.howOut} numberOfLines={1}>{b.howOut}</Text> : !b.out ? <Text style={styles.notOut}>not out</Text> : null}
+                  </View>
+                  <Text style={styles.gridStrong}>{b.runs}</Text>
+                  <Text style={styles.gridCell}>{b.ballsFaced}</Text>
+                  <Text style={styles.gridCell}>{b.fours}</Text>
+                  <Text style={styles.gridCell}>{b.sixes}</Text>
+                  <Text style={[styles.gridCell, styles.colWide]}>{b.ballsFaced > 0 ? ((b.runs / b.ballsFaced) * 100).toFixed(1) : '—'}</Text>
+                </View>
+              ))}
+              {inn.batting.length === 0 && <Text style={styles.emptyTableText}>No deliveries yet</Text>}
+
+              <View style={styles.extrasRow}>
+                <Text style={styles.extrasLabel}>Extras</Text>
+                <Text style={styles.extrasValue}>
+                  {extras}{' '}
+                  <Text style={styles.extrasBreak}>(wd {inn.extrasWides ?? 0}, nb {inn.extrasNoBalls ?? 0}, b {inn.extrasByes ?? 0}, lb {inn.extrasLegByes ?? 0})</Text>
+                </Text>
+              </View>
+              <View style={styles.extrasRow}>
+                <Text style={styles.totalLabel}>Total</Text>
+                <Text style={styles.totalValue}>{inn.runs}/{inn.wickets} <Text style={styles.extrasBreak}>({inn.overs}.{inn.ballsInOver} overs)</Text></Text>
+              </View>
+              {!!inn.fallOfWickets?.length && (
+                <View style={{ marginTop: 4 }}>
+                  <Text style={styles.tableHeader}>Fall of wickets</Text>
+                  <Text style={styles.fowText}>{inn.fallOfWickets.join(' · ')}</Text>
+                </View>
+              )}
+
+              {/* Bowling card */}
+              <View style={[styles.gridRow, styles.gridHeadRow, { marginTop: 10 }]}>
+                <Text style={[styles.gridHead, styles.colName]}>Bowler</Text>
+                <Text style={[styles.gridHead, styles.colWide]}>O</Text>
+                <Text style={styles.gridHead}>R</Text>
+                <Text style={styles.gridHead}>W</Text>
+                <Text style={[styles.gridHead, styles.colWide]}>Econ</Text>
+              </View>
+              {inn.bowling.map((b) => {
+                const bBalls = b.completedOvers * 6 + b.ballsInCurrentOver;
+                return (
+                  <View key={b.playerId} style={styles.gridRow}>
+                    <Text style={[styles.tableName, styles.colName]} numberOfLines={1} {...profileLink(b.playerId)}>{b.playerName}</Text>
+                    <Text style={[styles.gridCell, styles.colWide]}>{b.completedOvers}.{b.ballsInCurrentOver}</Text>
+                    <Text style={styles.gridCell}>{b.runsConceded}</Text>
+                    <Text style={styles.gridStrong}>{b.wickets}</Text>
+                    <Text style={[styles.gridCell, styles.colWide]}>{bBalls > 0 ? (b.runsConceded / (bBalls / 6)).toFixed(2) : '—'}</Text>
+                  </View>
+                );
+              })}
+              {inn.bowling.length === 0 && <Text style={styles.emptyTableText}>No deliveries yet</Text>}
+                </>
+              )}
             </View>
           );
         })}
 
+        {!isCricket && (() => {
+          // Team-by-team totals from the per-player tallies.
+          const tally = (label: 'A' | 'B') => (scorecard.scorers ?? []).filter((s) => s.teamLabel === label).reduce(
+            (acc, s) => ({
+              goals: acc.goals + s.goals + s.points, assists: acc.assists + s.assists,
+              yellow: acc.yellow + s.yellowCards, red: acc.red + s.redCards, saves: acc.saves + s.saves,
+            }),
+            { goals: 0, assists: 0, yellow: 0, red: 0, saves: 0 },
+          );
+          const a = tally('A');
+          const b = tally('B');
+          const rows: [string, number, number][] = [
+            [scorecard.sport === 'FUTSAL' ? 'Goals (attributed)' : 'Points (attributed)', a.goals, b.goals],
+            ['Assists', a.assists, b.assists],
+            ['Saves', a.saves, b.saves],
+            ['Yellow cards', a.yellow, b.yellow],
+            ['Red cards', a.red, b.red],
+          ];
+          return (
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitle}>Team stats</Text>
+              <View style={[styles.gridRow, styles.gridHeadRow]}>
+                <Text style={[styles.gridHead, styles.colTeamStat]} numberOfLines={1}>{scorecard.teamAName}</Text>
+                <Text style={[styles.gridHead, styles.colStatLabel]} />
+                <Text style={[styles.gridHead, styles.colTeamStat]} numberOfLines={1}>{scorecard.teamBName}</Text>
+              </View>
+              {rows.map(([label, va, vb]) => (
+                <View key={label} style={styles.gridRow}>
+                  <Text style={[styles.gridStrong, styles.colTeamStat, va > vb && { color: accent }]}>{va}</Text>
+                  <Text style={[styles.gridCell, styles.colStatLabel]}>{label}</Text>
+                  <Text style={[styles.gridStrong, styles.colTeamStat, vb > va && { color: accent }]}>{vb}</Text>
+                </View>
+              ))}
+            </View>
+          );
+        })()}
+
         {!isCricket && scorecard.scorers && scorecard.scorers.length > 0 && (
           <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Scorers</Text>
+            <Text style={styles.sectionTitle}>Player contributions</Text>
             <View style={styles.table}>
               {scorecard.scorers.map((s) => (
                 <View key={s.playerId} style={styles.tableRow}>
-                  <Text style={[styles.tableName, { flex: 1 }]} numberOfLines={1}>
+                  <Text style={[styles.tableName, { flex: 1 }]} numberOfLines={1} {...profileLink(s.playerId)}>
                     {s.playerName} <Text style={styles.tableTeamTag}>({s.teamLabel === 'A' ? scorecard.teamAName : scorecard.teamBName})</Text>
                   </Text>
                   {s.goals > 0 && <Text style={styles.tableStat}>⚽{s.goals}</Text>}
                   {s.points > 0 && <Text style={styles.tableStat}>•{s.points}</Text>}
                   {s.assists > 0 && <Text style={styles.tableStatMuted}>A:{s.assists}</Text>}
+                  {s.saves > 0 && <Text style={styles.tableStatMuted}>🧤{s.saves}</Text>}
                   {s.yellowCards > 0 && <Text style={styles.tableStatMuted}>🟨{s.yellowCards}</Text>}
                   {s.redCards > 0 && <Text style={styles.tableStatMuted}>🟥{s.redCards}</Text>}
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Line-ups */}
+        {((scorecard.teamA?.length ?? 0) > 0 || (scorecard.teamB?.length ?? 0) > 0) && (
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>Line-ups</Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              {([['A', scorecard.teamAName, scorecard.teamA], ['B', scorecard.teamBName, scorecard.teamB]] as const).map(([k, name, list]) => (
+                <View key={k} style={{ flex: 1, gap: 4 }}>
+                  <Text style={styles.tableHeader} numberOfLines={1}>{name}</Text>
+                  {(list ?? []).map((p) => (
+                    <Text key={p.id ?? p.displayName} style={styles.lineupName} numberOfLines={1} {...(p.id != null ? profileLink(p.id) : {})}>{p.displayName || 'Player'}</Text>
+                  ))}
+                  {(list ?? []).length === 0 && <Text style={styles.emptyTableText}>No line-up</Text>}
                 </View>
               ))}
             </View>
@@ -202,4 +317,23 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   emptyTableText: { fontSize: 12.5, color: colors.textMuted, fontStyle: 'italic' },
 
   timelineRow: { fontSize: 12.5, color: colors.text, lineHeight: 20 },
+
+  inningsHead: { gap: 2, marginBottom: 4 },
+  gridRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
+  gridHeadRow: { paddingVertical: 4 },
+  gridHead: { width: 34, textAlign: 'right', fontSize: 10.5, fontWeight: '800', color: colors.neutral500, letterSpacing: 0.4 },
+  gridCell: { width: 34, textAlign: 'right', fontSize: 12.5, fontWeight: '600', color: colors.textSecondary, fontVariant: ['tabular-nums'] },
+  gridStrong: { width: 34, textAlign: 'right', fontSize: 13, fontWeight: '900', color: colors.text, fontVariant: ['tabular-nums'] },
+  colName: { flex: 1, textAlign: 'left', paddingRight: 6 },
+  colWide: { width: 46 },
+  colTeamStat: { flex: 1, textAlign: 'center', width: undefined },
+  colStatLabel: { flex: 1.4, textAlign: 'center', width: undefined },
+  extrasRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },
+  extrasLabel: { fontSize: 12.5, fontWeight: '700', color: colors.textSecondary },
+  extrasValue: { fontSize: 13, fontWeight: '800', color: colors.text },
+  extrasBreak: { fontSize: 11.5, fontWeight: '600', color: colors.textMuted },
+  totalLabel: { fontSize: 13.5, fontWeight: '900', color: colors.text },
+  totalValue: { fontSize: 14, fontWeight: '900', color: colors.text },
+  fowText: { fontSize: 12, color: colors.textSecondary, lineHeight: 18 },
+  lineupName: { fontSize: 12.5, color: colors.text, fontWeight: '600' },
 });

@@ -12,6 +12,37 @@ import { AddTeamPlayerSheet } from '../components/scoring/AddTeamPlayerSheet';
 import { LoadingScreen } from '../components/LoadingScreen';
 import ScreenGlow from '../components/ScreenGlow';
 import { goBack } from '../utils/navigation';
+import { PaasxoRefreshControl } from '../components/PaasxoRefreshControl';
+import { PaasxoRefreshLogo } from '../components/PaasxoRefreshLogo';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
+import { useAuth } from '../context/AuthContext';
+import { openProfile } from '../utils/openProfile';
+
+/** Avatar + name; opens the player's profile when they're a real app user
+ *  ("Custom" typed-in names have no profile, so they stay plain). */
+function PlayerIdentity({ uid, name, styles }: { uid?: string | null; name: string; styles: any }) {
+  const router = useRouter();
+  const { user } = useAuth();
+  const content = (
+    <>
+      <View style={styles.avatarFallback}>
+        <Text style={styles.avatarInitial}>{(name[0] ?? '?').toUpperCase()}</Text>
+      </View>
+      <Text style={styles.playerName} numberOfLines={1}>{name}{uid && uid === user?.firebaseUid ? ' (you)' : ''}</Text>
+    </>
+  );
+  if (!uid) return <View style={styles.identity}>{content}</View>;
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.identity, pressed && { opacity: 0.6 }]}
+      onPress={() => openProfile(router, uid, user?.firebaseUid)}
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${name}'s profile`}
+    >
+      {content}
+    </Pressable>
+  );
+}
 
 interface MatchTeamsScreenProps {
   matchId: string;
@@ -83,10 +114,7 @@ function TeamCard({
       ) : (
         players.map((p) => (
           <View key={p.id} style={styles.playerRow}>
-            <View style={styles.avatarFallback}>
-              <Text style={styles.avatarInitial}>{(p.displayName[0] ?? '?').toUpperCase()}</Text>
-            </View>
-            <Text style={styles.playerName} numberOfLines={1}>{p.displayName}</Text>
+            <PlayerIdentity uid={p.playerFirebaseUid} name={p.displayName} styles={styles} />
             {!p.playerFirebaseUid && <Text style={styles.customTag}>Custom</Text>}
             {canManage && (
               <Pressable
@@ -142,6 +170,7 @@ export default function MatchTeamsScreen({ matchId }: MatchTeamsScreenProps) {
   }, [matchId]);
 
   useEffect(() => { load(); }, [load]);
+  const { refreshing, onRefresh } = usePullToRefresh(load);
 
   const handleRename = async (team: 'A' | 'B', name: string) => {
     try {
@@ -226,7 +255,13 @@ export default function MatchTeamsScreen({ matchId }: MatchTeamsScreenProps) {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <View style={{ flex: 1 }}>
+      <PaasxoRefreshLogo refreshing={refreshing} />
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<PaasxoRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         {!teams.canManage && (
           <Text style={styles.readOnlyNotice}>Only the match organizer can edit teams — you're viewing read-only.</Text>
         )}
@@ -268,10 +303,7 @@ export default function MatchTeamsScreen({ matchId }: MatchTeamsScreenProps) {
             <Text style={styles.unassignedTitle}>Joined but not yet on a team</Text>
             {teams.unassignedJoinedPlayers.map((p) => (
               <View key={p.playerFirebaseUid} style={styles.unassignedRow}>
-                <View style={styles.avatarFallback}>
-                  <Text style={styles.avatarInitial}>{(p.displayName[0] ?? '?').toUpperCase()}</Text>
-                </View>
-                <Text style={styles.playerName} numberOfLines={1}>{p.displayName}</Text>
+                <PlayerIdentity uid={p.playerFirebaseUid} name={p.displayName} styles={styles} />
                 {addingUnassignedUid === p.playerFirebaseUid ? (
                   <ActivityIndicator size="small" color={colors.primary} />
                 ) : (
@@ -289,6 +321,7 @@ export default function MatchTeamsScreen({ matchId }: MatchTeamsScreenProps) {
           </View>
         )}
       </ScrollView>
+      </View>
 
       <AddTeamPlayerSheet
         visible={addSheetTeam != null}
@@ -336,6 +369,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   avatarFallback: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primary + '22', alignItems: 'center', justifyContent: 'center' },
   avatarInitial: { fontSize: 13, fontWeight: '700', color: colors.primary },
   playerName: { flex: 1, fontSize: 13.5, fontWeight: '600', color: colors.text },
+  identity: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   customTag: { fontSize: 10, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase' },
   removeBtn: { padding: 4 },
 
